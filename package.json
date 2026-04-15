@@ -1,0 +1,24 @@
+{
+  "name": "patool",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "app",
+    "shared",
+    "worker"
+  ],
+  "scripts": {
+    "dev": "concurrently -n app,worker -c blue,green \"npm run dev --workspace app\" \"npm run dev --workspace worker\"",
+    "dev:app": "npm run dev --workspace app",
+    "dev:worker": "npm run dev --workspace worker",
+    "build": "npm run build --workspaces --if-present",
+    "build:pages": "npm run prepare:static-data && npm run build --workspace app",
+    "fixtures:convert": "python3.13 scripts/convert_rda_fixtures.py",
+    "prepare:static-data": "node scripts/prepare_static_data.mjs",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
+  }
+}

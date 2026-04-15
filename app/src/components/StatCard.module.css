@@ -1,0 +1,42 @@
+.statCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-0-5);
+  padding: var(--spacing-3);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  transition: border-color var(--duration-fast);
+}
+
+.label {
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.value {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+}
+
+.good {
+  border-color: var(--color-success);
+  background: var(--color-success-bg);
+}
+
+.good .value {
+  color: var(--color-success);
+}
+
+.warn {
+  border-color: var(--color-warning);
+  background: var(--color-warning-bg);
+}
+
+.warn .value {
+  color: var(--color-warning);
+}

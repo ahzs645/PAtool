@@ -1,0 +1,443 @@
+.pageLayout {
+  display: flex;
+  gap: 0;
+  height: calc(100vh - var(--spacing-8));
+}
+
+.mainContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+  overflow-y: auto;
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.controls {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.search {
+  flex: 1;
+  min-width: 140px;
+  padding: var(--spacing-1-5) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.search::placeholder {
+  color: var(--text-light);
+}
+
+.search:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.select {
+  padding: var(--spacing-1-5) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  cursor: pointer;
+  outline: none;
+}
+
+.select:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1-5) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  cursor: pointer;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-2);
+}
+
+.listCard {
+  /* full width */
+}
+
+/* ── Resize Handle ── */
+.resizeHandle {
+  width: 8px;
+  cursor: col-resize;
+  flex-shrink: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.resizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 32px;
+  border-radius: 2px;
+  background: var(--border-strong);
+  opacity: 0;
+  transition: opacity var(--duration-fast);
+}
+
+.resizeHandle:hover::after {
+  opacity: 1;
+}
+
+.resizeHandleActive::after {
+  opacity: 1;
+  background: var(--accent-primary);
+}
+
+/* ── Right Side Panel Wrapper (Twenty CRM slide-in pattern) ── */
+.sidePanelWrapper {
+  flex-shrink: 0;
+  min-width: 0;
+  overflow: hidden;
+  transition: width var(--duration-normal) ease;
+}
+
+.sidePanelWrapperOpen {
+  width: 400px;
+}
+
+.sidePanelWrapperClosed {
+  width: 0;
+}
+
+/* ── Right Side Panel (Twenty CRM pattern) ── */
+.sidePanel {
+  width: 400px;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-md);
+  background: var(--bg-primary);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  margin-left: var(--spacing-2);
+  height: 100%;
+}
+
+.sidePanelHeader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-3);
+  padding: var(--spacing-3) var(--spacing-4);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.sidePanelCloseRow {
+  display: flex;
+  justify-content: flex-end;
+  padding: var(--spacing-2) var(--spacing-3) 0 var(--spacing-3);
+}
+
+.sidePanelClose {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  padding: var(--spacing-1);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-md);
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+}
+
+.sidePanelClose:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidePanelIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--border-radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #fff;
+  font-weight: var(--font-weight-bold);
+  font-size: var(--font-size-sm);
+}
+
+.sidePanelHeaderInfo {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidePanelTitle {
+  font-size: var(--font-size-md);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidePanelSubtitle {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+/* ── Tab Bar ── */
+.tabBar {
+  display: flex;
+  height: 36px;
+  border-bottom: 1px solid var(--border-light);
+  padding: 0 var(--spacing-4);
+  gap: var(--spacing-4);
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: 0 var(--spacing-1);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: all var(--duration-fast);
+}
+
+.tab:hover {
+  color: var(--text-primary);
+}
+
+.tabActive {
+  color: var(--text-primary);
+  border-bottom-color: var(--bg-inverted);
+}
+
+/* ── Scrollable Tab Content ── */
+.sidePanelBody {
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* ── Field Widgets ── */
+.fieldGroup {
+  padding: var(--spacing-3) var(--spacing-4);
+}
+
+.fieldGroupTitle {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+  margin-bottom: var(--spacing-2);
+}
+
+.fieldRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-1);
+  padding: var(--spacing-1) 0;
+  min-height: 28px;
+  border-radius: var(--border-radius-sm);
+  transition: background var(--duration-fast);
+}
+
+.fieldRow:hover {
+  background: var(--bg-transparent-light);
+}
+
+.fieldIcon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.fieldLabel {
+  width: 90px;
+  flex-shrink: 0;
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.fieldValue {
+  flex: 1;
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ── Charts Tab ── */
+.chartsContent {
+  padding: var(--spacing-3) var(--spacing-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.chartSection {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.chartSectionTitle {
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.aqiStrip {
+  height: 8px;
+  border-radius: 4px;
+  width: 100%;
+}
+
+.aqiStripLabel {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.aqiDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ── Footer ── */
+.sidePanelFooter {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  justify-content: flex-end;
+  padding: var(--spacing-2) var(--spacing-3);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+}
+
+.kbdHint {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1px 4px;
+  font-size: 10px;
+  font-family: inherit;
+  border: 1px solid var(--border-medium);
+  border-radius: 3px;
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  line-height: 1.4;
+}
+
+/* ── View Bar (Twenty CRM filter/sort bar) ── */
+.viewBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--spacing-1) var(--spacing-2);
+  border-bottom: 1px solid var(--border-light);
+}
+
+.viewBarLeft {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+}
+
+.viewName {
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+}
+
+.viewBarRight {
+  display: flex;
+  gap: var(--spacing-1);
+}
+
+.viewBarButton {
+  padding: var(--spacing-1) var(--spacing-2);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  border: none;
+  border-radius: var(--border-radius-sm);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.viewBarButton:hover {
+  background: var(--bg-transparent-light);
+}
+
+/* ── Loading state in side panel tabs ── */
+.tabLoading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-6) var(--spacing-4);
+}
+
+/* ── Stats row inside side panel ── */
+.sidePanelStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-2);
+  padding: 0 var(--spacing-4);
+  margin-bottom: var(--spacing-3);
+}

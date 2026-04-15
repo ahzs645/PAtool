@@ -1,0 +1,4 @@
+ARCHIVE_BASE_URL=https://example.invalid/PurpleAir/v1
+PURPLEAIR_API_BASE=https://api.purpleair.com/v1
+PURPLEAIR_API_KEY=
+PURPLEAIR_READ_KEY=

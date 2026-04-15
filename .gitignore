@@ -1,0 +1,7 @@
+node_modules/
+app/dist/
+app/public/data/
+coverage/
+.DS_Store
+worker/.wrangler/
+*.log
