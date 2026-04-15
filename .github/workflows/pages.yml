@@ -29,19 +29,8 @@ jobs:
           node-version: "22"
           cache: "npm"
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-
-      - name: Install Python deps for fixture conversion
-        run: python3.13 -m pip install --target ../.tmp/pydeps pyreadr rdata numpy pandas
-
       - name: Install npm deps
         run: npm ci
-
-      - name: Convert fixtures
-        run: npm run fixtures:convert
 
       - name: Build Pages app
         run: npm run build:pages

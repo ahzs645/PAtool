@@ -13,9 +13,8 @@
 
 The published Pages build does not call `/api` at runtime. Instead it:
 
-1. Converts the original R fixtures from `../data/*.rda` into JSON.
-2. Copies those JSON files into `app/public/data/`.
-3. Uses a browser-side static adapter to emulate the app's API calls from local assets and shared TypeScript logic.
+1. Copies the committed generated fixture JSON into `app/public/data/`.
+2. Uses a browser-side static adapter to emulate the app's API calls from local assets and shared TypeScript logic.
 
 That means GitHub Pages can host the full demo as a static site.
 
@@ -25,7 +24,6 @@ From the `web-app/` directory:
 
 ```bash
 npm install
-npm run fixtures:convert
 npm run prepare:static-data
 npm run dev
 ```
@@ -35,7 +33,6 @@ The default development app still proxies `/api/*` to the local Worker on `http:
 ## GitHub Pages build
 
 ```bash
-npm run fixtures:convert
 npm run build:pages
 ```
 
@@ -43,5 +40,6 @@ The output is written to `app/dist/`.
 
 ## Notes
 
-- The original AirSensor R package remains in the parent repository.
+- The original AirSensor R package remains in the parent repository where this web workspace was first developed.
+- The committed `shared/src/generated/*.json` files are what make the public Pages deployment self-contained.
 - `worker/` is still useful for local API prototyping, but it is not required for the Pages deployment.

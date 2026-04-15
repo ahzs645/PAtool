@@ -38,6 +38,8 @@ Copy `worker/.dev.vars.example` to `worker/.dev.vars` and fill in real values wh
 
 The converter script reads the original R fixtures from `/Users/ahmadjalil/Downloads/AirSensor-master/data` and writes normalized JSON into `shared/src/generated`.
 
+For the standalone public `PAtool` repo, GitHub Pages uses the committed generated JSON already in `shared/src/generated`. Re-conversion is only needed when refreshing data from the original AirSensor source checkout.
+
 ```bash
 npm run fixtures:convert
 ```
