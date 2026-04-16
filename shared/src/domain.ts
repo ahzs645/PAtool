@@ -1213,6 +1213,7 @@ export type InterpolationGrid = {
 export type InterpolationMethod = "idw" | "kriging";
 
 const EARTH_RADIUS_KM = 6371;
+const EARTH_RADIUS_KM_SQUARED = EARTH_RADIUS_KM * EARTH_RADIUS_KM;
 
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
@@ -1225,6 +1226,29 @@ function approximateDistanceKm(ax: number, ay: number, bx: number, by: number): 
   const deltaLat = lat2 - lat1;
   const x = deltaLon * Math.cos((lat1 + lat2) / 2);
   return Math.sqrt(x * x + deltaLat * deltaLat) * EARTH_RADIUS_KM;
+}
+
+function approximateDistanceSquaredKm(ax: number, ay: number, bx: number, by: number): number {
+  const lat1 = toRadians(ay);
+  const lat2 = toRadians(by);
+  const deltaLon = toRadians(bx - ax);
+  const deltaLat = lat2 - lat1;
+  const x = deltaLon * Math.cos((lat1 + lat2) / 2);
+  return (x * x + deltaLat * deltaLat) * EARTH_RADIUS_KM_SQUARED;
+}
+
+function projectLongitudeKm(longitude: number, cosLatitude: number): number {
+  return toRadians(longitude) * cosLatitude * EARTH_RADIUS_KM;
+}
+
+function projectLatitudeKm(latitude: number): number {
+  return toRadians(latitude) * EARTH_RADIUS_KM;
+}
+
+function projectedDistanceSquaredKm(ax: number, ay: number, bx: number, by: number): number {
+  const deltaX = bx - ax;
+  const deltaY = by - ay;
+  return deltaX * deltaX + deltaY * deltaY;
 }
 
 function mergeCoincidentPoints(points: InterpolationPoint[]): InterpolationPoint[] {
@@ -1289,6 +1313,7 @@ export function idwInterpolate(
     : 0;
   const neighborDistances = neighborLimit > 0 ? new Float64Array(neighborLimit) : null;
   const neighborValues = neighborLimit > 0 ? new Float64Array(neighborLimit) : null;
+  const powerScale = power / 2;
 
   for (let row = 0; row < gridHeight; row++) {
     for (let col = 0; col < gridWidth; col++) {
@@ -1300,44 +1325,44 @@ export function idwInterpolate(
       let valueSum = 0;
       let neighborCount = 0;
       let worstNeighborSlot = 0;
-      let worstNeighborDistance = -Infinity;
+      let worstNeighborDistanceSq = -Infinity;
 
       for (const p of normalizedPoints) {
-        const dist = approximateDistanceKm(x, y, p.x, p.y);
+        const distSq = approximateDistanceSquaredKm(x, y, p.x, p.y);
 
-        if (dist < 1e-10) {
+        if (distSq < 1e-20) {
           values[row * gridWidth + col] = p.value;
           exactMatch = true;
           break;
         }
 
         if (neighborLimit === 0) {
-          const w = 1 / Math.pow(dist, power);
+          const w = power === 2 ? 1 / distSq : Math.pow(distSq, -powerScale);
           weightSum += w;
           valueSum += w * p.value;
           continue;
         }
 
         if (neighborCount < neighborLimit) {
-          neighborDistances![neighborCount] = dist;
+          neighborDistances![neighborCount] = distSq;
           neighborValues![neighborCount] = p.value;
-          if (dist > worstNeighborDistance) {
-            worstNeighborDistance = dist;
+          if (distSq > worstNeighborDistanceSq) {
+            worstNeighborDistanceSq = distSq;
             worstNeighborSlot = neighborCount;
           }
           neighborCount++;
           continue;
         }
 
-        if (dist < worstNeighborDistance) {
-          neighborDistances![worstNeighborSlot] = dist;
+        if (distSq < worstNeighborDistanceSq) {
+          neighborDistances![worstNeighborSlot] = distSq;
           neighborValues![worstNeighborSlot] = p.value;
 
-          worstNeighborDistance = neighborDistances![0];
+          worstNeighborDistanceSq = neighborDistances![0];
           worstNeighborSlot = 0;
           for (let slot = 1; slot < neighborCount; slot++) {
-            if (neighborDistances![slot] > worstNeighborDistance) {
-              worstNeighborDistance = neighborDistances![slot];
+            if (neighborDistances![slot] > worstNeighborDistanceSq) {
+              worstNeighborDistanceSq = neighborDistances![slot];
               worstNeighborSlot = slot;
             }
           }
@@ -1353,7 +1378,7 @@ export function idwInterpolate(
 
       if (neighborLimit > 0) {
         for (let i = 0; i < neighborCount; i++) {
-          const w = 1 / Math.pow(neighborDistances![i], power);
+          const w = power === 2 ? 1 / neighborDistances![i] : Math.pow(neighborDistances![i], -powerScale);
           weightSum += w;
           valueSum += w * neighborValues![i];
         }
@@ -1369,39 +1394,28 @@ export function idwInterpolate(
   return { width: gridWidth, height: gridHeight, bounds, values, min, max };
 }
 
-/** Compute experimental variogram from point data */
-function computeExperimentalVariogram(
-  points: InterpolationPoint[],
-  nBins: number = 15
+function computeExperimentalVariogramFromDistanceMatrix(
+  pointValues: Float64Array,
+  pairwiseDistances: Float64Array,
+  pointCount: number,
+  maxPairDist: number,
+  nBins: number = 15,
 ): Array<{ lag: number; gamma: number; count: number }> {
-  // Calculate all pairwise distances and squared differences
-  const pairs: Array<{ dist: number; sqDiff: number }> = [];
-  for (let i = 0; i < points.length; i++) {
-    for (let j = i + 1; j < points.length; j++) {
-      const dist = approximateDistanceKm(points[i].x, points[i].y, points[j].x, points[j].y);
-      const sqDiff = (points[i].value - points[j].value) ** 2;
-      pairs.push({ dist, sqDiff });
-    }
-  }
-
-  if (pairs.length === 0) return [];
-
-  // Bin by distance. Use a manual loop instead of Math.max(...arr) — with N points,
-  // pairs has O(N^2) entries, and spreading that many args blows the call stack.
-  let maxPairDist = 0;
-  for (const { dist } of pairs) {
-    if (dist > maxPairDist) maxPairDist = dist;
-  }
   if (maxPairDist <= 0) return [];
   const maxDist = maxPairDist / 2; // Use half max distance
   const binWidth = maxDist / nBins;
   const bins: Array<{ sum: number; count: number }> = Array.from({ length: nBins }, () => ({ sum: 0, count: 0 }));
 
-  for (const { dist, sqDiff } of pairs) {
-    if (dist > maxDist) continue;
-    const binIdx = Math.min(Math.floor(dist / binWidth), nBins - 1);
-    bins[binIdx].sum += sqDiff;
-    bins[binIdx].count++;
+  for (let i = 0; i < pointCount; i++) {
+    const rowOffset = i * pointCount;
+    for (let j = i + 1; j < pointCount; j++) {
+      const dist = pairwiseDistances[rowOffset + j];
+      if (dist > maxDist) continue;
+      const valueDiff = pointValues[i] - pointValues[j];
+      const binIdx = Math.min(Math.floor(dist / binWidth), nBins - 1);
+      bins[binIdx].sum += valueDiff * valueDiff;
+      bins[binIdx].count++;
+    }
   }
 
   return bins
@@ -1411,6 +1425,44 @@ function computeExperimentalVariogram(
       count: bin.count,
     }))
     .filter(b => b.count > 0);
+}
+
+function buildPairwiseDistanceMatrix(
+  pointXs: Float64Array,
+  pointYs: Float64Array,
+): { distances: Float64Array; maxDistance: number } {
+  const pointCount = pointXs.length;
+  const distances = new Float64Array(pointCount * pointCount);
+  let maxDistance = 0;
+
+  for (let i = 0; i < pointCount; i++) {
+    const rowOffset = i * pointCount;
+    for (let j = i + 1; j < pointCount; j++) {
+      const d = approximateDistanceKm(pointXs[i], pointYs[i], pointXs[j], pointYs[j]);
+      distances[rowOffset + j] = d;
+      distances[j * pointCount + i] = d;
+      if (d > maxDistance) maxDistance = d;
+    }
+  }
+
+  return { distances, maxDistance };
+}
+
+function convertPairwiseDistancesToSemivariances(
+  pairwiseDistances: Float64Array,
+  pointCount: number,
+  nugget: number,
+  sill: number,
+  range: number,
+): void {
+  for (let i = 0; i < pointCount; i++) {
+    const rowOffset = i * pointCount;
+    for (let j = i + 1; j < pointCount; j++) {
+      const gamma = sphericalVariogram(pairwiseDistances[rowOffset + j], nugget, sill, range);
+      pairwiseDistances[rowOffset + j] = gamma;
+      pairwiseDistances[j * pointCount + i] = gamma;
+    }
+  }
 }
 
 /** Fit spherical variogram model: returns { nugget, sill, range } */
@@ -1620,39 +1672,40 @@ function solveFactoredLinearSystem(
 function selectNearestPointIndexes(
   x: number,
   y: number,
-  pointXs: Float64Array,
-  pointYs: Float64Array,
+  pointProjectedXs: Float64Array,
+  pointProjectedYs: Float64Array,
   maxNeighbors: number,
   outIndexes: Int32Array,
-  outDistances: Float64Array,
+  outDistanceSquares: Float64Array,
 ): number {
   let neighborCount = 0;
   let worstNeighborSlot = 0;
-  let worstNeighborDistance = -Infinity;
+  let worstNeighborDistanceSq = -Infinity;
 
-  for (let i = 0; i < pointXs.length; i++) {
-    const dist = approximateDistanceKm(x, y, pointXs[i], pointYs[i]);
+  for (let i = 0; i < pointProjectedXs.length; i++) {
+    const distSq = projectedDistanceSquaredKm(x, y, pointProjectedXs[i], pointProjectedYs[i]);
 
     if (neighborCount < maxNeighbors) {
       outIndexes[neighborCount] = i;
-      outDistances[neighborCount] = dist;
-      if (dist > worstNeighborDistance) {
-        worstNeighborDistance = dist;
+      outDistanceSquares[neighborCount] = distSq;
+      if (distSq > worstNeighborDistanceSq) {
+        worstNeighborDistanceSq = distSq;
         worstNeighborSlot = neighborCount;
       }
       neighborCount++;
       continue;
     }
 
-    if (dist < worstNeighborDistance) {
+    if (distSq < worstNeighborDistanceSq) {
       outIndexes[worstNeighborSlot] = i;
-      outDistances[worstNeighborSlot] = dist;
+      outDistanceSquares[worstNeighborSlot] = distSq;
 
-      worstNeighborDistance = outDistances[0];
+      worstNeighborDistanceSq = outDistanceSquares[0];
       worstNeighborSlot = 0;
       for (let slot = 1; slot < neighborCount; slot++) {
-        if (outDistances[slot] > worstNeighborDistance) {
-          worstNeighborDistance = outDistances[slot];
+        const slotDistanceSq = outDistanceSquares[slot];
+        if (slotDistanceSq > worstNeighborDistanceSq) {
+          worstNeighborDistanceSq = slotDistanceSq;
           worstNeighborSlot = slot;
         }
       }
@@ -1669,6 +1722,9 @@ function interpolateKrigingTiles(
   bounds: { west: number; east: number; south: number; north: number },
   pointXs: Float64Array,
   pointYs: Float64Array,
+  projectionCosLat: number,
+  pointProjectedXs: Float64Array,
+  pointProjectedYs: Float64Array,
   pointValues: Float64Array,
   pairwiseSemivariance: Float64Array,
   nugget: number,
@@ -1683,7 +1739,7 @@ function interpolateKrigingTiles(
   const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
   const maxSystemSize = maxNeighbors + 1;
   const neighborIndexes = new Int32Array(maxNeighbors);
-  const neighborDistances = new Float64Array(maxNeighbors);
+  const neighborDistanceSquares = new Float64Array(maxNeighbors);
   const matrix = new Float64Array(maxSystemSize * maxSystemSize);
   const pivots = new Int32Array(maxSystemSize);
   const rhs = new Float64Array(maxSystemSize);
@@ -1700,14 +1756,16 @@ function interpolateKrigingTiles(
       const colEnd = Math.min(colStart + tileSize, gridWidth);
       const centerCol = (colStart + colEnd - 1) / 2;
       const centerX = bounds.west + centerCol * lonStep;
+      const centerProjectedX = projectLongitudeKm(centerX, projectionCosLat);
+      const centerProjectedY = projectLatitudeKm(centerY);
       const nn = selectNearestPointIndexes(
-        centerX,
-        centerY,
-        pointXs,
-        pointYs,
+        centerProjectedX,
+        centerProjectedY,
+        pointProjectedXs,
+        pointProjectedYs,
         maxNeighbors,
         neighborIndexes,
-        neighborDistances,
+        neighborDistanceSquares,
       );
 
       if (nn < 2) {
@@ -1817,34 +1875,42 @@ export function ordinaryKrigingInterpolate(
     return { width: gridWidth, height: gridHeight, bounds, values, min: 0, max: 0 };
   }
 
+  const pointCount = normalizedPoints.length;
+  const pointXs = new Float64Array(pointCount);
+  const pointYs = new Float64Array(pointCount);
+  const pointProjectedXs = new Float64Array(pointCount);
+  const pointProjectedYs = new Float64Array(pointCount);
+  const pointValues = new Float64Array(pointCount);
+  // Rank candidate neighborhoods in a fixed local projection; solve distances still use the geographic metric.
+  const projectionCosLat = Math.cos(toRadians((bounds.south + bounds.north) / 2));
+  for (let i = 0; i < pointCount; i++) {
+    const x = normalizedPoints[i].x;
+    const y = normalizedPoints[i].y;
+    pointXs[i] = x;
+    pointYs[i] = y;
+    pointProjectedXs[i] = projectLongitudeKm(x, projectionCosLat);
+    pointProjectedYs[i] = projectLatitudeKm(y);
+    pointValues[i] = normalizedPoints[i].value;
+  }
+
+  const pairwiseDistances = buildPairwiseDistanceMatrix(pointXs, pointYs);
+
   // Step 1: Compute experimental variogram
-  const experimental = computeExperimentalVariogram(normalizedPoints);
+  const experimental = computeExperimentalVariogramFromDistanceMatrix(
+    pointValues,
+    pairwiseDistances.distances,
+    pointCount,
+    pairwiseDistances.maxDistance,
+  );
 
   // Step 2: Fit spherical model
   const { nugget, sill, range } = fitSphericalVariogram(experimental);
 
-  const pointCount = normalizedPoints.length;
-  const pointXs = new Float64Array(pointCount);
-  const pointYs = new Float64Array(pointCount);
-  const pointValues = new Float64Array(pointCount);
-  for (let i = 0; i < pointCount; i++) {
-    pointXs[i] = normalizedPoints[i].x;
-    pointYs[i] = normalizedPoints[i].y;
-    pointValues[i] = normalizedPoints[i].value;
-  }
-
   const neighborLimit = Math.max(1, Math.min(maxNeighbors > 0 ? maxNeighbors : pointCount, pointCount));
   const neighborIndexes = new Int32Array(neighborLimit);
   const neighborDistances = new Float64Array(neighborLimit);
-  const pairwiseSemivariance = new Float64Array(pointCount * pointCount);
-  for (let i = 0; i < pointCount; i++) {
-    for (let j = i + 1; j < pointCount; j++) {
-      const d = approximateDistanceKm(pointXs[i], pointYs[i], pointXs[j], pointYs[j]);
-      const gamma = sphericalVariogram(d, nugget, sill, range);
-      pairwiseSemivariance[i * pointCount + j] = gamma;
-      pairwiseSemivariance[j * pointCount + i] = gamma;
-    }
-  }
+  const pairwiseSemivariance = pairwiseDistances.distances;
+  convertPairwiseDistancesToSemivariances(pairwiseSemivariance, pointCount, nugget, sill, range);
 
   const maxSystemSize = neighborLimit + 1;
   const aug = new Float64Array(maxSystemSize * (maxSystemSize + 1));
@@ -1859,6 +1925,9 @@ export function ordinaryKrigingInterpolate(
       bounds,
       pointXs,
       pointYs,
+      projectionCosLat,
+      pointProjectedXs,
+      pointProjectedYs,
       pointValues,
       pairwiseSemivariance,
       nugget,
@@ -1880,39 +1949,41 @@ export function ordinaryKrigingInterpolate(
     for (let col = 0; col < gridWidth; col++) {
       const x = bounds.west + col * lonStep;
       const y = bounds.south + row * latStep;
+      const projectedX = projectLongitudeKm(x, projectionCosLat);
+      const projectedY = projectLatitudeKm(y);
 
       let neighborCount = 0;
       let worstNeighborSlot = 0;
-      let worstNeighborDistance = -Infinity;
+      let worstNeighborDistanceSq = -Infinity;
       let exactMatchIndex = -1;
 
       for (let i = 0; i < pointCount; i++) {
-        const dist = approximateDistanceKm(x, y, pointXs[i], pointYs[i]);
-        if (dist < 1e-10) {
+        const distSq = projectedDistanceSquaredKm(projectedX, projectedY, pointProjectedXs[i], pointProjectedYs[i]);
+        if (distSq < 1e-20) {
           exactMatchIndex = i;
           break;
         }
 
         if (neighborCount < neighborLimit) {
           neighborIndexes[neighborCount] = i;
-          neighborDistances[neighborCount] = dist;
-          if (dist > worstNeighborDistance) {
-            worstNeighborDistance = dist;
+          neighborDistances[neighborCount] = distSq;
+          if (distSq > worstNeighborDistanceSq) {
+            worstNeighborDistanceSq = distSq;
             worstNeighborSlot = neighborCount;
           }
           neighborCount++;
           continue;
         }
 
-        if (dist < worstNeighborDistance) {
+        if (distSq < worstNeighborDistanceSq) {
           neighborIndexes[worstNeighborSlot] = i;
-          neighborDistances[worstNeighborSlot] = dist;
+          neighborDistances[worstNeighborSlot] = distSq;
 
-          worstNeighborDistance = neighborDistances[0];
+          worstNeighborDistanceSq = neighborDistances[0];
           worstNeighborSlot = 0;
           for (let slot = 1; slot < neighborCount; slot++) {
-            if (neighborDistances[slot] > worstNeighborDistance) {
-              worstNeighborDistance = neighborDistances[slot];
+            if (neighborDistances[slot] > worstNeighborDistanceSq) {
+              worstNeighborDistanceSq = neighborDistances[slot];
               worstNeighborSlot = slot;
             }
           }
@@ -1941,6 +2012,10 @@ export function ordinaryKrigingInterpolate(
       const size = nn + 1;
       const stride = size + 1;
       const diagonalJitter = Math.max((nugget + sill) * 1e-6, 1e-8);
+      for (let i = 0; i < nn; i++) {
+        const pointIndex = neighborIndexes[i];
+        neighborDistances[i] = approximateDistanceKm(x, y, pointXs[pointIndex], pointYs[pointIndex]);
+      }
 
       // Fill K matrix (semivariance between known points)
       for (let i = 0; i < nn; i++) {

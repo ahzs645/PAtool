@@ -74,13 +74,13 @@ function toRadians(value: number): number {
   return (value * Math.PI) / 180;
 }
 
-function approximateDistanceKm(ax: number, ay: number, bx: number, by: number): number {
+function approximateDistanceSquaredKm(ax: number, ay: number, bx: number, by: number): number {
   const lat1 = toRadians(ay);
   const lat2 = toRadians(by);
   const deltaLon = toRadians(bx - ax);
   const deltaLat = lat2 - lat1;
   const x = deltaLon * Math.cos((lat1 + lat2) / 2);
-  return Math.sqrt(x * x + deltaLat * deltaLat) * 6371;
+  return (x * x + deltaLat * deltaLat) * 6371 * 6371;
 }
 
 function expandBounds(bounds: InterpolationBounds, paddingRatio: number): InterpolationBounds {
@@ -158,6 +158,14 @@ function deriveKrigingNeighborCount(zoom: number | null): number {
   return DEFAULT_KRIGING_NEIGHBORS;
 }
 
+function deriveKrigingTileSize(zoom: number | null): number {
+  if (zoom == null) return DEFAULT_KRIGING_TILE_SIZE;
+  if (zoom < 3.5) return 8;
+  if (zoom < 5) return 6;
+  if (zoom < 6) return 5;
+  return DEFAULT_KRIGING_TILE_SIZE;
+}
+
 function selectInterpolationPoints(
   points: InterpolationPoint[],
   bounds: InterpolationBounds,
@@ -172,7 +180,7 @@ function selectInterpolationPoints(
     point,
     visible: pointInBounds(point, bounds),
     nearby: pointInBounds(point, paddedBounds),
-    distanceKm: approximateDistanceKm(centerX, centerY, point.x, point.y),
+    distanceScore: approximateDistanceSquaredKm(centerX, centerY, point.x, point.y),
   }));
 
   let candidates = scored.filter((item) => item.nearby);
@@ -182,7 +190,7 @@ function selectInterpolationPoints(
 
   candidates.sort((left, right) => {
     if (left.visible !== right.visible) return left.visible ? -1 : 1;
-    return left.distanceKm - right.distanceKm;
+    return left.distanceScore - right.distanceScore;
   });
 
   return {
@@ -328,7 +336,7 @@ export default function MapPage() {
       ? deriveKrigingNeighborCount(zoomForAdaptiveWork)
       : undefined;
     const krigingTileSize = interpMethod === "kriging"
-      ? DEFAULT_KRIGING_TILE_SIZE
+      ? deriveKrigingTileSize(zoomForAdaptiveWork)
       : undefined;
     const { width, height } = deriveGridDimensions(adjustedGridRes, mapSize);
     return {
