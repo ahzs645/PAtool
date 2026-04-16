@@ -1343,6 +1343,48 @@ export type InterpolationGrid = {
 
 export type InterpolationMethod = "idw" | "kriging";
 
+const EARTH_RADIUS_KM = 6371;
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function approximateDistanceKm(ax: number, ay: number, bx: number, by: number): number {
+  const lat1 = toRadians(ay);
+  const lat2 = toRadians(by);
+  const deltaLon = toRadians(bx - ax);
+  const deltaLat = lat2 - lat1;
+  const x = deltaLon * Math.cos((lat1 + lat2) / 2);
+  return Math.sqrt(x * x + deltaLat * deltaLat) * EARTH_RADIUS_KM;
+}
+
+function mergeCoincidentPoints(points: InterpolationPoint[]): InterpolationPoint[] {
+  const merged = new Map<string, { x: number; y: number; total: number; count: number }>();
+
+  for (const point of points) {
+    const key = `${point.x}|${point.y}`;
+    const existing = merged.get(key);
+    if (existing) {
+      existing.total += point.value;
+      existing.count += 1;
+      continue;
+    }
+
+    merged.set(key, {
+      x: point.x,
+      y: point.y,
+      total: point.value,
+      count: 1,
+    });
+  }
+
+  return Array.from(merged.values(), (entry) => ({
+    x: entry.x,
+    y: entry.y,
+    value: entry.total / entry.count,
+  }));
+}
+
 export function idwInterpolate(
   knownPoints: InterpolationPoint[],
   gridWidth: number,
@@ -1351,11 +1393,28 @@ export function idwInterpolate(
   power: number = 2,
   maxNeighbors: number = -1 // -1 = use all
 ): InterpolationGrid {
+  const normalizedPoints = mergeCoincidentPoints(knownPoints);
+
+  if (gridWidth < 1 || gridHeight < 1) {
+    return {
+      width: gridWidth,
+      height: gridHeight,
+      bounds,
+      values: new Float64Array(0),
+      min: 0,
+      max: 0,
+    };
+  }
+
   const values = new Float64Array(gridWidth * gridHeight);
+  if (normalizedPoints.length === 0) {
+    return { width: gridWidth, height: gridHeight, bounds, values, min: 0, max: 0 };
+  }
+
   let min = Infinity, max = -Infinity;
 
-  const lonStep = (bounds.east - bounds.west) / (gridWidth - 1);
-  const latStep = (bounds.north - bounds.south) / (gridHeight - 1);
+  const lonStep = gridWidth > 1 ? (bounds.east - bounds.west) / (gridWidth - 1) : 0;
+  const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
 
   for (let row = 0; row < gridHeight; row++) {
     for (let col = 0; col < gridWidth; col++) {
@@ -1366,10 +1425,8 @@ export function idwInterpolate(
       let distances: Array<{ dist: number; value: number }> = [];
       let exactMatch = false;
 
-      for (const p of knownPoints) {
-        const dx = x - p.x;
-        const dy = y - p.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
+      for (const p of normalizedPoints) {
+        const dist = approximateDistanceKm(x, y, p.x, p.y);
 
         if (dist < 1e-10) {
           values[row * gridWidth + col] = p.value;
@@ -1420,9 +1477,7 @@ function computeExperimentalVariogram(
   const pairs: Array<{ dist: number; sqDiff: number }> = [];
   for (let i = 0; i < points.length; i++) {
     for (let j = i + 1; j < points.length; j++) {
-      const dx = points[i].x - points[j].x;
-      const dy = points[i].y - points[j].y;
-      const dist = Math.sqrt(dx * dx + dy * dy);
+      const dist = approximateDistanceKm(points[i].x, points[i].y, points[j].x, points[j].y);
       const sqDiff = (points[i].value - points[j].value) ** 2;
       pairs.push({ dist, sqDiff });
     }
@@ -1436,11 +1491,13 @@ function computeExperimentalVariogram(
   for (const { dist } of pairs) {
     if (dist > maxPairDist) maxPairDist = dist;
   }
+  if (maxPairDist <= 0) return [];
   const maxDist = maxPairDist / 2; // Use half max distance
   const binWidth = maxDist / nBins;
   const bins: Array<{ sum: number; count: number }> = Array.from({ length: nBins }, () => ({ sum: 0, count: 0 }));
 
   for (const { dist, sqDiff } of pairs) {
+    if (dist > maxDist) continue;
     const binIdx = Math.min(Math.floor(dist / binWidth), nBins - 1);
     bins[binIdx].sum += sqDiff;
     bins[binIdx].count++;
@@ -1457,26 +1514,52 @@ function computeExperimentalVariogram(
 
 /** Fit spherical variogram model: returns { nugget, sill, range } */
 function fitSphericalVariogram(
-  experimental: Array<{ lag: number; gamma: number }>
+  experimental: Array<{ lag: number; gamma: number; count: number }>
 ): { nugget: number; sill: number; range: number } {
   if (experimental.length === 0) return { nugget: 0, sill: 1, range: 1 };
 
-  // Simple estimation:
-  // nugget = first bin gamma (or 0)
-  // sill = max gamma
-  // range = lag where gamma reaches ~95% of sill
-  const nugget = Math.max(0, experimental[0].gamma * 0.5);
-  const sill = Math.max(...experimental.map(e => e.gamma));
+  const sorted = [...experimental].sort((left, right) => left.lag - right.lag);
+  const firstGamma = sorted.find((entry) => entry.gamma > 0)?.gamma ?? 0;
+  const maxGamma = Math.max(...sorted.map((entry) => entry.gamma), 1e-6);
+  const upperTail = sorted.slice(Math.max(0, Math.floor(sorted.length * 0.6)));
+  const upperTailMean = upperTail.reduce((sum, entry) => sum + entry.gamma, 0) / Math.max(upperTail.length, 1);
+  const totalSillCandidates = Array.from(new Set([
+    maxGamma,
+    upperTailMean,
+    Math.max(maxGamma * 0.9, firstGamma),
+  ].map((value) => Number(value.toFixed(6))))).filter((value) => value > 0);
+  const nuggetCandidates = Array.from(new Set([
+    0,
+    firstGamma * 0.25,
+    firstGamma * 0.5,
+  ].map((value) => Number(Math.max(0, value).toFixed(6)))));
 
-  let range = experimental[experimental.length - 1].lag;
-  for (const e of experimental) {
-    if (e.gamma >= sill * 0.95) {
-      range = e.lag;
-      break;
+  let bestModel = { nugget: 0, sill: Math.max(maxGamma, 1e-6), range: Math.max(sorted.at(-1)?.lag ?? 1, 1e-3) };
+  let bestScore = Infinity;
+
+  for (const totalSill of totalSillCandidates) {
+    for (const nugget of nuggetCandidates) {
+      const partialSill = Math.max(totalSill - nugget, 1e-6);
+      for (const candidate of sorted) {
+        const range = Math.max(candidate.lag, 1e-3);
+        let score = 0;
+
+        for (const entry of sorted) {
+          const modeled = sphericalVariogram(entry.lag, nugget, partialSill, range);
+          const residual = entry.gamma - modeled;
+          const weight = entry.count / Math.max(entry.lag * entry.lag, 1);
+          score += weight * residual * residual;
+        }
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestModel = { nugget, sill: partialSill, range };
+        }
+      }
     }
   }
 
-  return { nugget, sill: sill - nugget, range: Math.max(range, 0.001) };
+  return bestModel;
 }
 
 /** Spherical variogram model */
@@ -1504,7 +1587,8 @@ function solveLinearSystem(A: number[][], b: number[]): number[] | null {
         maxRow = row;
       }
     }
-    if (maxVal < 1e-12) return null; // Singular
+    const rowScale = aug[maxRow].reduce((sum, value) => sum + Math.abs(value), 0);
+    if (maxVal <= Math.max(1e-12, rowScale * 1e-10)) return null; // Singular or ill-conditioned
 
     // Swap rows
     [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
@@ -1538,18 +1622,35 @@ export function ordinaryKrigingInterpolate(
   bounds: { west: number; east: number; south: number; north: number },
   maxNeighbors: number = 12
 ): InterpolationGrid {
+  const normalizedPoints = mergeCoincidentPoints(knownPoints);
+
+  if (gridWidth < 1 || gridHeight < 1) {
+    return {
+      width: gridWidth,
+      height: gridHeight,
+      bounds,
+      values: new Float64Array(0),
+      min: 0,
+      max: 0,
+    };
+  }
+
+  const values = new Float64Array(gridWidth * gridHeight);
+  if (normalizedPoints.length === 0) {
+    return { width: gridWidth, height: gridHeight, bounds, values, min: 0, max: 0 };
+  }
+
   // Step 1: Compute experimental variogram
-  const experimental = computeExperimentalVariogram(knownPoints);
+  const experimental = computeExperimentalVariogram(normalizedPoints);
 
   // Step 2: Fit spherical model
   const { nugget, sill, range } = fitSphericalVariogram(experimental);
 
   // Step 3: Interpolate each grid point
-  const values = new Float64Array(gridWidth * gridHeight);
   let min = Infinity, max = -Infinity;
 
-  const lonStep = (bounds.east - bounds.west) / (gridWidth - 1);
-  const latStep = (bounds.north - bounds.south) / (gridHeight - 1);
+  const lonStep = gridWidth > 1 ? (bounds.east - bounds.west) / (gridWidth - 1) : 0;
+  const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
 
   for (let row = 0; row < gridHeight; row++) {
     for (let col = 0; col < gridWidth; col++) {
@@ -1557,9 +1658,9 @@ export function ordinaryKrigingInterpolate(
       const y = bounds.south + row * latStep;
 
       // Find n closest neighbors
-      let neighbors = knownPoints.map((p, _i) => ({
+      let neighbors = normalizedPoints.map((p, _i) => ({
         idx: _i,
-        dist: Math.sqrt((x - p.x) ** 2 + (y - p.y) ** 2),
+        dist: approximateDistanceKm(x, y, p.x, p.y),
         value: p.value,
         x: p.x,
         y: p.y,
@@ -1588,6 +1689,7 @@ export function ordinaryKrigingInterpolate(
       // Build kriging system: (nn+1) x (nn+1) augmented with Lagrange
       const size = nn + 1;
       const K: number[][] = [];
+      const diagonalJitter = Math.max((nugget + sill) * 1e-6, 1e-8);
       for (let i = 0; i < size; i++) {
         K[i] = new Array(size).fill(0);
       }
@@ -1597,11 +1699,13 @@ export function ordinaryKrigingInterpolate(
       for (let i = 0; i < nn; i++) {
         for (let j = 0; j < nn; j++) {
           if (i === j) {
-            K[i][j] = 0; // gamma(0) = 0 for kriging matrix diagonal
+            K[i][j] = diagonalJitter;
           } else {
-            const d = Math.sqrt(
-              (neighbors[i].x - neighbors[j].x) ** 2 +
-              (neighbors[i].y - neighbors[j].y) ** 2
+            const d = approximateDistanceKm(
+              neighbors[i].x,
+              neighbors[i].y,
+              neighbors[j].x,
+              neighbors[j].y,
             );
             K[i][j] = sphericalVariogram(d, nugget, sill, range);
           }
@@ -1635,7 +1739,7 @@ export function ordinaryKrigingInterpolate(
         for (let i = 0; i < nn; i++) {
           v += weights[i] * neighbors[i].value;
         }
-        values[row * gridWidth + col] = v;
+        values[row * gridWidth + col] = Number.isFinite(v) ? v : neighbors[0]?.value ?? 0;
       }
 
       const v = values[row * gridWidth + col];
@@ -1676,7 +1780,7 @@ export function pm25ToAqi(pm25: number): number {
   return 0;
 }
 
-/** Convert interpolated value to AQI RGBA color */
+/** Convert AQI to RGBA color */
 export function aqiToColor(aqi: number): [number, number, number, number] {
   // EPA AQI color breakpoints matching AQI_Map project
   if (aqi <= 50) {
@@ -1721,7 +1825,7 @@ export function gridToImageData(
     let color: [number, number, number, number];
 
     if (useAqi) {
-      color = aqiToColor(v);
+      color = aqiToColor(pm25ToAqi(v));
     } else {
       // Generic gradient: blue -> green -> yellow -> red
       const t = grid.max > grid.min ? (v - grid.min) / (grid.max - grid.min) : 0;

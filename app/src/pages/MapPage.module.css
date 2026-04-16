@@ -3,6 +3,7 @@
   flex-direction: column;
   gap: var(--spacing-2);
   height: calc(100vh - 48px);
+  height: calc(100dvh - 48px);
   overflow: hidden;
 }
 
@@ -61,9 +62,13 @@
 }
 
 .mapWrap {
+  position: relative;
   flex: 1 1 auto;
   border-radius: var(--border-radius-md);
   overflow: hidden;
+  background:
+    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 35%),
+    var(--bg-secondary);
 }
 
 .map {
@@ -103,6 +108,7 @@
   display: flex;
   gap: var(--spacing-2);
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .rangeInput {
@@ -122,6 +128,38 @@
   font-weight: var(--font-weight-medium);
 }
 
+.heatmapStatus {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  align-items: center;
+}
+
+.statusPill,
+.statusPillMuted,
+.statusPillError {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 var(--spacing-2);
+  border-radius: 999px;
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border-medium);
+  background: color-mix(in srgb, var(--bg-primary) 88%, var(--accent-primary) 12%);
+  color: var(--text-secondary);
+}
+
+.statusPillMuted {
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+}
+
+.statusPillError {
+  background: color-mix(in srgb, #b91c1c 12%, var(--bg-primary));
+  color: #991b1b;
+  border-color: color-mix(in srgb, #b91c1c 25%, var(--border-medium));
+}
+
 .legend {
   position: absolute;
   bottom: var(--spacing-4);
@@ -138,7 +176,13 @@
   font-size: var(--font-size-xs);
   font-weight: var(--font-weight-semibold);
   color: var(--text-secondary);
+}
+
+.legendSubtitle {
+  margin-top: 2px;
   margin-bottom: var(--spacing-1);
+  font-size: var(--font-size-xxs);
+  color: var(--text-tertiary);
 }
 
 .legendBar {
@@ -160,4 +204,12 @@
   font-size: var(--font-size-xxs);
   color: var(--text-tertiary);
   margin-top: var(--spacing-0-5);
+}
+
+.legendMeta {
+  display: grid;
+  gap: 2px;
+  margin-top: var(--spacing-2);
+  font-size: var(--font-size-xxs);
+  color: var(--text-tertiary);
 }

@@ -1,22 +1,21 @@
-import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import maplibregl from "maplibre-gl";
 
 import {
   pasFilter,
-  pm25ToAqi,
   pm25ToAqiBand,
-  idwInterpolate,
-  ordinaryKrigingInterpolate,
   gridToImageData,
   type PasCollection,
   type PasRecord,
+  type InterpolationGrid,
   type InterpolationPoint,
   type InterpolationMethod,
 } from "@patool/shared";
 
 import { StatCard } from "../components";
 import { getJson } from "../lib/api";
+import type { InterpolationBounds, InterpolationWorkerResponse } from "../lib/interpolationProtocol";
 import { appPath } from "../lib/routing";
 import { useTheme } from "../hooks/useTheme";
 import styles from "./MapPage.module.css";
@@ -40,9 +39,134 @@ const STYLE_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.
 
 const LAYER_ID = "sensors-circles";
 const SOURCE_ID = "sensors";
+const HEATMAP_LAYER_ID = "heatmap-layer";
+const HEATMAP_SOURCE_ID = "heatmap-source";
+const MISSING_PM_COLOR = "#94a3b8";
+const MIN_INTERPOLATION_POINTS = 3;
+const VIEWPORT_PADDING_RATIO = 0.2;
+const MAX_GRID_EDGE = 384;
+const MAX_POINTS_BY_METHOD: Record<InterpolationMethod, number> = {
+  idw: 2400,
+  kriging: 400,
+};
 
-function getPm25ForWindow(record: PasRecord, window: Pm25Window): number {
-  return record[window] ?? record.pm25Current ?? 0;
+type MapSize = {
+  width: number;
+  height: number;
+};
+
+type InterpolationMeta = {
+  totalPoints: number;
+  pointsUsed: number;
+  gridWidth: number;
+  gridHeight: number;
+  capped: boolean;
+  durationMs?: number;
+  error?: string;
+};
+
+function toRadians(value: number): number {
+  return (value * Math.PI) / 180;
+}
+
+function approximateDistanceKm(ax: number, ay: number, bx: number, by: number): number {
+  const lat1 = toRadians(ay);
+  const lat2 = toRadians(by);
+  const deltaLon = toRadians(bx - ax);
+  const deltaLat = lat2 - lat1;
+  const x = deltaLon * Math.cos((lat1 + lat2) / 2);
+  return Math.sqrt(x * x + deltaLat * deltaLat) * 6371;
+}
+
+function expandBounds(bounds: InterpolationBounds, paddingRatio: number): InterpolationBounds {
+  const lonPad = Math.max((bounds.east - bounds.west) * paddingRatio, 0.05);
+  const latPad = Math.max((bounds.north - bounds.south) * paddingRatio, 0.05);
+
+  return {
+    west: bounds.west - lonPad,
+    east: bounds.east + lonPad,
+    south: bounds.south - latPad,
+    north: bounds.north + latPad,
+  };
+}
+
+function pointInBounds(point: InterpolationPoint, bounds: InterpolationBounds): boolean {
+  return (
+    point.x >= bounds.west
+    && point.x <= bounds.east
+    && point.y >= bounds.south
+    && point.y <= bounds.north
+  );
+}
+
+function getMapBounds(map: maplibregl.Map): InterpolationBounds {
+  const bounds = map.getBounds();
+  return {
+    west: bounds.getWest(),
+    east: bounds.getEast(),
+    south: bounds.getSouth(),
+    north: bounds.getNorth(),
+  };
+}
+
+function deriveGridDimensions(baseResolution: number, mapSize: MapSize): { width: number; height: number } {
+  const safeWidth = Math.max(mapSize.width, 1);
+  const safeHeight = Math.max(mapSize.height, 1);
+  const aspectRatio = safeWidth / safeHeight;
+
+  if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
+    return { width: baseResolution, height: baseResolution };
+  }
+
+  if (aspectRatio >= 1) {
+    return {
+      width: Math.min(MAX_GRID_EDGE, Math.max(2, Math.round(baseResolution * aspectRatio))),
+      height: Math.max(2, baseResolution),
+    };
+  }
+
+  return {
+    width: Math.max(2, baseResolution),
+    height: Math.min(MAX_GRID_EDGE, Math.max(2, Math.round(baseResolution / aspectRatio))),
+  };
+}
+
+function selectInterpolationPoints(
+  points: InterpolationPoint[],
+  bounds: InterpolationBounds,
+  method: InterpolationMethod,
+): { selected: InterpolationPoint[]; capped: boolean } {
+  const maxPoints = MAX_POINTS_BY_METHOD[method];
+  const paddedBounds = expandBounds(bounds, VIEWPORT_PADDING_RATIO);
+  const centerX = (bounds.west + bounds.east) / 2;
+  const centerY = (bounds.south + bounds.north) / 2;
+
+  const scored = points.map((point) => ({
+    point,
+    visible: pointInBounds(point, bounds),
+    nearby: pointInBounds(point, paddedBounds),
+    distanceKm: approximateDistanceKm(centerX, centerY, point.x, point.y),
+  }));
+
+  let candidates = scored.filter((item) => item.nearby);
+  if (candidates.length < MIN_INTERPOLATION_POINTS) {
+    candidates = scored;
+  }
+
+  candidates.sort((left, right) => {
+    if (left.visible !== right.visible) return left.visible ? -1 : 1;
+    return left.distanceKm - right.distanceKm;
+  });
+
+  return {
+    selected: candidates.slice(0, maxPoints).map((item) => item.point),
+    capped: candidates.length > maxPoints,
+  };
+}
+
+function getPm25ValueForWindow(record: PasRecord, window: Pm25Window): number | null {
+  const value = record[window] ?? record.pm25Current;
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function buildGeoJson(
@@ -60,8 +184,11 @@ function buildGeoJson(
       properties: {
         id: r.id,
         label: r.label,
-        pm25: getPm25ForWindow(r, pm25Window).toFixed(2),
-        color: pm25ToAqiBand(getPm25ForWindow(r, pm25Window)).color,
+        pm25: getPm25ValueForWindow(r, pm25Window)?.toFixed(2) ?? "NA",
+        color: (() => {
+          const pm25 = getPm25ValueForWindow(r, pm25Window);
+          return pm25 == null ? MISSING_PM_COLOR : pm25ToAqiBand(pm25).color;
+        })(),
         stateCode: r.stateCode ?? "NA",
       },
     })),
@@ -71,6 +198,9 @@ function buildGeoJson(
 export default function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const heatmapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const interpolationWorkerRef = useRef<Worker | null>(null);
+  const interpolationJobIdRef = useRef(0);
   const { theme } = useTheme();
 
   const [query, setQuery] = useState("");
@@ -81,6 +211,11 @@ export default function MapPage() {
   const [gridRes, setGridRes] = useState(100);
   const [idwPower, setIdwPower] = useState(2);
   const [followView, setFollowView] = useState(true);
+  const [styleReloadTick, setStyleReloadTick] = useState(0);
+  const [mapSize, setMapSize] = useState<MapSize>({ width: 1, height: 1 });
+  const [interpolationResult, setInterpolationResult] = useState<InterpolationGrid | null>(null);
+  const [interpolationMeta, setInterpolationMeta] = useState<InterpolationMeta | null>(null);
+  const [isComputing, setIsComputing] = useState(false);
   const [viewBounds, setViewBounds] = useState<{
     west: number;
     east: number;
@@ -113,28 +248,39 @@ export default function MapPage() {
   const geojsonRef = useRef(geojson);
   geojsonRef.current = geojson;
 
-  const interpolationResult = useMemo(() => {
-    if (mapMode !== "heatmap" || !filtered) return null;
+  const interpolationPoints = useMemo(() => {
+    if (!filtered) return [];
 
-    // Convert PM2.5 (ug/m3) -> AQI so interpolated values align with the AQI color scale.
-    // Without this, typical PM2.5 values (~10-30 ug/m3) all fall in the 0-50 "Good/Green" bucket.
-    const points: InterpolationPoint[] = filtered.records.map((r) => ({
-      x: r.longitude,
-      y: r.latitude,
-      value: pm25ToAqi(getPm25ForWindow(r, pm25Window)),
-    }));
+    return filtered.records.flatMap((record): InterpolationPoint[] => {
+      const pm25 = getPm25ValueForWindow(record, pm25Window);
+      if (
+        pm25 == null
+        || !Number.isFinite(record.longitude)
+        || !Number.isFinite(record.latitude)
+      ) {
+        return [];
+      }
 
-    if (points.length < 3) return null;
+      return [{
+        x: record.longitude,
+        y: record.latitude,
+        value: pm25,
+      }];
+    });
+  }, [filtered, pm25Window]);
+
+  const interpolationWorkload = useMemo(() => {
+    if (mapMode !== "heatmap" || interpolationPoints.length < MIN_INTERPOLATION_POINTS) return null;
 
     // Bounds: follow the map viewport when enabled, otherwise use the data envelope.
     // Viewport-bound grids give high-resolution detail as the user zooms in, since the
     // same NxN grid now covers a smaller area.
-    let bounds: { west: number; east: number; south: number; north: number };
+    let bounds: InterpolationBounds;
     if (followView && viewBounds) {
       bounds = viewBounds;
     } else {
-      const lons = points.map((p) => p.x);
-      const lats = points.map((p) => p.y);
+      const lons = interpolationPoints.map((p) => p.x);
+      const lats = interpolationPoints.map((p) => p.y);
       const pad = 0.5; // degree padding around data envelope
       bounds = {
         west: Math.min(...lons) - pad,
@@ -144,14 +290,94 @@ export default function MapPage() {
       };
     }
 
-    if (interpMethod === "idw") {
-      return idwInterpolate(points, gridRes, gridRes, bounds, idwPower);
-    } else {
-      return ordinaryKrigingInterpolate(points, gridRes, gridRes, bounds);
-    }
+    const { selected, capped } = selectInterpolationPoints(interpolationPoints, bounds, interpMethod);
+    if (selected.length < MIN_INTERPOLATION_POINTS) return null;
+
+    const { width, height } = deriveGridDimensions(gridRes, mapSize);
+    return {
+      bounds,
+      points: selected,
+      gridWidth: width,
+      gridHeight: height,
+      totalPoints: interpolationPoints.length,
+      capped,
+    };
     // recomputeTick is intentionally a dep so the manual "Recompute" button re-runs this
     // even when bounds/params are unchanged.
-  }, [mapMode, filtered, pm25Window, interpMethod, gridRes, idwPower, followView, viewBounds, recomputeTick]);
+  }, [mapMode, interpolationPoints, interpMethod, gridRes, mapSize, followView, viewBounds, recomputeTick]);
+
+  useEffect(() => {
+    const worker = new Worker(new URL("../workers/interpolation.worker.ts", import.meta.url), { type: "module" });
+    interpolationWorkerRef.current = worker;
+
+    worker.onmessage = (event: MessageEvent<InterpolationWorkerResponse>) => {
+      const response = event.data;
+      if (response.jobId !== interpolationJobIdRef.current) return;
+
+      startTransition(() => {
+        if (!response.ok) {
+          setIsComputing(false);
+          setInterpolationResult(null);
+          setInterpolationMeta((previous) => (
+            previous
+              ? { ...previous, durationMs: response.durationMs, error: response.error }
+              : previous
+          ));
+          return;
+        }
+
+        setIsComputing(false);
+        setInterpolationResult({
+          ...response.result,
+          values: new Float64Array(response.result.values),
+        });
+        setInterpolationMeta((previous) => (
+          previous
+            ? { ...previous, durationMs: response.durationMs, error: undefined }
+            : previous
+        ));
+      });
+    };
+
+    return () => {
+      worker.terminate();
+      interpolationWorkerRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const worker = interpolationWorkerRef.current;
+    if (!worker) return;
+
+    if (!interpolationWorkload) {
+      setIsComputing(false);
+      setInterpolationResult(null);
+      setInterpolationMeta(null);
+      return;
+    }
+
+    const jobId = interpolationJobIdRef.current + 1;
+    interpolationJobIdRef.current = jobId;
+
+    setIsComputing(true);
+    setInterpolationMeta({
+      totalPoints: interpolationWorkload.totalPoints,
+      pointsUsed: interpolationWorkload.points.length,
+      gridWidth: interpolationWorkload.gridWidth,
+      gridHeight: interpolationWorkload.gridHeight,
+      capped: interpolationWorkload.capped,
+    });
+
+    worker.postMessage({
+      jobId,
+      method: interpMethod,
+      points: interpolationWorkload.points,
+      bounds: interpolationWorkload.bounds,
+      gridWidth: interpolationWorkload.gridWidth,
+      gridHeight: interpolationWorkload.gridHeight,
+      idwPower,
+    });
+  }, [interpolationWorkload, interpMethod, idwPower]);
 
   const addSensorLayer = useCallback((map: maplibregl.Map) => {
     if (map.getSource(SOURCE_ID)) return;
@@ -182,7 +408,7 @@ export default function MapPage() {
         .setLngLat(e.lngLat)
         .setHTML(
           `<strong>${props.label}</strong><br/>`
-          + `${props.pm25} ug/m3<br/>`
+          + `${props.pm25 === "NA" ? "PM2.5 unavailable" : `${props.pm25} ug/m3`}<br/>`
           + `<a href="${appPath(`/sensor/${props.id}`)}">Sensor detail</a> | `
           + `<a href="${appPath(`/diagnostics/${props.id}`)}">Diagnostics</a>`,
         )
@@ -196,6 +422,19 @@ export default function MapPage() {
       map.getCanvas().style.cursor = "";
     });
   }, []);
+
+  const syncSensorLayerPaint = useCallback((map: maplibregl.Map) => {
+    if (!map.isStyleLoaded() || !map.getLayer(LAYER_ID)) return;
+
+    if (mapMode === "heatmap") {
+      map.setPaintProperty(LAYER_ID, "circle-radius", 3);
+      map.setPaintProperty(LAYER_ID, "circle-opacity", 0.35);
+      return;
+    }
+
+    map.setPaintProperty(LAYER_ID, "circle-radius", 6);
+    map.setPaintProperty(LAYER_ID, "circle-opacity", 0.85);
+  }, [mapMode]);
 
   // Initialize map using a callback ref so it fires when the div mounts
   const mapContainerCallback = useCallback((node: HTMLDivElement | null) => {
@@ -232,6 +471,45 @@ export default function MapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const syncSize = () => {
+      const nextSize = {
+        width: Math.max(node.clientWidth, 1),
+        height: Math.max(node.clientHeight, 1),
+      };
+
+      setMapSize((previous) => (
+        previous.width === nextSize.width && previous.height === nextSize.height
+          ? previous
+          : nextSize
+      ));
+
+      const map = mapRef.current;
+      if (map) {
+        map.resize();
+        if (mapMode === "heatmap" && followView) {
+          setViewBounds(getMapBounds(map));
+        }
+      }
+    };
+
+    syncSize();
+
+    if (typeof ResizeObserver !== "undefined") {
+      const observer = new ResizeObserver(() => {
+        syncSize();
+      });
+      observer.observe(node);
+      return () => observer.disconnect();
+    }
+
+    window.addEventListener("resize", syncSize);
+    return () => window.removeEventListener("resize", syncSize);
+  }, [mapMode, followView]);
+
   // Update GeoJSON data when the filtered set changes
   useEffect(() => {
     const map = mapRef.current;
@@ -248,15 +526,13 @@ export default function MapPage() {
     if (!map) return;
 
     const style = theme === "dark" ? STYLE_DARK : STYLE_LIGHT;
-    map.setStyle(style, { diff: true });
-
     map.once("styledata", () => {
-      // Re-add source and layer after a style swap
-      if (!map.getSource(SOURCE_ID)) {
-        addSensorLayer(map);
-      }
+      addSensorLayer(map);
+      syncSensorLayerPaint(map);
+      setStyleReloadTick((tick) => tick + 1);
     });
-  }, [theme, addSensorLayer]);
+    map.setStyle(style, { diff: true });
+  }, [theme, addSensorLayer, syncSensorLayerPaint]);
 
   // Render heatmap overlay from interpolation result
   useEffect(() => {
@@ -265,18 +541,19 @@ export default function MapPage() {
 
     if (!interpolationResult) {
       // Remove heatmap layer if exists
-      if (map.getLayer("heatmap-layer")) map.removeLayer("heatmap-layer");
-      if (map.getSource("heatmap-source")) map.removeSource("heatmap-source");
+      if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
+      if (map.getSource(HEATMAP_SOURCE_ID)) map.removeSource(HEATMAP_SOURCE_ID);
       return;
     }
 
-    // Create canvas and draw interpolated image
-    const canvas = document.createElement("canvas");
+    // Reuse the backing canvas to avoid repeated allocations during pan/zoom.
+    const canvas = heatmapCanvasRef.current ?? document.createElement("canvas");
+    heatmapCanvasRef.current = canvas;
     canvas.width = interpolationResult.width;
     canvas.height = interpolationResult.height;
     const ctx = canvas.getContext("2d")!;
     const imageData = ctx.createImageData(interpolationResult.width, interpolationResult.height);
-    const colorData = gridToImageData(interpolationResult, true); // Use AQI colors
+    const colorData = gridToImageData(interpolationResult, true);
     imageData.data.set(colorData);
     ctx.putImageData(imageData, 0, 0);
 
@@ -290,11 +567,11 @@ export default function MapPage() {
     ];
 
     // Add or update the image source
-    const existingSource = map.getSource("heatmap-source") as maplibregl.ImageSource | undefined;
+    const existingSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.ImageSource | undefined;
     if (existingSource) {
       existingSource.updateImage({ url: dataUrl, coordinates });
     } else {
-      map.addSource("heatmap-source", {
+      map.addSource(HEATMAP_SOURCE_ID, {
         type: "image",
         url: dataUrl,
         coordinates,
@@ -304,40 +581,34 @@ export default function MapPage() {
       const beforeLayer = map.getLayer(LAYER_ID) ? LAYER_ID : undefined;
       map.addLayer(
         {
-          id: "heatmap-layer",
+          id: HEATMAP_LAYER_ID,
           type: "raster",
-          source: "heatmap-source",
+          source: HEATMAP_SOURCE_ID,
           paint: {
-            "raster-opacity": 0.7,
+            "raster-opacity": 0.74,
             "raster-fade-duration": 0,
+            "raster-resampling": "linear",
           },
         },
         beforeLayer,
       );
     }
-  }, [interpolationResult]);
+  }, [interpolationResult, styleReloadTick]);
 
   // Toggle sensor circle visibility based on map mode
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded() || !map.getLayer(LAYER_ID)) return;
-
-    if (mapMode === "heatmap") {
-      map.setPaintProperty(LAYER_ID, "circle-radius", 3);
-      map.setPaintProperty(LAYER_ID, "circle-opacity", 0.5);
-    } else {
-      map.setPaintProperty(LAYER_ID, "circle-radius", 6);
-      map.setPaintProperty(LAYER_ID, "circle-opacity", 0.85);
-    }
-  }, [mapMode]);
+    if (!map) return;
+    syncSensorLayerPaint(map);
+  }, [syncSensorLayerPaint, styleReloadTick]);
 
   // Cleanup heatmap layer when switching back to markers mode
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
     if (mapMode === "markers") {
-      if (map.getLayer("heatmap-layer")) map.removeLayer("heatmap-layer");
-      if (map.getSource("heatmap-source")) map.removeSource("heatmap-source");
+      if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
+      if (map.getSource(HEATMAP_SOURCE_ID)) map.removeSource(HEATMAP_SOURCE_ID);
     }
   }, [mapMode]);
 
@@ -351,25 +622,13 @@ export default function MapPage() {
     const updateBounds = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        const b = map.getBounds();
-        setViewBounds({
-          west: b.getWest(),
-          east: b.getEast(),
-          south: b.getSouth(),
-          north: b.getNorth(),
-        });
+        setViewBounds(getMapBounds(map));
       }, 200);
     };
 
     // Seed once for the current view, then subscribe to future moves.
     const seed = () => {
-      const b = map.getBounds();
-      setViewBounds({
-        west: b.getWest(),
-        east: b.getEast(),
-        south: b.getSouth(),
-        north: b.getNorth(),
-      });
+      setViewBounds(getMapBounds(map));
     };
     if (map.isStyleLoaded()) seed();
     else map.once("load", seed);
@@ -385,10 +644,15 @@ export default function MapPage() {
 
   const windowLabel = pm25WindowOptions.find((o) => o.value === pm25Window)?.label ?? "1hr";
   const averagePm = filtered
-    ? filtered.records.reduce((sum, r) => sum + getPm25ForWindow(r, pm25Window), 0)
-      / Math.max(filtered.records.length, 1)
+    ? interpolationPoints.reduce((sum, point) => sum + point.value, 0) / Math.max(interpolationPoints.length, 1)
     : 0;
   const meanBand = pm25ToAqiBand(averagePm);
+  const heatmapMethodLabel = interpMethod === "idw" ? `IDW · p=${idwPower}` : "Ordinary kriging";
+  const heatmapRuntimeLabel = interpolationMeta?.durationMs != null
+    ? `${interpolationMeta.durationMs.toFixed(0)} ms`
+    : isComputing
+      ? "Running…"
+      : null;
 
   return (
     <div className={styles.layout}>
@@ -455,13 +719,7 @@ export default function MapPage() {
               onClick={() => {
                 const map = mapRef.current;
                 if (map) {
-                  const b = map.getBounds();
-                  setViewBounds({
-                    west: b.getWest(),
-                    east: b.getEast(),
-                    south: b.getSouth(),
-                    north: b.getNorth(),
-                  });
+                  setViewBounds(getMapBounds(map));
                 }
                 setRecomputeTick((t) => t + 1);
               }}
@@ -469,6 +727,30 @@ export default function MapPage() {
             >
               Recompute
             </button>
+            {mapMode === "heatmap" && (
+              <div className={styles.heatmapStatus}>
+                <span className={styles.statusPill}>{heatmapMethodLabel}</span>
+                {interpolationMeta && (
+                  <span className={styles.statusPill}>
+                    {interpolationMeta.pointsUsed}/{interpolationMeta.totalPoints} sensors
+                  </span>
+                )}
+                {interpolationMeta && (
+                  <span className={styles.statusPill}>
+                    {interpolationMeta.gridWidth}x{interpolationMeta.gridHeight}
+                  </span>
+                )}
+                {interpolationMeta?.capped && (
+                  <span className={styles.statusPillMuted}>Capped for speed</span>
+                )}
+                {heatmapRuntimeLabel && (
+                  <span className={styles.computing}>{heatmapRuntimeLabel}</span>
+                )}
+                {interpolationMeta?.error && (
+                  <span className={styles.statusPillError}>Interpolation fallback</span>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -515,7 +797,8 @@ export default function MapPage() {
         <div ref={mapContainerCallback} className={styles.map} />
         {mapMode === "heatmap" && (
           <div className={styles.legend}>
-            <div className={styles.legendTitle}>AQI</div>
+            <div className={styles.legendTitle}>AQI Surface</div>
+            <div className={styles.legendSubtitle}>{heatmapMethodLabel}</div>
             <div className={styles.legendBar} />
             <div className={styles.legendLabels}>
               <span>0</span>
@@ -525,6 +808,13 @@ export default function MapPage() {
               <span>200</span>
               <span>300</span>
             </div>
+            {interpolationMeta && (
+              <div className={styles.legendMeta}>
+                <span>{interpolationMeta.pointsUsed} sensors in play</span>
+                <span>{interpolationMeta.gridWidth}x{interpolationMeta.gridHeight} grid</span>
+                {interpolationMeta.capped && <span>Viewport-prioritized sampling</span>}
+              </div>
+            )}
           </div>
         )}
       </div>

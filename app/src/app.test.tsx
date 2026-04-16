@@ -1,23 +1,107 @@
 import { render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { idwInterpolate, ordinaryKrigingInterpolate } from "@patool/shared";
 import { samplePasCollection, samplePatSeries, sampleSensorRecord } from "@patool/shared/fixtures";
 
 import { App } from "./App";
 
-vi.mock("maplibre-gl", () => {
-  const Map = vi.fn().mockImplementation(() => ({
+type MockMap = {
+  addControl: ReturnType<typeof vi.fn>;
+  on: ReturnType<typeof vi.fn>;
+  once: ReturnType<typeof vi.fn>;
+  off: ReturnType<typeof vi.fn>;
+  remove: ReturnType<typeof vi.fn>;
+  getSource: ReturnType<typeof vi.fn>;
+  addSource: ReturnType<typeof vi.fn>;
+  removeSource: ReturnType<typeof vi.fn>;
+  addLayer: ReturnType<typeof vi.fn>;
+  getLayer: ReturnType<typeof vi.fn>;
+  removeLayer: ReturnType<typeof vi.fn>;
+  setPaintProperty: ReturnType<typeof vi.fn>;
+  getCanvas: ReturnType<typeof vi.fn>;
+  isStyleLoaded: ReturnType<typeof vi.fn>;
+  setStyle: ReturnType<typeof vi.fn>;
+  getBounds: ReturnType<typeof vi.fn>;
+  resize: ReturnType<typeof vi.fn>;
+};
+
+const mockMaps: MockMap[] = [];
+
+function createMockMap(): MockMap {
+  const sources = new Map<string, unknown>();
+  const layers = new Map<string, unknown>();
+
+  const map: MockMap = {
     addControl: vi.fn(),
-    on: vi.fn(),
-    once: vi.fn(),
+    on: vi.fn((event: string, maybeLayer: unknown, maybeHandler?: unknown) => {
+      const handler = typeof maybeLayer === "function" ? maybeLayer : maybeHandler;
+      if ((event === "load" || event === "styledata") && typeof handler === "function") {
+        handler();
+      }
+    }),
+    once: vi.fn((event: string, handler: unknown) => {
+      if ((event === "load" || event === "styledata") && typeof handler === "function") {
+        handler();
+      }
+    }),
+    off: vi.fn(),
     remove: vi.fn(),
-    getSource: vi.fn(),
-    addSource: vi.fn(),
-    addLayer: vi.fn(),
+    getSource: vi.fn((id: string) => sources.get(id)),
+    addSource: vi.fn((id: string, source: { type: string }) => {
+      if (source.type === "geojson") {
+        const geojsonSource = {
+          ...source,
+          setData: vi.fn(),
+        };
+        sources.set(id, geojsonSource);
+        return;
+      }
+
+      if (source.type === "image") {
+        const imageSource = {
+          ...source,
+          updateImage: vi.fn(),
+        };
+        sources.set(id, imageSource);
+        return;
+      }
+
+      sources.set(id, source);
+    }),
+    removeSource: vi.fn((id: string) => {
+      sources.delete(id);
+    }),
+    addLayer: vi.fn((layer: { id: string }) => {
+      layers.set(layer.id, layer);
+    }),
+    getLayer: vi.fn((id: string) => layers.get(id)),
+    removeLayer: vi.fn((id: string) => {
+      layers.delete(id);
+    }),
+    setPaintProperty: vi.fn(),
     getCanvas: vi.fn(() => ({ style: {} })),
     isStyleLoaded: vi.fn(() => true),
     setStyle: vi.fn(),
-  }));
+    resize: vi.fn(),
+    getBounds: vi.fn(() => ({
+      getWest: () => -123,
+      getEast: () => -121,
+      getSouth: () => 46,
+      getNorth: () => 48,
+    })),
+  };
+
+  return map;
+}
+
+vi.mock("maplibre-gl", () => {
+  const Map = vi.fn(function MockMapConstructor() {
+    const map = createMockMap();
+    mockMaps.push(map);
+    return map;
+  });
   return {
     default: {
       Map,
@@ -37,8 +121,56 @@ vi.mock("echarts-for-react/lib/core", () => ({
 }));
 
 describe("app", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
+    mockMaps.length = 0;
     window.history.pushState({}, "", "/");
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => ({
+      createImageData: (width: number, height: number) => ({
+        data: new Uint8ClampedArray(width * height * 4),
+      }),
+      putImageData: vi.fn(),
+    }) as unknown as CanvasRenderingContext2D);
+    vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,test");
+    vi.stubGlobal("ResizeObserver", class MockResizeObserver {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    });
+    vi.stubGlobal("Worker", class MockWorker {
+      onmessage: ((event: MessageEvent<{ data: unknown }>) => void) | null = null;
+
+      postMessage = vi.fn((message: {
+        jobId: number;
+        method: "idw" | "kriging";
+        points: Array<{ x: number; y: number; value: number }>;
+        bounds: { west: number; east: number; south: number; north: number };
+        gridWidth: number;
+        gridHeight: number;
+        idwPower: number;
+      }) => {
+        const grid = message.method === "idw"
+          ? idwInterpolate(message.points, message.gridWidth, message.gridHeight, message.bounds, message.idwPower)
+          : ordinaryKrigingInterpolate(message.points, message.gridWidth, message.gridHeight, message.bounds);
+
+        this.onmessage?.({
+          data: {
+            jobId: message.jobId,
+            ok: true,
+            durationMs: 1,
+            result: {
+              ...grid,
+              values: grid.values.buffer.slice(0),
+            },
+          },
+        } as MessageEvent);
+      });
+
+      terminate = vi.fn();
+    });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
@@ -74,5 +206,39 @@ describe("app", () => {
       },
       { timeout: 5000 }
     );
+  });
+
+  it("renders the map heatmap overlay lifecycle", async () => {
+    window.history.pushState({}, "", "/map");
+    const user = userEvent.setup();
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Heatmap")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Heatmap"));
+
+    await waitFor(() => {
+      const map = mockMaps.at(-1);
+      expect(map?.addSource).toHaveBeenCalledWith(
+        "heatmap-source",
+        expect.objectContaining({ type: "image" }),
+      );
+      expect(map?.addLayer).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "heatmap-layer", type: "raster" }),
+        expect.anything(),
+      );
+      expect(map?.setPaintProperty).toHaveBeenCalledWith("sensors-circles", "circle-opacity", 0.35);
+    });
+
+    await user.click(screen.getByText("Markers"));
+
+    await waitFor(() => {
+      const map = mockMaps.at(-1);
+      expect(map?.removeLayer).toHaveBeenCalledWith("heatmap-layer");
+      expect(map?.removeSource).toHaveBeenCalledWith("heatmap-source");
+    });
   });
 });

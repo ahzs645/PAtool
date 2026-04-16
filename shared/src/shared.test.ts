@@ -30,6 +30,7 @@ import {
   idwInterpolate,
   ordinaryKrigingInterpolate,
   aqiToColor,
+  pm25ToAqi,
   gridToImageData,
   type InterpolationPoint,
   type InterpolationGrid,
@@ -299,6 +300,35 @@ describe("spatial interpolation", () => {
     expect(grid.values[12]).toBeLessThan(40);
   });
 
+  it("IDW exact-point interpolation returns the source value", () => {
+    const points: InterpolationPoint[] = [
+      { x: -122, y: 47, value: 12 },
+      { x: -121, y: 47, value: 20 },
+      { x: -122, y: 48, value: 28 },
+    ];
+
+    const grid = idwInterpolate(points, 1, 1, {
+      west: -122,
+      east: -122,
+      south: 47,
+      north: 47,
+    });
+
+    expect(grid.values[0]).toBeCloseTo(12, 6);
+  });
+
+  it("interpolation handles empty inputs without invalid min/max", () => {
+    const idwGrid = idwInterpolate([], 4, 4, { west: 0, east: 1, south: 0, north: 1 });
+    const krigingGrid = ordinaryKrigingInterpolate([], 4, 4, { west: 0, east: 1, south: 0, north: 1 });
+
+    expect(idwGrid.min).toBe(0);
+    expect(idwGrid.max).toBe(0);
+    expect(krigingGrid.min).toBe(0);
+    expect(krigingGrid.max).toBe(0);
+    expect(Array.from(idwGrid.values).every((value) => value === 0)).toBe(true);
+    expect(Array.from(krigingGrid.values).every((value) => value === 0)).toBe(true);
+  });
+
   it("Ordinary Kriging produces valid grid", () => {
     const points: InterpolationPoint[] = [
       { x: 0, y: 0, value: 10 },
@@ -313,6 +343,20 @@ describe("spatial interpolation", () => {
     expect(grid.min).toBeLessThanOrEqual(grid.max);
   });
 
+  it("Ordinary Kriging merges duplicate coordinates instead of producing NaN output", () => {
+    const points: InterpolationPoint[] = [
+      { x: 0, y: 0, value: 10 },
+      { x: 0, y: 0, value: 14 },
+      { x: 1, y: 0, value: 20 },
+      { x: 0, y: 1, value: 30 },
+      { x: 1, y: 1, value: 40 },
+    ];
+
+    const grid = ordinaryKrigingInterpolate(points, 5, 5, { west: 0, east: 1, south: 0, north: 1 });
+    expect(Array.from(grid.values).every((value) => Number.isFinite(value))).toBe(true);
+    expect(grid.values[0]).toBeCloseTo(12, 0);
+  });
+
   it("aqiToColor returns valid RGBA", () => {
     const good = aqiToColor(25);
     expect(good[0]).toBeLessThanOrEqual(255);
@@ -321,6 +365,14 @@ describe("spatial interpolation", () => {
 
     const unhealthy = aqiToColor(175);
     expect(unhealthy[0]).toBe(255); // Red
+  });
+
+  it("pm25ToAqi respects EPA breakpoint boundaries", () => {
+    expect(pm25ToAqi(0)).toBe(0);
+    expect(pm25ToAqi(12.0)).toBe(50);
+    expect(pm25ToAqi(12.1)).toBe(51);
+    expect(pm25ToAqi(35.4)).toBe(100);
+    expect(pm25ToAqi(500.5)).toBe(500);
   });
 
   it("gridToImageData produces correct size", () => {
@@ -332,5 +384,26 @@ describe("spatial interpolation", () => {
     };
     const data = gridToImageData(grid, false);
     expect(data.length).toBe(3 * 3 * 4); // 36 bytes
+  });
+
+  it("gridToImageData flips rows so north is rendered at the top", () => {
+    const grid: InterpolationGrid = {
+      width: 2,
+      height: 2,
+      bounds: { west: 0, east: 1, south: 0, north: 1 },
+      values: new Float64Array([
+        10, 20,
+        30, 40,
+      ]),
+      min: 10,
+      max: 40,
+    };
+
+    const data = gridToImageData(grid, true);
+    const topLeft = Array.from(data.slice(0, 4));
+    const bottomLeft = Array.from(data.slice(8, 12));
+
+    expect(topLeft).toEqual(Array.from(aqiToColor(pm25ToAqi(30))));
+    expect(bottomLeft).toEqual(Array.from(aqiToColor(pm25ToAqi(10))));
   });
 });
