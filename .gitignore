@@ -2,6 +2,7 @@ node_modules/
 app/dist/
 app/public/data/
 coverage/
+tmp/
 .DS_Store
 worker/.wrangler/
 *.log

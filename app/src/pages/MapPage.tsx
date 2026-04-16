@@ -46,8 +46,15 @@ const MIN_INTERPOLATION_POINTS = 3;
 const VIEWPORT_PADDING_RATIO = 0.2;
 const MIN_GRID_RESOLUTION = 50;
 const MAX_GRID_EDGE = 384;
+const MAX_KRIGING_GRID_CELLS = 76_800;
+const MAX_IDW_GRID_CELLS = 120_000;
 const DEFAULT_KRIGING_NEIGHBORS = 12;
 const DEFAULT_KRIGING_TILE_SIZE = 4;
+const VIEW_BOUNDS_QUANTIZATION_STEPS = 512;
+const MIN_VIEW_BOUNDS_QUANTIZATION_DEGREES = 0.0001;
+const VIEW_ZOOM_QUANTIZATION_STEP = 0.05;
+const RESIZE_RECOMPUTE_DEBOUNCE_MS = 200;
+const KRIGING_SELECTION_STABILITY_THRESHOLD = 0.85;
 const MAX_POINTS_BY_METHOD: Record<InterpolationMethod, number> = {
   idw: 2400,
   kriging: 400,
@@ -68,6 +75,31 @@ type InterpolationMeta = {
   krigingTileSize?: number;
   durationMs?: number;
   error?: string;
+};
+
+type HeatmapDebugState = {
+  workerJobsPosted: number;
+  staleResponsesIgnored: number;
+  sourceRefreshes: number;
+  sourceRemovals: number;
+  workerRestarts: number;
+  lastSelectedOverlapPct: number | null;
+  lastSelectedOverlapCount: number;
+  lastSelectedPointCount: number;
+  lastSelectionStabilized: boolean;
+  lastColorizeMs: number | null;
+  lastMainThreadRenderMs: number | null;
+  lastJob: {
+    id: number;
+    method: InterpolationMethod;
+    gridWidth: number;
+    gridHeight: number;
+    points: number;
+  } | null;
+};
+
+type PatoolDebugWindow = Window & {
+  __PAToolHeatmapDebug?: HeatmapDebugState;
 };
 
 function toRadians(value: number): number {
@@ -114,26 +146,44 @@ function getMapBounds(map: maplibregl.Map): InterpolationBounds {
   };
 }
 
-function deriveGridDimensions(baseResolution: number, mapSize: MapSize): { width: number; height: number } {
+function constrainGridCells(
+  dimensions: { width: number; height: number },
+  maxCells: number,
+): { width: number; height: number } {
+  const cellCount = dimensions.width * dimensions.height;
+  if (cellCount <= maxCells) return dimensions;
+
+  const scale = Math.sqrt(maxCells / cellCount);
+  return {
+    width: Math.max(2, Math.round(dimensions.width * scale)),
+    height: Math.max(2, Math.round(dimensions.height * scale)),
+  };
+}
+
+function deriveGridDimensions(
+  baseResolution: number,
+  mapSize: MapSize,
+  maxCells: number = MAX_KRIGING_GRID_CELLS,
+): { width: number; height: number } {
   const safeWidth = Math.max(mapSize.width, 1);
   const safeHeight = Math.max(mapSize.height, 1);
   const aspectRatio = safeWidth / safeHeight;
 
   if (!Number.isFinite(aspectRatio) || aspectRatio <= 0) {
-    return { width: baseResolution, height: baseResolution };
+    return constrainGridCells({ width: baseResolution, height: baseResolution }, maxCells);
   }
 
   if (aspectRatio >= 1) {
-    return {
+    return constrainGridCells({
       width: Math.min(MAX_GRID_EDGE, Math.max(2, Math.round(baseResolution * aspectRatio))),
       height: Math.max(2, baseResolution),
-    };
+    }, maxCells);
   }
 
-  return {
+  return constrainGridCells({
     width: Math.max(2, baseResolution),
     height: Math.min(MAX_GRID_EDGE, Math.max(2, Math.round(baseResolution / aspectRatio))),
-  };
+  }, maxCells);
 }
 
 function deriveZoomAdjustedGridResolution(baseResolution: number, zoom: number | null): number {
@@ -164,6 +214,81 @@ function deriveKrigingTileSize(zoom: number | null): number {
   if (zoom < 5) return 6;
   if (zoom < 6) return 5;
   return DEFAULT_KRIGING_TILE_SIZE;
+}
+
+function quantizeValue(value: number, step: number): number {
+  return Math.round(value / step) * step;
+}
+
+function quantizeMapBounds(bounds: InterpolationBounds): InterpolationBounds {
+  const lonStep = Math.max(
+    (bounds.east - bounds.west) / VIEW_BOUNDS_QUANTIZATION_STEPS,
+    MIN_VIEW_BOUNDS_QUANTIZATION_DEGREES,
+  );
+  const latStep = Math.max(
+    (bounds.north - bounds.south) / VIEW_BOUNDS_QUANTIZATION_STEPS,
+    MIN_VIEW_BOUNDS_QUANTIZATION_DEGREES,
+  );
+
+  return {
+    west: quantizeValue(bounds.west, lonStep),
+    east: quantizeValue(bounds.east, lonStep),
+    south: quantizeValue(bounds.south, latStep),
+    north: quantizeValue(bounds.north, latStep),
+  };
+}
+
+function quantizeZoom(zoom: number): number {
+  return quantizeValue(zoom, VIEW_ZOOM_QUANTIZATION_STEP);
+}
+
+function boundsEqual(left: InterpolationBounds | null, right: InterpolationBounds): boolean {
+  return !!left
+    && left.west === right.west
+    && left.east === right.east
+    && left.south === right.south
+    && left.north === right.north;
+}
+
+function getInterpolationPointKey(point: InterpolationPoint): string {
+  return point.id ?? `${point.x.toFixed(6)}|${point.y.toFixed(6)}`;
+}
+
+function computeSelectionOverlap(
+  previousKeys: string[],
+  nextKeys: string[],
+): { overlapCount: number; overlapPct: number | null } {
+  if (previousKeys.length === 0 || nextKeys.length === 0) {
+    return { overlapCount: 0, overlapPct: null };
+  }
+
+  const previous = new Set(previousKeys);
+  let overlapCount = 0;
+  for (const key of nextKeys) {
+    if (previous.has(key)) overlapCount++;
+  }
+
+  return {
+    overlapCount,
+    overlapPct: overlapCount / Math.min(previousKeys.length, nextKeys.length),
+  };
+}
+
+function createHeatmapDebugState(): HeatmapDebugState {
+  return {
+    workerJobsPosted: 0,
+    staleResponsesIgnored: 0,
+    sourceRefreshes: 0,
+    sourceRemovals: 0,
+    workerRestarts: 0,
+    lastSelectedOverlapPct: null,
+    lastSelectedOverlapCount: 0,
+    lastSelectedPointCount: 0,
+    lastSelectionStabilized: false,
+    lastColorizeMs: null,
+    lastMainThreadRenderMs: null,
+    lastJob: null,
+  };
 }
 
 function selectInterpolationPoints(
@@ -230,12 +355,25 @@ function buildGeoJson(
   };
 }
 
+function createInterpolationWorker(
+  onmessage: (event: MessageEvent<InterpolationWorkerResponse>) => void,
+): Worker {
+  const worker = new Worker(new URL("../workers/interpolation.worker.ts", import.meta.url), { type: "module" });
+  worker.onmessage = onmessage;
+  return worker;
+}
+
 export default function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const heatmapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const interpolationWorkerRef = useRef<Worker | null>(null);
   const interpolationJobIdRef = useRef(0);
+  const heatmapDebugRef = useRef<HeatmapDebugState>(createHeatmapDebugState());
+  const selectedPointKeysRef = useRef<string[]>([]);
+  const rawMapSizeRef = useRef<MapSize>({ width: 1, height: 1 });
+  const workerBusyRef = useRef(false);
+  const activeJobMethodRef = useRef<InterpolationMethod | null>(null);
   const { theme } = useTheme();
 
   const [query, setQuery] = useState("");
@@ -261,6 +399,15 @@ export default function MapPage() {
   // Bump this counter to force a recompute using the current viewport.
   const [recomputeTick, setRecomputeTick] = useState(0);
   const deferredQuery = useDeferredValue(query);
+
+  const recordHeatmapDebug = useCallback((mutate: (state: HeatmapDebugState) => void) => {
+    if (!import.meta.env.DEV || typeof window === "undefined") return;
+
+    const next = { ...heatmapDebugRef.current };
+    mutate(next);
+    heatmapDebugRef.current = next;
+    (window as PatoolDebugWindow).__PAToolHeatmapDebug = next;
+  }, []);
 
   const { data } = useQuery({
     queryKey: ["pas"],
@@ -298,6 +445,7 @@ export default function MapPage() {
       }
 
       return [{
+        id: record.id,
         x: record.longitude,
         y: record.latitude,
         value: pm25,
@@ -330,6 +478,35 @@ export default function MapPage() {
     const { selected, capped } = selectInterpolationPoints(interpolationPoints, bounds, interpMethod);
     if (selected.length < MIN_INTERPOLATION_POINTS) return null;
 
+    let selectedPoints = selected;
+    let pointKeys = selected.map(getInterpolationPointKey);
+    let selectedOverlapPct: number | null = null;
+    let selectedOverlapCount = 0;
+    let selectionStabilized = false;
+
+    if (interpMethod === "kriging") {
+      const overlap = computeSelectionOverlap(selectedPointKeysRef.current, pointKeys);
+      selectedOverlapPct = overlap.overlapPct;
+      selectedOverlapCount = overlap.overlapCount;
+
+      if (
+        overlap.overlapPct != null
+        && overlap.overlapPct >= KRIGING_SELECTION_STABILITY_THRESHOLD
+        && selectedPointKeysRef.current.length === pointKeys.length
+      ) {
+        const pointsByKey = new Map(interpolationPoints.map((point) => [getInterpolationPointKey(point), point]));
+        const stablePoints = selectedPointKeysRef.current
+          .map((key) => pointsByKey.get(key))
+          .filter((point): point is InterpolationPoint => !!point);
+
+        if (stablePoints.length === selectedPointKeysRef.current.length) {
+          selectedPoints = stablePoints;
+          pointKeys = selectedPointKeysRef.current;
+          selectionStabilized = true;
+        }
+      }
+    }
+
     const zoomForAdaptiveWork = followView ? viewZoom : null;
     const adjustedGridRes = deriveZoomAdjustedGridResolution(gridRes, zoomForAdaptiveWork);
     const krigingNeighbors = interpMethod === "kriging"
@@ -338,73 +515,136 @@ export default function MapPage() {
     const krigingTileSize = interpMethod === "kriging"
       ? deriveKrigingTileSize(zoomForAdaptiveWork)
       : undefined;
-    const { width, height } = deriveGridDimensions(adjustedGridRes, mapSize);
+    const maxGridCells = interpMethod === "kriging" ? MAX_KRIGING_GRID_CELLS : MAX_IDW_GRID_CELLS;
+    const { width, height } = deriveGridDimensions(adjustedGridRes, rawMapSizeRef.current, maxGridCells);
     return {
       bounds,
-      points: selected,
+      points: selectedPoints,
+      pointKeys,
       gridWidth: width,
       gridHeight: height,
       totalPoints: interpolationPoints.length,
       capped,
       krigingNeighbors,
       krigingTileSize,
+      selectedOverlapPct,
+      selectedOverlapCount,
+      selectionStabilized,
     };
     // recomputeTick is intentionally a dep so the manual "Recompute" button re-runs this
     // even when bounds/params are unchanged.
   }, [mapMode, interpolationPoints, interpMethod, gridRes, mapSize, followView, viewBounds, viewZoom, recomputeTick]);
 
-  useEffect(() => {
-    const worker = new Worker(new URL("../workers/interpolation.worker.ts", import.meta.url), { type: "module" });
-    interpolationWorkerRef.current = worker;
+  const handleInterpolationWorkerMessage = useCallback((event: MessageEvent<InterpolationWorkerResponse>) => {
+    const response = event.data;
+    if (response.jobId !== interpolationJobIdRef.current) {
+      recordHeatmapDebug((state) => {
+        state.staleResponsesIgnored += 1;
+      });
+      return;
+    }
 
-    worker.onmessage = (event: MessageEvent<InterpolationWorkerResponse>) => {
-      const response = event.data;
-      if (response.jobId !== interpolationJobIdRef.current) return;
+    workerBusyRef.current = false;
+    activeJobMethodRef.current = null;
 
-      startTransition(() => {
-        if (!response.ok) {
-          setIsComputing(false);
-          setInterpolationResult(null);
-          setInterpolationMeta((previous) => (
-            previous
-              ? { ...previous, durationMs: response.durationMs, error: response.error }
-              : previous
-          ));
-          return;
-        }
-
+    startTransition(() => {
+      if (!response.ok) {
         setIsComputing(false);
-        setInterpolationResult({
-          ...response.result,
-          values: new Float64Array(response.result.values),
-        });
         setInterpolationMeta((previous) => (
           previous
-            ? { ...previous, durationMs: response.durationMs, error: undefined }
+            ? { ...previous, durationMs: response.durationMs, error: response.error }
             : previous
         ));
+        return;
+      }
+
+      setIsComputing(false);
+      setInterpolationResult({
+        ...response.result,
+        values: new Float64Array(response.result.values),
       });
-    };
+      setInterpolationMeta((previous) => (
+        previous
+          ? { ...previous, durationMs: response.durationMs, error: undefined }
+          : previous
+      ));
+    });
+  }, [recordHeatmapDebug]);
+
+  useEffect(() => {
+    const worker = createInterpolationWorker(handleInterpolationWorkerMessage);
+    interpolationWorkerRef.current = worker;
 
     return () => {
       worker.terminate();
-      interpolationWorkerRef.current = null;
+      if (interpolationWorkerRef.current === worker) {
+        interpolationWorkerRef.current = null;
+      }
     };
-  }, []);
+  }, [handleInterpolationWorkerMessage]);
 
   useEffect(() => {
-    const worker = interpolationWorkerRef.current;
+    let worker = interpolationWorkerRef.current;
     if (!worker) return;
 
+    const restartWorkerForSupersededJob = () => {
+      worker?.terminate();
+      worker = createInterpolationWorker(handleInterpolationWorkerMessage);
+      interpolationWorkerRef.current = worker;
+      workerBusyRef.current = false;
+      activeJobMethodRef.current = null;
+      recordHeatmapDebug((state) => {
+        state.workerRestarts += 1;
+      });
+    };
+
     if (!interpolationWorkload) {
+      interpolationJobIdRef.current += 1;
+      if (activeJobMethodRef.current === "kriging" && workerBusyRef.current) {
+        restartWorkerForSupersededJob();
+      } else {
+        workerBusyRef.current = false;
+        activeJobMethodRef.current = null;
+      }
       setIsComputing(false);
-      setInterpolationResult(null);
-      setInterpolationMeta(null);
+      if (mapMode !== "heatmap" || interpolationPoints.length < MIN_INTERPOLATION_POINTS) {
+        selectedPointKeysRef.current = [];
+        setInterpolationResult(null);
+        setInterpolationMeta(null);
+      }
       return;
+    }
+
+    if (interpMethod === "kriging" && workerBusyRef.current) {
+      restartWorkerForSupersededJob();
+      if (!worker) return;
     }
 
     const jobId = interpolationJobIdRef.current + 1;
     interpolationJobIdRef.current = jobId;
+    workerBusyRef.current = true;
+    activeJobMethodRef.current = interpMethod;
+
+    if (interpMethod === "kriging") {
+      selectedPointKeysRef.current = interpolationWorkload.pointKeys;
+      recordHeatmapDebug((state) => {
+        state.lastSelectedOverlapPct = interpolationWorkload.selectedOverlapPct;
+        state.lastSelectedOverlapCount = interpolationWorkload.selectedOverlapCount;
+        state.lastSelectedPointCount = interpolationWorkload.points.length;
+        state.lastSelectionStabilized = interpolationWorkload.selectionStabilized;
+      });
+
+      if (import.meta.env.DEV) {
+        const pct = interpolationWorkload.selectedOverlapPct == null
+          ? "n/a"
+          : `${(interpolationWorkload.selectedOverlapPct * 100).toFixed(1)}%`;
+        console.debug(
+          `[PAtool heatmap] kriging selected-sensor overlap ${pct}`
+          + ` (${interpolationWorkload.selectedOverlapCount}/${interpolationWorkload.points.length})`
+          + (interpolationWorkload.selectionStabilized ? " stabilized" : ""),
+        );
+      }
+    }
 
     setIsComputing(true);
     setInterpolationMeta({
@@ -415,6 +655,17 @@ export default function MapPage() {
       capped: interpolationWorkload.capped,
       krigingNeighbors: interpolationWorkload.krigingNeighbors,
       krigingTileSize: interpolationWorkload.krigingTileSize,
+    });
+
+    recordHeatmapDebug((state) => {
+      state.workerJobsPosted += 1;
+      state.lastJob = {
+        id: jobId,
+        method: interpMethod,
+        gridWidth: interpolationWorkload.gridWidth,
+        gridHeight: interpolationWorkload.gridHeight,
+        points: interpolationWorkload.points.length,
+      };
     });
 
     worker.postMessage({
@@ -428,7 +679,15 @@ export default function MapPage() {
       krigingMaxNeighbors: interpolationWorkload.krigingNeighbors,
       krigingTileSize: interpolationWorkload.krigingTileSize,
     });
-  }, [interpolationWorkload, interpMethod, idwPower]);
+  }, [
+    interpolationWorkload,
+    interpMethod,
+    idwPower,
+    mapMode,
+    interpolationPoints.length,
+    handleInterpolationWorkerMessage,
+    recordHeatmapDebug,
+  ]);
 
   const addSensorLayer = useCallback((map: maplibregl.Map) => {
     if (map.getSource(SOURCE_ID)) return;
@@ -522,6 +781,18 @@ export default function MapPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const syncViewState = useCallback((map: maplibregl.Map) => {
+    const nextBounds = quantizeMapBounds(getMapBounds(map));
+    const nextZoom = quantizeZoom(map.getZoom());
+
+    setViewBounds((previous) => (
+      boundsEqual(previous, nextBounds) ? previous : nextBounds
+    ));
+    setViewZoom((previous) => (
+      previous === nextZoom ? previous : nextZoom
+    ));
+  }, []);
+
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
@@ -531,36 +802,67 @@ export default function MapPage() {
         width: Math.max(node.clientWidth, 1),
         height: Math.max(node.clientHeight, 1),
       };
+      rawMapSizeRef.current = nextSize;
 
-      setMapSize((previous) => (
-        previous.width === nextSize.width && previous.height === nextSize.height
+      setMapSize((previous) => {
+        if (previous.width === nextSize.width && previous.height === nextSize.height) {
+          return previous;
+        }
+
+        const zoomForAdaptiveWork = followView ? viewZoom : null;
+        const adjustedGridRes = deriveZoomAdjustedGridResolution(gridRes, zoomForAdaptiveWork);
+        const maxGridCells = interpMethod === "kriging" ? MAX_KRIGING_GRID_CELLS : MAX_IDW_GRID_CELLS;
+        const previousDimensions = deriveGridDimensions(adjustedGridRes, previous, maxGridCells);
+        const nextDimensions = deriveGridDimensions(adjustedGridRes, nextSize, maxGridCells);
+
+        return previousDimensions.width === nextDimensions.width
+          && previousDimensions.height === nextDimensions.height
           ? previous
-          : nextSize
-      ));
+          : nextSize;
+      });
 
       const map = mapRef.current;
       if (map) {
         map.resize();
         if (mapMode === "heatmap" && followView) {
-          setViewBounds(getMapBounds(map));
-          setViewZoom(map.getZoom());
+          syncViewState(map);
         }
       }
+    };
+
+    let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+
+    const scheduleSizeSync = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = null;
+        syncSize();
+      }, RESIZE_RECOMPUTE_DEBOUNCE_MS);
     };
 
     syncSize();
 
     if (typeof ResizeObserver !== "undefined") {
       const observer = new ResizeObserver(() => {
-        syncSize();
+        scheduleSizeSync();
       });
       observer.observe(node);
-      return () => observer.disconnect();
+      return () => {
+        observer.disconnect();
+        if (resizeTimer) clearTimeout(resizeTimer);
+      };
     }
 
-    window.addEventListener("resize", syncSize);
-    return () => window.removeEventListener("resize", syncSize);
-  }, [mapMode, followView]);
+    window.addEventListener("resize", scheduleSizeSync);
+    return () => {
+      window.removeEventListener("resize", scheduleSizeSync);
+      if (resizeTimer) clearTimeout(resizeTimer);
+    };
+  }, [mapMode, followView, viewZoom, gridRes, interpMethod, syncViewState]);
+
+  useEffect(() => {
+    setMapSize(rawMapSizeRef.current);
+  }, [gridRes, interpMethod]);
 
   // Update GeoJSON data when the filtered set changes
   useEffect(() => {
@@ -589,15 +891,35 @@ export default function MapPage() {
   // Render heatmap overlay from interpolation result
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
+    if (!map) return;
+    if (!map.isStyleLoaded()) {
+      const retryWhenStyleLoads = () => {
+        setStyleReloadTick((tick) => tick + 1);
+      };
+      const retryTimer = window.setTimeout(retryWhenStyleLoads, 100);
+
+      map.once("load", retryWhenStyleLoads);
+      map.once("styledata", retryWhenStyleLoads);
+      return () => {
+        window.clearTimeout(retryTimer);
+        map.off("load", retryWhenStyleLoads);
+        map.off("styledata", retryWhenStyleLoads);
+      };
+    }
 
     if (!interpolationResult) {
       // Remove heatmap layer if exists
       if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
-      if (map.getSource(HEATMAP_SOURCE_ID)) map.removeSource(HEATMAP_SOURCE_ID);
+      if (map.getSource(HEATMAP_SOURCE_ID)) {
+        map.removeSource(HEATMAP_SOURCE_ID);
+        recordHeatmapDebug((state) => {
+          state.sourceRemovals += 1;
+        });
+      }
       return;
     }
 
+    const renderStartedAt = performance.now();
     // Reuse the backing canvas to avoid repeated allocations during pan/zoom.
     const canvas = heatmapCanvasRef.current ?? document.createElement("canvas");
     heatmapCanvasRef.current = canvas;
@@ -605,11 +927,12 @@ export default function MapPage() {
     canvas.height = interpolationResult.height;
     const ctx = canvas.getContext("2d")!;
     const imageData = ctx.createImageData(interpolationResult.width, interpolationResult.height);
+    const colorizeStartedAt = performance.now();
     const colorData = gridToImageData(interpolationResult, true);
+    const colorizeMs = performance.now() - colorizeStartedAt;
     imageData.data.set(colorData);
     ctx.putImageData(imageData, 0, 0);
 
-    const dataUrl = canvas.toDataURL();
     const { west, east, south, north } = interpolationResult.bounds;
     const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
       [west, north], // top-left
@@ -618,14 +941,27 @@ export default function MapPage() {
       [west, south], // bottom-left
     ];
 
-    // Add or update the image source
-    const existingSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.ImageSource | undefined;
+    const refreshCanvasSource = (source: maplibregl.CanvasSource) => {
+      recordHeatmapDebug((state) => {
+        state.sourceRefreshes += 1;
+      });
+      source.play();
+      map.once("render", () => {
+        if (map.getSource(HEATMAP_SOURCE_ID) === source) {
+          source.pause();
+        }
+      });
+    };
+
+    const existingSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.CanvasSource | undefined;
     if (existingSource) {
-      existingSource.updateImage({ url: dataUrl, coordinates });
+      existingSource.setCoordinates(coordinates);
+      refreshCanvasSource(existingSource);
     } else {
       map.addSource(HEATMAP_SOURCE_ID, {
-        type: "image",
-        url: dataUrl,
+        type: "canvas",
+        canvas,
+        animate: false,
         coordinates,
       });
 
@@ -644,8 +980,15 @@ export default function MapPage() {
         },
         beforeLayer,
       );
+      const canvasSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.CanvasSource | undefined;
+      if (canvasSource) refreshCanvasSource(canvasSource);
     }
-  }, [interpolationResult, styleReloadTick]);
+
+    recordHeatmapDebug((state) => {
+      state.lastColorizeMs = colorizeMs;
+      state.lastMainThreadRenderMs = performance.now() - renderStartedAt;
+    });
+  }, [interpolationResult, styleReloadTick, recordHeatmapDebug]);
 
   // Toggle sensor circle visibility based on map mode
   useEffect(() => {
@@ -660,9 +1003,14 @@ export default function MapPage() {
     if (!map) return;
     if (mapMode === "markers") {
       if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
-      if (map.getSource(HEATMAP_SOURCE_ID)) map.removeSource(HEATMAP_SOURCE_ID);
+      if (map.getSource(HEATMAP_SOURCE_ID)) {
+        map.removeSource(HEATMAP_SOURCE_ID);
+        recordHeatmapDebug((state) => {
+          state.sourceRemovals += 1;
+        });
+      }
     }
-  }, [mapMode]);
+  }, [mapMode, recordHeatmapDebug]);
 
   // Track the map viewport in heatmap+followView mode so interpolation bounds follow pan/zoom.
   // Debounced so we don't recompute while the user is actively dragging.
@@ -674,15 +1022,13 @@ export default function MapPage() {
     const updateBounds = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        setViewBounds(getMapBounds(map));
-        setViewZoom(map.getZoom());
-      }, 200);
+        syncViewState(map);
+      }, RESIZE_RECOMPUTE_DEBOUNCE_MS);
     };
 
     // Seed once for the current view, then subscribe to future moves.
     const seed = () => {
-      setViewBounds(getMapBounds(map));
-      setViewZoom(map.getZoom());
+      syncViewState(map);
     };
     if (map.isStyleLoaded()) seed();
     else map.once("load", seed);
@@ -694,7 +1040,7 @@ export default function MapPage() {
       map.off("zoomend", updateBounds);
       if (timer) clearTimeout(timer);
     };
-  }, [mapMode, followView]);
+  }, [mapMode, followView, syncViewState]);
 
   const windowLabel = pm25WindowOptions.find((o) => o.value === pm25Window)?.label ?? "1hr";
   const averagePm = filtered
@@ -773,8 +1119,7 @@ export default function MapPage() {
               onClick={() => {
                 const map = mapRef.current;
                 if (map) {
-                  setViewBounds(getMapBounds(map));
-                  setViewZoom(map.getZoom());
+                  syncViewState(map);
                 }
                 setRecomputeTick((t) => t + 1);
               }}

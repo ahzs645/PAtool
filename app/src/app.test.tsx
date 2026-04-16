@@ -69,6 +69,17 @@ function createMockMap(): MockMap {
         return;
       }
 
+      if (source.type === "canvas") {
+        const canvasSource = {
+          ...source,
+          setCoordinates: vi.fn(),
+          play: vi.fn(),
+          pause: vi.fn(),
+        };
+        sources.set(id, canvasSource);
+        return;
+      }
+
       sources.set(id, source);
     }),
     removeSource: vi.fn((id: string) => {
@@ -235,7 +246,7 @@ describe("app", () => {
       const map = mockMaps.at(-1);
       expect(map?.addSource).toHaveBeenCalledWith(
         "heatmap-source",
-        expect.objectContaining({ type: "image" }),
+        expect.objectContaining({ type: "canvas", animate: false }),
       );
       expect(map?.addLayer).toHaveBeenCalledWith(
         expect.objectContaining({ id: "heatmap-layer", type: "raster" }),

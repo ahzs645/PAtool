@@ -1196,6 +1196,7 @@ export function patScatterMatrix(series: PatSeries, sampleSize = 500): ScatterMa
 // ---------------------------------------------------------------------------
 
 export type InterpolationPoint = {
+  id?: string; // stable sensor id when available
   x: number; // longitude
   y: number; // latitude
   value: number; // PM2.5 or AQI
@@ -1211,6 +1212,16 @@ export type InterpolationGrid = {
 };
 
 export type InterpolationMethod = "idw" | "kriging";
+
+export type OrdinaryKrigingModel = {
+  pointXs: Float64Array;
+  pointYs: Float64Array;
+  pointValues: Float64Array;
+  pairwiseSemivariance: Float64Array;
+  nugget: number;
+  sill: number;
+  range: number;
+};
 
 const EARTH_RADIUS_KM = 6371;
 const EARTH_RADIUS_KM_SQUARED = EARTH_RADIUS_KM * EARTH_RADIUS_KM;
@@ -1857,39 +1868,22 @@ export function ordinaryKrigingInterpolate(
   maxNeighbors: number = 12,
   tileSize: number = 1,
 ): InterpolationGrid {
+  const model = createOrdinaryKrigingModel(knownPoints);
+  return interpolateOrdinaryKrigingModel(model, gridWidth, gridHeight, bounds, maxNeighbors, tileSize);
+}
+
+export function createOrdinaryKrigingModel(knownPoints: InterpolationPoint[]): OrdinaryKrigingModel {
   const normalizedPoints = mergeCoincidentPoints(knownPoints);
-
-  if (gridWidth < 1 || gridHeight < 1) {
-    return {
-      width: gridWidth,
-      height: gridHeight,
-      bounds,
-      values: new Float64Array(0),
-      min: 0,
-      max: 0,
-    };
-  }
-
-  const values = new Float64Array(gridWidth * gridHeight);
-  if (normalizedPoints.length === 0) {
-    return { width: gridWidth, height: gridHeight, bounds, values, min: 0, max: 0 };
-  }
-
   const pointCount = normalizedPoints.length;
   const pointXs = new Float64Array(pointCount);
   const pointYs = new Float64Array(pointCount);
-  const pointProjectedXs = new Float64Array(pointCount);
-  const pointProjectedYs = new Float64Array(pointCount);
   const pointValues = new Float64Array(pointCount);
-  // Rank candidate neighborhoods in a fixed local projection; solve distances still use the geographic metric.
-  const projectionCosLat = Math.cos(toRadians((bounds.south + bounds.north) / 2));
+
   for (let i = 0; i < pointCount; i++) {
     const x = normalizedPoints[i].x;
     const y = normalizedPoints[i].y;
     pointXs[i] = x;
     pointYs[i] = y;
-    pointProjectedXs[i] = projectLongitudeKm(x, projectionCosLat);
-    pointProjectedYs[i] = projectLatitudeKm(y);
     pointValues[i] = normalizedPoints[i].value;
   }
 
@@ -1905,12 +1899,66 @@ export function ordinaryKrigingInterpolate(
 
   // Step 2: Fit spherical model
   const { nugget, sill, range } = fitSphericalVariogram(experimental);
+  const pairwiseSemivariance = pairwiseDistances.distances;
+  convertPairwiseDistancesToSemivariances(pairwiseSemivariance, pointCount, nugget, sill, range);
+
+  return {
+    pointXs,
+    pointYs,
+    pointValues,
+    pairwiseSemivariance,
+    nugget,
+    sill,
+    range,
+  };
+}
+
+export function interpolateOrdinaryKrigingModel(
+  model: OrdinaryKrigingModel,
+  gridWidth: number,
+  gridHeight: number,
+  bounds: { west: number; east: number; south: number; north: number },
+  maxNeighbors: number = 12,
+  tileSize: number = 1,
+): InterpolationGrid {
+  if (gridWidth < 1 || gridHeight < 1) {
+    return {
+      width: gridWidth,
+      height: gridHeight,
+      bounds,
+      values: new Float64Array(0),
+      min: 0,
+      max: 0,
+    };
+  }
+
+  const values = new Float64Array(gridWidth * gridHeight);
+  const pointCount = model.pointValues.length;
+  if (pointCount === 0) {
+    return { width: gridWidth, height: gridHeight, bounds, values, min: 0, max: 0 };
+  }
+
+  const {
+    pointXs,
+    pointYs,
+    pointValues,
+    pairwiseSemivariance,
+    nugget,
+    sill,
+    range,
+  } = model;
+  const pointProjectedXs = new Float64Array(pointCount);
+  const pointProjectedYs = new Float64Array(pointCount);
+  // Rank candidate neighborhoods in a fixed local projection; solve distances still use the geographic metric.
+  const projectionCosLat = Math.cos(toRadians((bounds.south + bounds.north) / 2));
+  for (let i = 0; i < pointCount; i++) {
+    pointProjectedXs[i] = projectLongitudeKm(pointXs[i], projectionCosLat);
+    pointProjectedYs[i] = projectLatitudeKm(pointYs[i]);
+  }
 
   const neighborLimit = Math.max(1, Math.min(maxNeighbors > 0 ? maxNeighbors : pointCount, pointCount));
   const neighborIndexes = new Int32Array(neighborLimit);
   const neighborDistances = new Float64Array(neighborLimit);
-  const pairwiseSemivariance = pairwiseDistances.distances;
-  convertPairwiseDistancesToSemivariances(pairwiseSemivariance, pointCount, nugget, sill, range);
 
   const maxSystemSize = neighborLimit + 1;
   const aug = new Float64Array(maxSystemSize * (maxSystemSize + 1));

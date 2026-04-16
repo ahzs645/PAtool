@@ -16,9 +16,11 @@
     "fixtures:convert": "python3.13 scripts/convert_rda_fixtures.py",
     "prepare:static-data": "node scripts/prepare_static_data.mjs",
     "test": "npm run test --workspaces --if-present",
+    "test:heatmap-browser": "node scripts/check_heatmap_flicker.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "playwright": "^1.59.1"
   }
 }
