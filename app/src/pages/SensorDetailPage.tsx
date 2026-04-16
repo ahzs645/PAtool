@@ -4,7 +4,8 @@ import { Link, useParams } from "react-router-dom";
 
 import { type PatSeries, type QcResult, type SensorRecord, type SohIndexResult } from "@patool/shared";
 
-import { Loader, PageHeader, StatCard, Card, EChart, DataTable, Chip, Button } from "../components";
+import { Loader, PageHeader, StatCard, Card, DataTable, Chip, Button } from "../components";
+import { EChart } from "../components/EChart";
 import type { Column } from "../components";
 import { getJson, postJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";

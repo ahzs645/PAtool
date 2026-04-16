@@ -24,9 +24,6 @@ import {
   patCreateAirSensor,
   calculateEnhancedDailySoh,
   calculateEnhancedSohIndex,
-  generateSyntheticWindData,
-  computeWindRose,
-  computePolarPlot,
   idwInterpolate,
   ordinaryKrigingInterpolate,
   aqiToColor,
@@ -36,6 +33,17 @@ import {
   type InterpolationGrid,
 } from "./domain";
 import { samplePasCollection, samplePatSeries, samplePatFailureA } from "./fixtures";
+import {
+  correctPurpleAirPm25,
+  normalizePurpleAirLocalRecord,
+  normalizePurpleAirLocalSeries,
+  purpleAirLocalPm25,
+} from "./purpleairLocal";
+import {
+  computePolarPlot,
+  computeWindRose,
+  generateSyntheticWindData,
+} from "./wind";
 
 describe("pas utilities", () => {
   it("filters by state and outside status", () => {
@@ -57,6 +65,43 @@ describe("pas utilities", () => {
     expect(
       pasFilterArea(withIds, { north: 45, south: 44, east: -103.15, west: -103.3 }).records.map((record) => record.id)
     ).toEqual(["26059", "26060", "2506", "2507", "5656", "5657"]);
+  });
+});
+
+describe("PurpleAir local JSON helpers", () => {
+  const localPayload = {
+    SensorId: 12345,
+    Geo: "Garage",
+    DateTime: 1_700_000_000,
+    lat: 47.61,
+    lon: -122.33,
+    pm2_5_atm: 9.5,
+    pm2_5_atm_b: 10.2,
+    current_humidity: 42,
+    current_temp_f: 68.4,
+    pressure: 1012.3,
+  };
+
+  it("normalizes local /json sensor data into PAS and PAT shapes", () => {
+    const record = normalizePurpleAirLocalRecord(localPayload, { id: "garage", timezone: "America/Los_Angeles" });
+    expect(record.id).toBe("garage");
+    expect(record.label).toBe("Garage");
+    expect(record.pm25Current).toBe(9.5);
+    expect(record.humidity).toBe(42);
+
+    const series = normalizePurpleAirLocalSeries(localPayload, { id: "garage", timezone: "America/Los_Angeles" });
+    expect(series.meta.sensorId).toBe("garage");
+    expect(series.meta.label).toBe("Garage");
+    expect(series.points).toHaveLength(1);
+    expect(series.points[0].pm25A).toBe(9.5);
+    expect(series.points[0].pm25B).toBe(10.2);
+    expect(series.points[0].timestamp).toBe("2023-11-14T22:13:20.000Z");
+  });
+
+  it("computes the US EPA PurpleAir PM2.5 correction when humidity is available", () => {
+    expect(correctPurpleAirPm25(30, 60)).toBe(16.298);
+    expect(correctPurpleAirPm25(8, null)).toBe(8);
+    expect(purpleAirLocalPm25(localPayload, true)).toBe(7.108);
   });
 });
 

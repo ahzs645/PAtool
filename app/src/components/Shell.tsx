@@ -1,5 +1,8 @@
 import { Link, NavLink } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import type { DataStatus } from "@patool/shared";
 import { useTheme } from "../hooks/useTheme";
+import { getJson } from "../lib/api";
 import styles from "./Shell.module.css";
 
 const navItems = [
@@ -13,6 +16,12 @@ const navItems = [
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
+  const { data: status } = useQuery({
+    queryKey: ["api-status"],
+    queryFn: () => getJson<DataStatus>("/api/status"),
+    staleTime: 60_000,
+  });
+  const warning = status?.warnings?.[0];
 
   return (
     <div className={styles.shell}>
@@ -55,7 +64,16 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className={styles.main}>{children}</main>
+      <main className={styles.main}>
+        {warning && (
+          <div className={styles.statusBanner}>
+            <span className={styles.statusDot} />
+            <span>{warning}</span>
+            <span className={styles.statusSource}>{status.collectionSource}</span>
+          </div>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

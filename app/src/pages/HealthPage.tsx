@@ -13,11 +13,11 @@ import {
   PageHeader,
   StatCard,
   Card,
-  EChart,
   DataTable,
   Chip,
 } from "../components";
 import type { Column } from "../components";
+import { EChart } from "../components/EChart";
 import { getJson, postJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./HealthPage.module.css";

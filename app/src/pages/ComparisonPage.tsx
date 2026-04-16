@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 
 import { type PatSeries } from "@patool/shared";
 
-import { EChart, Loader, PageHeader, Card } from "../components";
+import { Loader, PageHeader, Card } from "../components";
+import { EChart } from "../components/EChart";
 import { getJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./ComparisonPage.module.css";

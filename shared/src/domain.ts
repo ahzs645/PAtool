@@ -27,7 +27,7 @@ export const pasRecordSchema = z.object({
 
 export const pasCollectionSchema = z.object({
   generatedAt: z.string(),
-  source: z.enum(["archive", "live", "fixture"]),
+  source: z.enum(["archive", "live", "fixture", "local"]),
   records: z.array(pasRecordSchema)
 });
 
@@ -101,6 +101,15 @@ export type SensorRecord = z.infer<typeof sensorRecordSchema>;
 export type QcResult = z.infer<typeof qcResultSchema>;
 export type SohDailyMetrics = z.infer<typeof sohDailyMetricsSchema>;
 export type SohIndexResult = z.infer<typeof sohIndexResultSchema>;
+
+export type DataStatus = {
+  mode: "api" | "static";
+  collectionSource: PasCollection["source"] | "unknown";
+  generatedAt: string;
+  liveConfigured: boolean;
+  localConfigured: boolean;
+  warnings: string[];
+};
 
 export type PasFilterOptions = {
   stateCode?: string;
@@ -185,38 +194,21 @@ export type ScatterMatrixData = {
   }>;
 };
 
-// Wind rose data
-export type WindDataPoint = {
+export type ReferenceObservationPoint = {
   timestamp: string;
-  windDirection: number; // 0-360 degrees
-  windSpeed: number;     // m/s
-  pm25: number;
+  parameter: "PM2.5";
+  pm25: number | null;
+  aqi: number | null;
+  category?: string;
+  reportingArea?: string;
 };
 
-export type WindRoseSector = {
-  direction: string;     // "N", "NNE", "NE", etc.
-  directionDeg: number;  // center angle
-  speedBins: Array<{
-    label: string;       // "0-2", "2-4", etc.
-    count: number;
-    meanPm25: number;
-  }>;
-  totalCount: number;
-};
-
-export type WindRoseData = {
-  sensorId: string;
-  totalPoints: number;
-  sectors: WindRoseSector[];
-  speedBinLabels: string[];
-};
-
-export type PolarPlotData = {
-  sensorId: string;
-  /** Grid of [direction°, speed, pm25] for polar scatter/heatmap */
-  points: Array<[number, number, number]>;
-  maxSpeed: number;
-  maxPm25: number;
+export type ReferenceObservationSeries = {
+  source: "airnow";
+  label: string;
+  latitude: number;
+  longitude: number;
+  observations: ReferenceObservationPoint[];
 };
 
 // Advanced QC options
@@ -1197,129 +1189,6 @@ export function patScatterMatrix(series: PatSeries, sampleSize = 500): ScatterMa
   }
 
   return { variables: [...variables], pairs };
-}
-
-// ---------------------------------------------------------------------------
-// Wind rose & polar plot – synthetic wind data + analysis
-// ---------------------------------------------------------------------------
-
-const WIND_DIRECTIONS = [
-  "N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE",
-  "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"
-] as const;
-
-const SPEED_BINS = [
-  { label: "0-2", min: 0, max: 2 },
-  { label: "2-4", min: 2, max: 4 },
-  { label: "4-6", min: 4, max: 6 },
-  { label: "6-10", min: 6, max: 10 },
-  { label: "10+", min: 10, max: Infinity },
-];
-
-/**
- * Generate synthetic wind data from a PAT series.
- * Uses a deterministic pseudo-random sequence seeded from timestamp hashes
- * combined with temperature/humidity signals to produce realistic-looking
- * diurnal wind patterns.
- */
-export function generateSyntheticWindData(series: PatSeries): WindDataPoint[] {
-  return series.points
-    .filter((p) => p.pm25A !== null || p.pm25B !== null)
-    .map((p) => {
-      const ts = new Date(p.timestamp);
-      const hour = ts.getUTCHours();
-      const minuteSeed = ts.getUTCMinutes();
-
-      // Simple hash from timestamp for deterministic pseudo-randomness
-      const hash = (ts.getTime() * 2654435761) >>> 0;
-      const rand1 = (hash & 0xffff) / 0xffff;           // 0-1
-      const rand2 = ((hash >>> 16) & 0xffff) / 0xffff;   // 0-1
-
-      // Diurnal wind direction: prevailing westerly with daytime sea-breeze shift
-      const baseDirection = 270; // prevailing westerly
-      const diurnalShift = Math.sin((hour / 24) * Math.PI * 2) * 60; // ±60° swing
-      const noise = (rand1 - 0.5) * 90; // ±45° noise
-      const tempInfluence = ((p.temperature ?? 70) - 70) * 0.5; // warm → more variable
-      const direction = ((baseDirection + diurnalShift + noise + tempInfluence) % 360 + 360) % 360;
-
-      // Diurnal wind speed: stronger midday, calmer at night
-      const diurnalSpeed = 2 + Math.sin(((hour - 6) / 24) * Math.PI * 2) * 3; // 2-5 base
-      const humidityDrag = ((p.humidity ?? 50) - 50) * -0.02; // humid → slightly slower
-      const speedNoise = rand2 * 4; // 0-4 noise
-      const speed = Math.max(0, diurnalSpeed + humidityDrag + speedNoise + minuteSeed * 0.01);
-
-      const pm25 = ((p.pm25A ?? 0) + (p.pm25B ?? 0)) / 2;
-
-      return {
-        timestamp: p.timestamp,
-        windDirection: Number(direction.toFixed(1)),
-        windSpeed: Number(speed.toFixed(2)),
-        pm25: Number(pm25.toFixed(2)),
-      };
-    });
-}
-
-/** Compute wind rose data from wind observations. */
-export function computeWindRose(windData: WindDataPoint[]): WindRoseData {
-  const sectorSize = 360 / WIND_DIRECTIONS.length; // 22.5°
-
-  const sectors: WindRoseSector[] = WIND_DIRECTIONS.map((dir, i) => ({
-    direction: dir,
-    directionDeg: i * sectorSize,
-    speedBins: SPEED_BINS.map((bin) => ({ label: bin.label, count: 0, meanPm25: 0 })),
-    totalCount: 0,
-  }));
-
-  // Accumulate PM2.5 sums for computing means later
-  const pm25Sums: number[][] = WIND_DIRECTIONS.map(() => SPEED_BINS.map(() => 0));
-
-  for (const point of windData) {
-    // Find sector (0-15)
-    const sectorIdx = Math.round(point.windDirection / sectorSize) % WIND_DIRECTIONS.length;
-    // Find speed bin
-    const binIdx = SPEED_BINS.findIndex((b) => point.windSpeed >= b.min && point.windSpeed < b.max);
-    if (binIdx < 0) continue;
-
-    sectors[sectorIdx].speedBins[binIdx].count++;
-    sectors[sectorIdx].totalCount++;
-    pm25Sums[sectorIdx][binIdx] += point.pm25;
-  }
-
-  // Compute means
-  for (let s = 0; s < sectors.length; s++) {
-    for (let b = 0; b < SPEED_BINS.length; b++) {
-      const count = sectors[s].speedBins[b].count;
-      sectors[s].speedBins[b].meanPm25 = count > 0
-        ? Number((pm25Sums[s][b] / count).toFixed(2))
-        : 0;
-    }
-  }
-
-  return {
-    sensorId: "",
-    totalPoints: windData.length,
-    sectors,
-    speedBinLabels: SPEED_BINS.map((b) => b.label),
-  };
-}
-
-/** Compute polar plot data: [direction°, speed, pm25] for each observation. */
-export function computePolarPlot(windData: WindDataPoint[]): PolarPlotData {
-  let maxSpeed = 0;
-  let maxPm25 = 0;
-
-  const points: Array<[number, number, number]> = windData.map((p) => {
-    if (p.windSpeed > maxSpeed) maxSpeed = p.windSpeed;
-    if (p.pm25 > maxPm25) maxPm25 = p.pm25;
-    return [p.windDirection, p.windSpeed, p.pm25];
-  });
-
-  return {
-    sensorId: "",
-    points,
-    maxSpeed: Number(maxSpeed.toFixed(2)),
-    maxPm25: Number(maxPm25.toFixed(2)),
-  };
 }
 
 // ---------------------------------------------------------------------------

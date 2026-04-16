@@ -18,8 +18,8 @@ import {
   StatCard,
   Card,
   Button,
-  EChart,
 } from "../components";
+import { EChart } from "../components/EChart";
 import { getJson, postJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./DiagnosticsPage.module.css";
@@ -333,10 +333,11 @@ export default function DiagnosticsPage() {
           </div>
           {(windRoseOption || polarPlotOption) ? (
             <div className={styles.windCharts}>
+              {windRose?.sourceLabel && <p className={styles.muted}>{windRose.sourceLabel}</p>}
               {windRoseOption && <EChart option={windRoseOption} height={280} />}
               {polarPlotOption && <EChart option={polarPlotOption} height={280} />}
             </div>
-          ) : <p className={styles.muted}>Generate synthetic wind analysis.</p>}
+          ) : <p className={styles.muted}>Generate wind analysis.</p>}
         </Card>
       </div>
 

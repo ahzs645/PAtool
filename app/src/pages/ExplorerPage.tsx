@@ -25,8 +25,9 @@ const pm25WindowOptions: { value: Pm25Window; label: string }[] = [
   { value: "pm25_1week", label: "1week" },
 ];
 
-import { PageHeader, StatCard, Card, Button, DataTable, CellStack, Chip, EChart, Loader } from "../components";
+import { PageHeader, StatCard, Card, Button, DataTable, CellStack, Chip, Loader } from "../components";
 import type { Column } from "../components";
+import { EChart } from "../components/EChart";
 import { getJson, postJson } from "../lib/api";
 import styles from "./ExplorerPage.module.css";
 

@@ -1,5 +1,3 @@
-import { getStaticJson, postStaticJson } from "./staticApi";
-
 const dataSource = import.meta.env.VITE_DATA_SOURCE ?? (import.meta.env.PROD ? "static" : "api");
 const resolvedDataSource = import.meta.env.MODE === "test" ? "api" : dataSource;
 
@@ -10,6 +8,7 @@ export function apiPath(path: string): string {
 
 export async function getJson<T>(path: string): Promise<T> {
   if (resolvedDataSource === "static") {
+    const { getStaticJson } = await import("./staticApi");
     return getStaticJson<T>(path);
   }
   const response = await fetch(apiPath(path));
@@ -19,6 +18,7 @@ export async function getJson<T>(path: string): Promise<T> {
 
 export async function postJson<T>(path: string, body: unknown): Promise<T> {
   if (resolvedDataSource === "static") {
+    const { postStaticJson } = await import("./staticApi");
     return postStaticJson<T>(path, body);
   }
   const response = await fetch(apiPath(path), {

@@ -129,6 +129,37 @@
   min-width: 0;
 }
 
+.statusBanner {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+  padding: var(--spacing-2) var(--spacing-3);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.statusDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-warning);
+  flex: 0 0 auto;
+}
+
+.statusSource {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: var(--border-radius-xs);
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xxs);
+  text-transform: uppercase;
+}
+
 @media (max-width: 1080px) {
   .shell {
     grid-template-columns: 1fr;
@@ -164,5 +195,9 @@
 
   .main {
     padding: var(--spacing-4);
+  }
+
+  .statusBanner {
+    align-items: flex-start;
   }
 }

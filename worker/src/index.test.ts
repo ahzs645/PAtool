@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { samplePatSeries } from "@patool/shared/fixtures";
 
@@ -6,6 +6,10 @@ import { createApp } from "./index";
 
 describe("worker api", () => {
   const app = createApp();
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
 
   it("serves fixture-backed pas data", async () => {
     const response = await app.request("/api/pas");
@@ -30,5 +34,102 @@ describe("worker api", () => {
     });
     const sohPayload = (await sohResponse.json()) as { index: number };
     expect(sohPayload.index).toBeGreaterThan(0);
+  });
+
+  it("serves configured local PurpleAir /json sensors", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({
+        SensorId: 12345,
+        Geo: "Garage",
+        DateTime: 1_700_000_000,
+        lat: 47.61,
+        lon: -122.33,
+        pm2_5_atm: 9.5,
+        pm2_5_atm_b: 10.2,
+        current_humidity: 42,
+        current_temp_f: 68.4,
+        pressure: 1012.3,
+      })))
+    );
+
+    const response = await app.request(
+      "/api/local-sensors",
+      {},
+      { PURPLEAIR_LOCAL_SENSOR_URLS: "garage=192.168.1.24" }
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { source: string; records: Array<{ id: string; pm25Current: number }> };
+
+    expect(payload.source).toBe("local");
+    expect(payload.records).toHaveLength(1);
+    expect(payload.records[0]).toMatchObject({ id: "garage", pm25Current: 9.5 });
+  });
+
+  it("uses PurpleAir history query parameters for date ranges and hourly averages", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({
+          fields: ["time_stamp", "pm2.5_atm_a", "pm2.5_atm_b", "humidity", "temperature", "pressure"],
+          data: [[1_720_000_000, 11, 12, 44, 71, 1011]],
+        }));
+      })
+    );
+
+    const response = await app.request(
+      "/api/pat?id=1001&start=2024-07-02&end=2024-07-05&aggregate=hourly",
+      {},
+      { PURPLEAIR_API_KEY: "test-key", PURPLEAIR_API_BASE: "https://api.example.test/v1" }
+    );
+    expect(response.status).toBe(200);
+
+    const url = new URL(requestedUrl);
+    expect(url.pathname).toBe("/v1/sensors/1001/history");
+    expect(url.searchParams.get("average")).toBe("60");
+    expect(url.searchParams.get("start_timestamp")).toBe("1719878400");
+    expect(url.searchParams.get("end_timestamp")).toBe("1720224000");
+    expect(url.searchParams.get("fields")).toContain("pm2.5_atm_a");
+  });
+
+  it("reports fallback data source status", async () => {
+    const response = await app.request("/api/status");
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { mode: string; collectionSource: string; warnings: string[] };
+
+    expect(payload.mode).toBe("api");
+    expect(payload.collectionSource).toBe("fixture");
+    expect(payload.warnings[0]).toContain("fixture data");
+  });
+
+  it("keeps AirNow AQI separate from PM2.5 concentration", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify([
+        {
+          ParameterName: "PM2.5",
+          ReportingArea: "Seattle",
+          DateObserved: "2024-07-02",
+          HourObserved: 3,
+          AQI: 0,
+          Category: { Name: "Good" },
+        },
+      ])))
+    );
+
+    const response = await app.request(
+      "/api/pwfsl?latitude=47.61&longitude=-122.33",
+      {},
+      { AIRNOW_API_KEY: "test-key" }
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { source: string; observations: Array<{ timestamp: string; pm25: number | null; aqi: number | null }> };
+
+    expect(payload.source).toBe("airnow");
+    expect(payload.observations[0].timestamp).toBe("2024-07-02T03:00:00.000Z");
+    expect(payload.observations[0].aqi).toBe(0);
+    expect(payload.observations[0].pm25).toBeNull();
   });
 });

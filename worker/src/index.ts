@@ -22,7 +22,7 @@ import {
   runHourlyAbQc,
 } from "@patool/shared";
 
-import { getPasCollection, getPatSeries, getPwfslMonitorData, getSensorRecord, type WorkerEnv } from "./purpleair";
+import { getDataStatus, getLocalPasCollection, getPasCollection, getPatSeries, getPwfslMonitorData, getSensorRecord, type WorkerEnv } from "./purpleair";
 
 const qcRequestSchema = z.object({
   series: patSeriesSchema,
@@ -101,9 +101,15 @@ export function createApp() {
 
   app.get("/api/health", (c) => c.json({ ok: true, service: "airsensor-api" }));
 
+  app.get("/api/status", async (c) => cachedJson(c, c.req.url, () => getDataStatus(c.env)));
+
   app.get("/api/pas", async (c) => {
     const date = c.req.query("date");
     return cachedJson(c, c.req.url, () => getPasCollection(c.env, date));
+  });
+
+  app.get("/api/local-sensors", async (c) => {
+    return cachedJson(c, c.req.url, () => getLocalPasCollection(c.env));
   });
 
   app.get("/api/pat", async (c) => {

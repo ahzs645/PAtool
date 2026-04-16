@@ -19,6 +19,7 @@ import {
   type PasRecord,
   type PatSeries,
   type SensorRecord,
+  type DataStatus,
 } from "@patool/shared";
 
 const assetCache = new Map<string, Promise<unknown>>();
@@ -51,10 +52,41 @@ async function loadTemplatePatSeries(): Promise<PatSeries> {
   return patSeriesSchema.parse(await loadAsset("example_pat.series.json"));
 }
 
-function buildSeriesForSensor(template: PatSeries, sensorId: string, sensorRecord?: PasRecord): PatSeries {
-  if (template.meta.sensorId === sensorId && !sensorRecord) {
-    return template;
+function hashString(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
   }
+
+  return hash >>> 0;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
+function averagePm25(series: PatSeries): number {
+  const values = series.points
+    .map((point) => {
+      if (point.pm25A !== null && point.pm25B !== null) return (point.pm25A + point.pm25B) / 2;
+      return point.pm25A ?? point.pm25B;
+    })
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+
+  return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 1;
+}
+
+function deriveStaticSeries(template: PatSeries, sensorId: string, sensorRecord?: PasRecord): PatSeries {
+  const seed = hashString(`${sensorId}:${sensorRecord?.label ?? ""}`);
+  const targetPm25 = sensorRecord?.pm25_1hr ?? sensorRecord?.pm25Current ?? sensorRecord?.pm25_1day ?? averagePm25(template);
+  const scale = clamp(targetPm25 / Math.max(averagePm25(template), 0.1), 0.05, 8);
+  const phase = seed % 1440;
+  const amplitude = 0.03 + ((seed >>> 8) % 9) / 100;
+  const channelBias = (((seed >>> 16) % 41) - 20) / 1000;
+  const humidityOffset = (sensorRecord?.humidity ?? 45) - 45;
+  const temperatureOffset = (sensorRecord?.temperature ?? 70) - 70;
+  const pressureOffset = (sensorRecord?.pressure ?? 1013) - 1013;
 
   return {
     meta: {
@@ -65,7 +97,53 @@ function buildSeriesForSensor(template: PatSeries, sensorId: string, sensorRecor
       latitude: sensorRecord?.latitude ?? template.meta.latitude,
       longitude: sensorRecord?.longitude ?? template.meta.longitude,
     },
-    points: template.points,
+    points: template.points.map((point, index) => {
+      const dayCycle = Math.sin(((index + phase) / 1440) * Math.PI * 2);
+      const weekCycle = Math.cos(((index + phase) / (1440 * 7)) * Math.PI * 2);
+      const multiplier = clamp(1 + amplitude * dayCycle + amplitude * 0.5 * weekCycle, 0.2, 3);
+
+      const transformPm = (value: number | null, bias: number) => {
+        if (value === null) return null;
+        return Number(Math.max(0, value * scale * multiplier * (1 + bias)).toFixed(3));
+      };
+
+      return {
+        ...point,
+        pm25A: transformPm(point.pm25A, channelBias),
+        pm25B: transformPm(point.pm25B, -channelBias),
+        humidity: point.humidity === null || point.humidity === undefined
+          ? point.humidity
+          : Number(clamp(point.humidity + humidityOffset * 0.35, 0, 100).toFixed(3)),
+        temperature: point.temperature === null || point.temperature === undefined
+          ? point.temperature
+          : Number((point.temperature + temperatureOffset * 0.35).toFixed(3)),
+        pressure: point.pressure === null || point.pressure === undefined
+          ? point.pressure
+          : Number((point.pressure + pressureOffset * 0.35).toFixed(3)),
+      };
+    }),
+  };
+}
+
+function buildSeriesForSensor(template: PatSeries, sensorId: string, sensorRecord?: PasRecord): PatSeries {
+  if (template.meta.sensorId === sensorId && !sensorRecord) {
+    return template;
+  }
+
+  return deriveStaticSeries(template, sensorId, sensorRecord);
+}
+
+async function getStaticStatus(): Promise<DataStatus> {
+  const collection = await loadPasCollection();
+  return {
+    mode: "static",
+    collectionSource: collection.source,
+    generatedAt: new Date().toISOString(),
+    liveConfigured: false,
+    localConfigured: false,
+    warnings: [
+      "Static mode uses committed fixture data and deterministic per-sensor demo time series.",
+    ],
   };
 }
 
@@ -99,6 +177,10 @@ export async function getStaticJson<T>(path: string): Promise<T> {
 
   if (url.pathname === "/api/pas") {
     return (await loadPasCollection()) as T;
+  }
+
+  if (url.pathname === "/api/status") {
+    return (await getStaticStatus()) as T;
   }
 
   if (url.pathname === "/api/pat") {
