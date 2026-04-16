@@ -10,6 +10,8 @@ export type InterpolationWorkerRequest = {
   gridWidth: number;
   gridHeight: number;
   idwPower: number;
+  krigingMaxNeighbors?: number;
+  krigingTileSize?: number;
 };
 
 export type SerializedInterpolationGrid = Omit<InterpolationGrid, "values"> & {

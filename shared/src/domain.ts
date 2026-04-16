@@ -1284,15 +1284,23 @@ export function idwInterpolate(
 
   const lonStep = gridWidth > 1 ? (bounds.east - bounds.west) / (gridWidth - 1) : 0;
   const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
+  const neighborLimit = maxNeighbors > 0 && maxNeighbors < normalizedPoints.length
+    ? maxNeighbors
+    : 0;
+  const neighborDistances = neighborLimit > 0 ? new Float64Array(neighborLimit) : null;
+  const neighborValues = neighborLimit > 0 ? new Float64Array(neighborLimit) : null;
 
   for (let row = 0; row < gridHeight; row++) {
     for (let col = 0; col < gridWidth; col++) {
       const x = bounds.west + col * lonStep;
       const y = bounds.south + row * latStep;
 
-      // Calculate distances to all known points
-      let distances: Array<{ dist: number; value: number }> = [];
       let exactMatch = false;
+      let weightSum = 0;
+      let valueSum = 0;
+      let neighborCount = 0;
+      let worstNeighborSlot = 0;
+      let worstNeighborDistance = -Infinity;
 
       for (const p of normalizedPoints) {
         const dist = approximateDistanceKm(x, y, p.x, p.y);
@@ -1302,7 +1310,38 @@ export function idwInterpolate(
           exactMatch = true;
           break;
         }
-        distances.push({ dist, value: p.value });
+
+        if (neighborLimit === 0) {
+          const w = 1 / Math.pow(dist, power);
+          weightSum += w;
+          valueSum += w * p.value;
+          continue;
+        }
+
+        if (neighborCount < neighborLimit) {
+          neighborDistances![neighborCount] = dist;
+          neighborValues![neighborCount] = p.value;
+          if (dist > worstNeighborDistance) {
+            worstNeighborDistance = dist;
+            worstNeighborSlot = neighborCount;
+          }
+          neighborCount++;
+          continue;
+        }
+
+        if (dist < worstNeighborDistance) {
+          neighborDistances![worstNeighborSlot] = dist;
+          neighborValues![worstNeighborSlot] = p.value;
+
+          worstNeighborDistance = neighborDistances![0];
+          worstNeighborSlot = 0;
+          for (let slot = 1; slot < neighborCount; slot++) {
+            if (neighborDistances![slot] > worstNeighborDistance) {
+              worstNeighborDistance = neighborDistances![slot];
+              worstNeighborSlot = slot;
+            }
+          }
+        }
       }
 
       if (exactMatch) {
@@ -1312,19 +1351,12 @@ export function idwInterpolate(
         continue;
       }
 
-      // Sort by distance and take n closest if specified
-      if (maxNeighbors > 0 && maxNeighbors < distances.length) {
-        distances.sort((a, b) => a.dist - b.dist);
-        distances = distances.slice(0, maxNeighbors);
-      }
-
-      // Calculate weighted average
-      let weightSum = 0;
-      let valueSum = 0;
-      for (const { dist, value } of distances) {
-        const w = 1 / Math.pow(dist, power);
-        weightSum += w;
-        valueSum += w * value;
+      if (neighborLimit > 0) {
+        for (let i = 0; i < neighborCount; i++) {
+          const w = 1 / Math.pow(neighborDistances![i], power);
+          weightSum += w;
+          valueSum += w * neighborValues![i];
+        }
       }
 
       const v = weightSum > 0 ? valueSum / weightSum : 0;
@@ -1439,49 +1471,324 @@ function sphericalVariogram(h: number, nugget: number, sill: number, range: numb
   return nugget + sill * (1.5 * hr - 0.5 * hr * hr * hr);
 }
 
-/** Solve linear system Ax = b using Gaussian elimination with partial pivoting */
-function solveLinearSystem(A: number[][], b: number[]): number[] | null {
-  const n = b.length;
-  // Create augmented matrix
-  const aug = A.map((row, i) => [...row, b[i]]);
-
-  // Forward elimination with partial pivoting
+function solveAugmentedLinearSystem(
+  aug: Float64Array,
+  n: number,
+  stride: number,
+  solution: Float64Array,
+): boolean {
   for (let col = 0; col < n; col++) {
-    // Find pivot
     let maxRow = col;
-    let maxVal = Math.abs(aug[col][col]);
+    let maxVal = Math.abs(aug[col * stride + col]);
     for (let row = col + 1; row < n; row++) {
-      if (Math.abs(aug[row][col]) > maxVal) {
-        maxVal = Math.abs(aug[row][col]);
+      const value = Math.abs(aug[row * stride + col]);
+      if (value > maxVal) {
+        maxVal = value;
         maxRow = row;
       }
     }
-    const rowScale = aug[maxRow].reduce((sum, value) => sum + Math.abs(value), 0);
-    if (maxVal <= Math.max(1e-12, rowScale * 1e-10)) return null; // Singular or ill-conditioned
 
-    // Swap rows
-    [aug[col], aug[maxRow]] = [aug[maxRow], aug[col]];
+    let rowScale = 0;
+    const maxRowOffset = maxRow * stride;
+    for (let j = 0; j < n; j++) {
+      rowScale += Math.abs(aug[maxRowOffset + j]);
+    }
+    if (maxVal <= Math.max(1e-12, rowScale * 1e-10)) return false;
 
-    // Eliminate
-    for (let row = col + 1; row < n; row++) {
-      const factor = aug[row][col] / aug[col][col];
+    if (maxRow !== col) {
+      const colOffset = col * stride;
       for (let j = col; j <= n; j++) {
-        aug[row][j] -= factor * aug[col][j];
+        const tmp = aug[colOffset + j];
+        aug[colOffset + j] = aug[maxRowOffset + j];
+        aug[maxRowOffset + j] = tmp;
+      }
+    }
+
+    const pivotOffset = col * stride;
+    const pivot = aug[pivotOffset + col];
+    for (let row = col + 1; row < n; row++) {
+      const rowOffset = row * stride;
+      const factor = aug[rowOffset + col] / pivot;
+      aug[rowOffset + col] = 0;
+      for (let j = col + 1; j <= n; j++) {
+        aug[rowOffset + j] -= factor * aug[pivotOffset + j];
       }
     }
   }
 
-  // Back substitution
-  const x = new Array(n).fill(0);
   for (let row = n - 1; row >= 0; row--) {
-    let sum = aug[row][n];
+    const rowOffset = row * stride;
+    let sum = aug[rowOffset + n];
     for (let j = row + 1; j < n; j++) {
-      sum -= aug[row][j] * x[j];
+      sum -= aug[rowOffset + j] * solution[j];
     }
-    x[row] = sum / aug[row][row];
+    solution[row] = sum / aug[rowOffset + row];
   }
 
-  return x;
+  return true;
+}
+
+function factorLinearSystem(
+  matrix: Float64Array,
+  n: number,
+  stride: number,
+  pivots: Int32Array,
+): boolean {
+  for (let col = 0; col < n; col++) {
+    let maxRow = col;
+    let maxVal = Math.abs(matrix[col * stride + col]);
+    for (let row = col + 1; row < n; row++) {
+      const value = Math.abs(matrix[row * stride + col]);
+      if (value > maxVal) {
+        maxVal = value;
+        maxRow = row;
+      }
+    }
+
+    let rowScale = 0;
+    const maxRowOffset = maxRow * stride;
+    for (let j = 0; j < n; j++) {
+      rowScale += Math.abs(matrix[maxRowOffset + j]);
+    }
+    if (maxVal <= Math.max(1e-12, rowScale * 1e-10)) return false;
+
+    pivots[col] = maxRow;
+    if (maxRow !== col) {
+      const colOffset = col * stride;
+      for (let j = 0; j < n; j++) {
+        const tmp = matrix[colOffset + j];
+        matrix[colOffset + j] = matrix[maxRowOffset + j];
+        matrix[maxRowOffset + j] = tmp;
+      }
+    }
+
+    const pivotOffset = col * stride;
+    const pivot = matrix[pivotOffset + col];
+    for (let row = col + 1; row < n; row++) {
+      const rowOffset = row * stride;
+      const factor = matrix[rowOffset + col] / pivot;
+      matrix[rowOffset + col] = factor;
+      for (let j = col + 1; j < n; j++) {
+        matrix[rowOffset + j] -= factor * matrix[pivotOffset + j];
+      }
+    }
+  }
+
+  return true;
+}
+
+function solveFactoredLinearSystem(
+  matrix: Float64Array,
+  n: number,
+  stride: number,
+  pivots: Int32Array,
+  rhs: Float64Array,
+  solution: Float64Array,
+): void {
+  for (let i = 0; i < n; i++) {
+    solution[i] = rhs[i];
+  }
+
+  for (let col = 0; col < n; col++) {
+    const pivotRow = pivots[col];
+    if (pivotRow !== col) {
+      const tmp = solution[col];
+      solution[col] = solution[pivotRow];
+      solution[pivotRow] = tmp;
+    }
+  }
+
+  for (let row = 0; row < n; row++) {
+    const rowOffset = row * stride;
+    let sum = solution[row];
+    for (let col = 0; col < row; col++) {
+      sum -= matrix[rowOffset + col] * solution[col];
+    }
+    solution[row] = sum;
+  }
+
+  for (let row = n - 1; row >= 0; row--) {
+    const rowOffset = row * stride;
+    let sum = solution[row];
+    for (let col = row + 1; col < n; col++) {
+      sum -= matrix[rowOffset + col] * solution[col];
+    }
+    solution[row] = sum / matrix[rowOffset + row];
+  }
+}
+
+function selectNearestPointIndexes(
+  x: number,
+  y: number,
+  pointXs: Float64Array,
+  pointYs: Float64Array,
+  maxNeighbors: number,
+  outIndexes: Int32Array,
+  outDistances: Float64Array,
+): number {
+  let neighborCount = 0;
+  let worstNeighborSlot = 0;
+  let worstNeighborDistance = -Infinity;
+
+  for (let i = 0; i < pointXs.length; i++) {
+    const dist = approximateDistanceKm(x, y, pointXs[i], pointYs[i]);
+
+    if (neighborCount < maxNeighbors) {
+      outIndexes[neighborCount] = i;
+      outDistances[neighborCount] = dist;
+      if (dist > worstNeighborDistance) {
+        worstNeighborDistance = dist;
+        worstNeighborSlot = neighborCount;
+      }
+      neighborCount++;
+      continue;
+    }
+
+    if (dist < worstNeighborDistance) {
+      outIndexes[worstNeighborSlot] = i;
+      outDistances[worstNeighborSlot] = dist;
+
+      worstNeighborDistance = outDistances[0];
+      worstNeighborSlot = 0;
+      for (let slot = 1; slot < neighborCount; slot++) {
+        if (outDistances[slot] > worstNeighborDistance) {
+          worstNeighborDistance = outDistances[slot];
+          worstNeighborSlot = slot;
+        }
+      }
+    }
+  }
+
+  return neighborCount;
+}
+
+function interpolateKrigingTiles(
+  values: Float64Array,
+  gridWidth: number,
+  gridHeight: number,
+  bounds: { west: number; east: number; south: number; north: number },
+  pointXs: Float64Array,
+  pointYs: Float64Array,
+  pointValues: Float64Array,
+  pairwiseSemivariance: Float64Array,
+  nugget: number,
+  sill: number,
+  range: number,
+  maxNeighbors: number,
+  tileSize: number,
+): { min: number; max: number } {
+  let min = Infinity, max = -Infinity;
+  const pointCount = pointXs.length;
+  const lonStep = gridWidth > 1 ? (bounds.east - bounds.west) / (gridWidth - 1) : 0;
+  const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
+  const maxSystemSize = maxNeighbors + 1;
+  const neighborIndexes = new Int32Array(maxNeighbors);
+  const neighborDistances = new Float64Array(maxNeighbors);
+  const matrix = new Float64Array(maxSystemSize * maxSystemSize);
+  const pivots = new Int32Array(maxSystemSize);
+  const rhs = new Float64Array(maxSystemSize);
+  const weights = new Float64Array(maxSystemSize);
+  const cellDistances = new Float64Array(maxNeighbors);
+  const diagonalJitter = Math.max((nugget + sill) * 1e-6, 1e-8);
+
+  for (let rowStart = 0; rowStart < gridHeight; rowStart += tileSize) {
+    const rowEnd = Math.min(rowStart + tileSize, gridHeight);
+    const centerRow = (rowStart + rowEnd - 1) / 2;
+    const centerY = bounds.south + centerRow * latStep;
+
+    for (let colStart = 0; colStart < gridWidth; colStart += tileSize) {
+      const colEnd = Math.min(colStart + tileSize, gridWidth);
+      const centerCol = (colStart + colEnd - 1) / 2;
+      const centerX = bounds.west + centerCol * lonStep;
+      const nn = selectNearestPointIndexes(
+        centerX,
+        centerY,
+        pointXs,
+        pointYs,
+        maxNeighbors,
+        neighborIndexes,
+        neighborDistances,
+      );
+
+      if (nn < 2) {
+        const fallbackValue = nn === 1 ? pointValues[neighborIndexes[0]] : 0;
+        for (let row = rowStart; row < rowEnd; row++) {
+          for (let col = colStart; col < colEnd; col++) {
+            values[row * gridWidth + col] = fallbackValue;
+          }
+        }
+        if (fallbackValue < min) min = fallbackValue;
+        if (fallbackValue > max) max = fallbackValue;
+        continue;
+      }
+
+      const size = nn + 1;
+      const stride = size;
+      for (let i = 0; i < nn; i++) {
+        const rowOffset = i * stride;
+        const leftIdx = neighborIndexes[i];
+        for (let j = 0; j < nn; j++) {
+          matrix[rowOffset + j] = i === j
+            ? diagonalJitter
+            : pairwiseSemivariance[leftIdx * pointCount + neighborIndexes[j]];
+        }
+        matrix[rowOffset + nn] = 1;
+      }
+      const lagrangeRowOffset = nn * stride;
+      for (let j = 0; j < nn; j++) {
+        matrix[lagrangeRowOffset + j] = 1;
+      }
+      matrix[lagrangeRowOffset + nn] = 0;
+
+      const factored = factorLinearSystem(matrix, size, stride, pivots);
+
+      for (let row = rowStart; row < rowEnd; row++) {
+        const y = bounds.south + row * latStep;
+        for (let col = colStart; col < colEnd; col++) {
+          const x = bounds.west + col * lonStep;
+          let exactMatchSlot = -1;
+
+          for (let i = 0; i < nn; i++) {
+            const pointIndex = neighborIndexes[i];
+            const dist = approximateDistanceKm(x, y, pointXs[pointIndex], pointYs[pointIndex]);
+            cellDistances[i] = dist;
+            if (dist < 1e-10) {
+              exactMatchSlot = i;
+              break;
+            }
+            rhs[i] = sphericalVariogram(dist, nugget, sill, range);
+          }
+          rhs[nn] = 1;
+
+          let value: number;
+          if (exactMatchSlot >= 0) {
+            value = pointValues[neighborIndexes[exactMatchSlot]];
+          } else if (factored) {
+            solveFactoredLinearSystem(matrix, size, stride, pivots, rhs, weights);
+            value = 0;
+            for (let i = 0; i < nn; i++) {
+              value += weights[i] * pointValues[neighborIndexes[i]];
+            }
+            if (!Number.isFinite(value)) value = pointValues[neighborIndexes[0]] ?? 0;
+          } else {
+            let wSum = 0, vSum = 0;
+            for (let i = 0; i < nn; i++) {
+              const w = 1 / (cellDistances[i] * cellDistances[i]);
+              wSum += w;
+              vSum += w * pointValues[neighborIndexes[i]];
+            }
+            value = wSum > 0 ? vSum / wSum : 0;
+          }
+
+          values[row * gridWidth + col] = value;
+          if (value < min) min = value;
+          if (value > max) max = value;
+        }
+      }
+    }
+  }
+
+  return { min, max };
 }
 
 export function ordinaryKrigingInterpolate(
@@ -1489,7 +1796,8 @@ export function ordinaryKrigingInterpolate(
   gridWidth: number,
   gridHeight: number,
   bounds: { west: number; east: number; south: number; north: number },
-  maxNeighbors: number = 12
+  maxNeighbors: number = 12,
+  tileSize: number = 1,
 ): InterpolationGrid {
   const normalizedPoints = mergeCoincidentPoints(knownPoints);
 
@@ -1515,6 +1823,53 @@ export function ordinaryKrigingInterpolate(
   // Step 2: Fit spherical model
   const { nugget, sill, range } = fitSphericalVariogram(experimental);
 
+  const pointCount = normalizedPoints.length;
+  const pointXs = new Float64Array(pointCount);
+  const pointYs = new Float64Array(pointCount);
+  const pointValues = new Float64Array(pointCount);
+  for (let i = 0; i < pointCount; i++) {
+    pointXs[i] = normalizedPoints[i].x;
+    pointYs[i] = normalizedPoints[i].y;
+    pointValues[i] = normalizedPoints[i].value;
+  }
+
+  const neighborLimit = Math.max(1, Math.min(maxNeighbors > 0 ? maxNeighbors : pointCount, pointCount));
+  const neighborIndexes = new Int32Array(neighborLimit);
+  const neighborDistances = new Float64Array(neighborLimit);
+  const pairwiseSemivariance = new Float64Array(pointCount * pointCount);
+  for (let i = 0; i < pointCount; i++) {
+    for (let j = i + 1; j < pointCount; j++) {
+      const d = approximateDistanceKm(pointXs[i], pointYs[i], pointXs[j], pointYs[j]);
+      const gamma = sphericalVariogram(d, nugget, sill, range);
+      pairwiseSemivariance[i * pointCount + j] = gamma;
+      pairwiseSemivariance[j * pointCount + i] = gamma;
+    }
+  }
+
+  const maxSystemSize = neighborLimit + 1;
+  const aug = new Float64Array(maxSystemSize * (maxSystemSize + 1));
+  const weights = new Float64Array(maxSystemSize);
+  const effectiveTileSize = Math.max(1, Math.floor(tileSize));
+
+  if (effectiveTileSize > 1) {
+    const stats = interpolateKrigingTiles(
+      values,
+      gridWidth,
+      gridHeight,
+      bounds,
+      pointXs,
+      pointYs,
+      pointValues,
+      pairwiseSemivariance,
+      nugget,
+      sill,
+      range,
+      neighborLimit,
+      effectiveTileSize,
+    );
+    return { width: gridWidth, height: gridHeight, bounds, values, min: stats.min, max: stats.max };
+  }
+
   // Step 3: Interpolate each grid point
   let min = Infinity, max = -Infinity;
 
@@ -1526,89 +1881,105 @@ export function ordinaryKrigingInterpolate(
       const x = bounds.west + col * lonStep;
       const y = bounds.south + row * latStep;
 
-      // Find n closest neighbors
-      let neighbors = normalizedPoints.map((p, _i) => ({
-        idx: _i,
-        dist: approximateDistanceKm(x, y, p.x, p.y),
-        value: p.value,
-        x: p.x,
-        y: p.y,
-      }));
+      let neighborCount = 0;
+      let worstNeighborSlot = 0;
+      let worstNeighborDistance = -Infinity;
+      let exactMatchIndex = -1;
 
-      neighbors.sort((a, b) => a.dist - b.dist);
+      for (let i = 0; i < pointCount; i++) {
+        const dist = approximateDistanceKm(x, y, pointXs[i], pointYs[i]);
+        if (dist < 1e-10) {
+          exactMatchIndex = i;
+          break;
+        }
 
-      // Exact match check
-      if (neighbors[0] && neighbors[0].dist < 1e-10) {
-        const v = neighbors[0].value;
+        if (neighborCount < neighborLimit) {
+          neighborIndexes[neighborCount] = i;
+          neighborDistances[neighborCount] = dist;
+          if (dist > worstNeighborDistance) {
+            worstNeighborDistance = dist;
+            worstNeighborSlot = neighborCount;
+          }
+          neighborCount++;
+          continue;
+        }
+
+        if (dist < worstNeighborDistance) {
+          neighborIndexes[worstNeighborSlot] = i;
+          neighborDistances[worstNeighborSlot] = dist;
+
+          worstNeighborDistance = neighborDistances[0];
+          worstNeighborSlot = 0;
+          for (let slot = 1; slot < neighborCount; slot++) {
+            if (neighborDistances[slot] > worstNeighborDistance) {
+              worstNeighborDistance = neighborDistances[slot];
+              worstNeighborSlot = slot;
+            }
+          }
+        }
+      }
+
+      if (exactMatchIndex >= 0) {
+        const v = pointValues[exactMatchIndex];
         values[row * gridWidth + col] = v;
         if (v < min) min = v;
         if (v > max) max = v;
         continue;
       }
 
-      const nn = Math.min(maxNeighbors, neighbors.length);
-      neighbors = neighbors.slice(0, nn);
-
-      if (nn < 2) {
+      if (neighborCount < 2) {
         // Fallback to nearest neighbor
-        values[row * gridWidth + col] = neighbors[0]?.value ?? 0;
+        const v = neighborCount === 1 ? pointValues[neighborIndexes[0]] : 0;
+        values[row * gridWidth + col] = v;
+        if (v < min) min = v;
+        if (v > max) max = v;
         continue;
       }
 
       // Build kriging system: (nn+1) x (nn+1) augmented with Lagrange
+      const nn = neighborCount;
       const size = nn + 1;
-      const K: number[][] = [];
+      const stride = size + 1;
       const diagonalJitter = Math.max((nugget + sill) * 1e-6, 1e-8);
-      for (let i = 0; i < size; i++) {
-        K[i] = new Array(size).fill(0);
-      }
-      const k: number[] = new Array(size).fill(0);
 
       // Fill K matrix (semivariance between known points)
       for (let i = 0; i < nn; i++) {
+        const rowOffset = i * stride;
+        const leftIdx = neighborIndexes[i];
         for (let j = 0; j < nn; j++) {
-          if (i === j) {
-            K[i][j] = diagonalJitter;
-          } else {
-            const d = approximateDistanceKm(
-              neighbors[i].x,
-              neighbors[i].y,
-              neighbors[j].x,
-              neighbors[j].y,
-            );
-            K[i][j] = sphericalVariogram(d, nugget, sill, range);
-          }
+          aug[rowOffset + j] = i === j
+            ? diagonalJitter
+            : pairwiseSemivariance[leftIdx * pointCount + neighborIndexes[j]];
         }
-        K[i][nn] = 1; // Lagrange column
-        K[nn][i] = 1; // Lagrange row
+        aug[rowOffset + nn] = 1; // Lagrange column
+        aug[rowOffset + size] = sphericalVariogram(neighborDistances[i], nugget, sill, range);
       }
-      K[nn][nn] = 0; // Bottom-right corner
-
-      // Fill k vector (semivariance from known to unknown)
-      for (let i = 0; i < nn; i++) {
-        k[i] = sphericalVariogram(neighbors[i].dist, nugget, sill, range);
+      const lagrangeRowOffset = nn * stride;
+      for (let j = 0; j < nn; j++) {
+        aug[lagrangeRowOffset + j] = 1; // Lagrange row
       }
-      k[nn] = 1; // Lagrange constraint
+      aug[lagrangeRowOffset + nn] = 0; // Bottom-right corner
+      aug[lagrangeRowOffset + size] = 1; // Lagrange constraint
 
       // Solve kriging system
-      const weights = solveLinearSystem(K, k);
+      const solved = solveAugmentedLinearSystem(aug, size, stride, weights);
 
-      if (!weights) {
+      if (!solved) {
         // Fallback to IDW if kriging fails
         let wSum = 0, vSum = 0;
-        for (const nb of neighbors) {
-          const w = 1 / (nb.dist * nb.dist);
+        for (let i = 0; i < nn; i++) {
+          const w = 1 / (neighborDistances[i] * neighborDistances[i]);
           wSum += w;
-          vSum += w * nb.value;
+          vSum += w * pointValues[neighborIndexes[i]];
         }
         values[row * gridWidth + col] = wSum > 0 ? vSum / wSum : 0;
       } else {
         // Compute estimate: Z* = sum(lambda_i * Z_i)
         let v = 0;
         for (let i = 0; i < nn; i++) {
-          v += weights[i] * neighbors[i].value;
+          v += weights[i] * pointValues[neighborIndexes[i]];
         }
-        values[row * gridWidth + col] = Number.isFinite(v) ? v : neighbors[0]?.value ?? 0;
+        values[row * gridWidth + col] = Number.isFinite(v) ? v : pointValues[neighborIndexes[0]] ?? 0;
       }
 
       const v = values[row * gridWidth + col];

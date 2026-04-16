@@ -44,7 +44,10 @@ const HEATMAP_SOURCE_ID = "heatmap-source";
 const MISSING_PM_COLOR = "#94a3b8";
 const MIN_INTERPOLATION_POINTS = 3;
 const VIEWPORT_PADDING_RATIO = 0.2;
+const MIN_GRID_RESOLUTION = 50;
 const MAX_GRID_EDGE = 384;
+const DEFAULT_KRIGING_NEIGHBORS = 12;
+const DEFAULT_KRIGING_TILE_SIZE = 4;
 const MAX_POINTS_BY_METHOD: Record<InterpolationMethod, number> = {
   idw: 2400,
   kriging: 400,
@@ -61,6 +64,8 @@ type InterpolationMeta = {
   gridWidth: number;
   gridHeight: number;
   capped: boolean;
+  krigingNeighbors?: number;
+  krigingTileSize?: number;
   durationMs?: number;
   error?: string;
 };
@@ -129,6 +134,28 @@ function deriveGridDimensions(baseResolution: number, mapSize: MapSize): { width
     width: Math.max(2, baseResolution),
     height: Math.min(MAX_GRID_EDGE, Math.max(2, Math.round(baseResolution / aspectRatio))),
   };
+}
+
+function deriveZoomAdjustedGridResolution(baseResolution: number, zoom: number | null): number {
+  if (zoom == null) return baseResolution;
+
+  const scale = zoom < 3.5
+    ? 0.35
+    : zoom < 5
+      ? 0.5
+      : zoom < 6
+        ? 0.75
+        : 1;
+
+  return Math.max(MIN_GRID_RESOLUTION, Math.round(baseResolution * scale));
+}
+
+function deriveKrigingNeighborCount(zoom: number | null): number {
+  if (zoom == null) return DEFAULT_KRIGING_NEIGHBORS;
+  if (zoom < 3.5) return 6;
+  if (zoom < 5) return 8;
+  if (zoom < 6) return 10;
+  return DEFAULT_KRIGING_NEIGHBORS;
 }
 
 function selectInterpolationPoints(
@@ -222,6 +249,7 @@ export default function MapPage() {
     south: number;
     north: number;
   } | null>(null);
+  const [viewZoom, setViewZoom] = useState<number | null>(null);
   // Bump this counter to force a recompute using the current viewport.
   const [recomputeTick, setRecomputeTick] = useState(0);
   const deferredQuery = useDeferredValue(query);
@@ -276,7 +304,8 @@ export default function MapPage() {
     // Viewport-bound grids give high-resolution detail as the user zooms in, since the
     // same NxN grid now covers a smaller area.
     let bounds: InterpolationBounds;
-    if (followView && viewBounds) {
+    if (followView) {
+      if (!viewBounds || viewZoom == null) return null;
       bounds = viewBounds;
     } else {
       const lons = interpolationPoints.map((p) => p.x);
@@ -293,7 +322,15 @@ export default function MapPage() {
     const { selected, capped } = selectInterpolationPoints(interpolationPoints, bounds, interpMethod);
     if (selected.length < MIN_INTERPOLATION_POINTS) return null;
 
-    const { width, height } = deriveGridDimensions(gridRes, mapSize);
+    const zoomForAdaptiveWork = followView ? viewZoom : null;
+    const adjustedGridRes = deriveZoomAdjustedGridResolution(gridRes, zoomForAdaptiveWork);
+    const krigingNeighbors = interpMethod === "kriging"
+      ? deriveKrigingNeighborCount(zoomForAdaptiveWork)
+      : undefined;
+    const krigingTileSize = interpMethod === "kriging"
+      ? DEFAULT_KRIGING_TILE_SIZE
+      : undefined;
+    const { width, height } = deriveGridDimensions(adjustedGridRes, mapSize);
     return {
       bounds,
       points: selected,
@@ -301,10 +338,12 @@ export default function MapPage() {
       gridHeight: height,
       totalPoints: interpolationPoints.length,
       capped,
+      krigingNeighbors,
+      krigingTileSize,
     };
     // recomputeTick is intentionally a dep so the manual "Recompute" button re-runs this
     // even when bounds/params are unchanged.
-  }, [mapMode, interpolationPoints, interpMethod, gridRes, mapSize, followView, viewBounds, recomputeTick]);
+  }, [mapMode, interpolationPoints, interpMethod, gridRes, mapSize, followView, viewBounds, viewZoom, recomputeTick]);
 
   useEffect(() => {
     const worker = new Worker(new URL("../workers/interpolation.worker.ts", import.meta.url), { type: "module" });
@@ -366,6 +405,8 @@ export default function MapPage() {
       gridWidth: interpolationWorkload.gridWidth,
       gridHeight: interpolationWorkload.gridHeight,
       capped: interpolationWorkload.capped,
+      krigingNeighbors: interpolationWorkload.krigingNeighbors,
+      krigingTileSize: interpolationWorkload.krigingTileSize,
     });
 
     worker.postMessage({
@@ -376,6 +417,8 @@ export default function MapPage() {
       gridWidth: interpolationWorkload.gridWidth,
       gridHeight: interpolationWorkload.gridHeight,
       idwPower,
+      krigingMaxNeighbors: interpolationWorkload.krigingNeighbors,
+      krigingTileSize: interpolationWorkload.krigingTileSize,
     });
   }, [interpolationWorkload, interpMethod, idwPower]);
 
@@ -492,6 +535,7 @@ export default function MapPage() {
         map.resize();
         if (mapMode === "heatmap" && followView) {
           setViewBounds(getMapBounds(map));
+          setViewZoom(map.getZoom());
         }
       }
     };
@@ -623,12 +667,14 @@ export default function MapPage() {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
         setViewBounds(getMapBounds(map));
+        setViewZoom(map.getZoom());
       }, 200);
     };
 
     // Seed once for the current view, then subscribe to future moves.
     const seed = () => {
       setViewBounds(getMapBounds(map));
+      setViewZoom(map.getZoom());
     };
     if (map.isStyleLoaded()) seed();
     else map.once("load", seed);
@@ -720,6 +766,7 @@ export default function MapPage() {
                 const map = mapRef.current;
                 if (map) {
                   setViewBounds(getMapBounds(map));
+                  setViewZoom(map.getZoom());
                 }
                 setRecomputeTick((t) => t + 1);
               }}
@@ -742,6 +789,12 @@ export default function MapPage() {
                 )}
                 {interpolationMeta?.capped && (
                   <span className={styles.statusPillMuted}>Capped for speed</span>
+                )}
+                {interpolationMeta?.krigingNeighbors && (
+                  <span className={styles.statusPillMuted}>{interpolationMeta.krigingNeighbors} neighbors</span>
+                )}
+                {interpolationMeta?.krigingTileSize && (
+                  <span className={styles.statusPillMuted}>{interpolationMeta.krigingTileSize}x{interpolationMeta.krigingTileSize} tiles</span>
                 )}
                 {heatmapRuntimeLabel && (
                   <span className={styles.computing}>{heatmapRuntimeLabel}</span>

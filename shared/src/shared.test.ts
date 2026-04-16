@@ -402,6 +402,26 @@ describe("spatial interpolation", () => {
     expect(grid.values[0]).toBeCloseTo(12, 0);
   });
 
+  it("tiled Ordinary Kriging produces a finite approximate grid", () => {
+    const points: InterpolationPoint[] = [
+      { x: 0, y: 0, value: 10 },
+      { x: 1, y: 0, value: 20 },
+      { x: 0, y: 1, value: 30 },
+      { x: 1, y: 1, value: 40 },
+      { x: 0.5, y: 0.5, value: 25 },
+    ];
+
+    const exact = ordinaryKrigingInterpolate(points, 9, 9, { west: 0, east: 1, south: 0, north: 1 }, 4);
+    const tiled = ordinaryKrigingInterpolate(points, 9, 9, { west: 0, east: 1, south: 0, north: 1 }, 4, 3);
+    const meanAbsoluteDifference = Array.from(tiled.values).reduce(
+      (sum, value, index) => sum + Math.abs(value - exact.values[index]),
+      0,
+    ) / tiled.values.length;
+
+    expect(Array.from(tiled.values).every((value) => Number.isFinite(value))).toBe(true);
+    expect(meanAbsoluteDifference).toBeLessThan(5);
+  });
+
   it("aqiToColor returns valid RGBA", () => {
     const good = aqiToColor(25);
     expect(good[0]).toBeLessThanOrEqual(255);

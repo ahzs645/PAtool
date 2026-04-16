@@ -24,6 +24,7 @@ type MockMap = {
   isStyleLoaded: ReturnType<typeof vi.fn>;
   setStyle: ReturnType<typeof vi.fn>;
   getBounds: ReturnType<typeof vi.fn>;
+  getZoom: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
 };
 
@@ -91,6 +92,7 @@ function createMockMap(): MockMap {
       getSouth: () => 46,
       getNorth: () => 48,
     })),
+    getZoom: vi.fn(() => 4),
   };
 
   return map;
@@ -151,10 +153,19 @@ describe("app", () => {
         gridWidth: number;
         gridHeight: number;
         idwPower: number;
+        krigingMaxNeighbors?: number;
+        krigingTileSize?: number;
       }) => {
         const grid = message.method === "idw"
           ? idwInterpolate(message.points, message.gridWidth, message.gridHeight, message.bounds, message.idwPower)
-          : ordinaryKrigingInterpolate(message.points, message.gridWidth, message.gridHeight, message.bounds);
+          : ordinaryKrigingInterpolate(
+            message.points,
+            message.gridWidth,
+            message.gridHeight,
+            message.bounds,
+            message.krigingMaxNeighbors,
+            message.krigingTileSize,
+          );
 
         this.onmessage?.({
           data: {

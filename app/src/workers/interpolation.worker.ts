@@ -15,18 +15,28 @@ import type {
 function serializeGrid(grid: InterpolationGrid): SerializedInterpolationGrid {
   return {
     ...grid,
-    values: grid.values.buffer.slice(0),
+    values: grid.values.buffer,
   };
 }
 
 self.onmessage = (event: MessageEvent<InterpolationWorkerRequest>) => {
   const startedAt = performance.now();
-  const { jobId, method, points, bounds, gridWidth, gridHeight, idwPower } = event.data;
+  const {
+    jobId,
+    method,
+    points,
+    bounds,
+    gridWidth,
+    gridHeight,
+    idwPower,
+    krigingMaxNeighbors,
+    krigingTileSize,
+  } = event.data;
 
   try {
     const result = method === "idw"
       ? idwInterpolate(points, gridWidth, gridHeight, bounds, idwPower)
-      : ordinaryKrigingInterpolate(points, gridWidth, gridHeight, bounds);
+      : ordinaryKrigingInterpolate(points, gridWidth, gridHeight, bounds, krigingMaxNeighbors, krigingTileSize);
 
     const serialized = serializeGrid(result);
     const response: InterpolationWorkerResponse = {
