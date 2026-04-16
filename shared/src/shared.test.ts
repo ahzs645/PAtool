@@ -420,6 +420,34 @@ describe("spatial interpolation", () => {
 
     expect(Array.from(tiled.values).every((value) => Number.isFinite(value))).toBe(true);
     expect(meanAbsoluteDifference).toBeLessThan(5);
+    expect(tiled.diagnostics?.kriging?.requestedTileSize).toBe(3);
+    expect(tiled.diagnostics?.kriging?.artifacts.negativeRate).toBe(0);
+  });
+
+  it("falls back from tiled Kriging when the variogram range is too small for the grid spacing", () => {
+    const points: InterpolationPoint[] = [
+      { x: -1, y: -1, value: 10 },
+      { x: 1, y: -1, value: 20 },
+      { x: -1, y: 1, value: 30 },
+      { x: 1, y: 1, value: 40 },
+      { x: 0, y: 0, value: 25 },
+    ];
+
+    const grid = ordinaryKrigingInterpolate(
+      points,
+      50,
+      25,
+      { west: -100, east: 100, south: -60, north: 60 },
+      4,
+      6,
+    );
+
+    expect(grid.diagnostics?.kriging?.mode).toBe("exact");
+    expect(grid.diagnostics?.kriging?.requestedTileSize).toBe(6);
+    expect(grid.diagnostics?.kriging?.effectiveTileSize).toBe(1);
+    expect(grid.diagnostics?.kriging?.fallbackReason).toBe("range-to-cell-spacing");
+    expect(grid.diagnostics?.kriging?.artifacts.rangeToCellSpacingRatio).toBeLessThan(2);
+    expect(grid.diagnostics?.kriging?.artifacts.tileBoundaryOutlierRate).toBeLessThan(0.35);
   });
 
   it("aqiToColor returns valid RGBA", () => {

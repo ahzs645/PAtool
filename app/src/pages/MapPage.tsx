@@ -11,6 +11,7 @@ import {
   type InterpolationGrid,
   type InterpolationPoint,
   type InterpolationMethod,
+  type KrigingDiagnostics,
 } from "@patool/shared";
 
 import { StatCard } from "../components";
@@ -73,6 +74,7 @@ type InterpolationMeta = {
   capped: boolean;
   krigingNeighbors?: number;
   krigingTileSize?: number;
+  krigingDiagnostics?: KrigingDiagnostics;
   durationMs?: number;
   error?: string;
 };
@@ -89,6 +91,7 @@ type HeatmapDebugState = {
   lastSelectionStabilized: boolean;
   lastColorizeMs: number | null;
   lastMainThreadRenderMs: number | null;
+  lastKrigingDiagnostics: KrigingDiagnostics | null;
   lastJob: {
     id: number;
     method: InterpolationMethod;
@@ -287,6 +290,7 @@ function createHeatmapDebugState(): HeatmapDebugState {
     lastSelectionStabilized: false,
     lastColorizeMs: null,
     lastMainThreadRenderMs: null,
+    lastKrigingDiagnostics: null,
     lastJob: null,
   };
 }
@@ -558,16 +562,21 @@ export default function MapPage() {
         return;
       }
 
-      setIsComputing(false);
-      setInterpolationResult({
+      const result: InterpolationGrid = {
         ...response.result,
         values: new Float64Array(response.result.values),
-      });
+      };
+      const krigingDiagnostics = result.diagnostics?.kriging;
+      setIsComputing(false);
+      setInterpolationResult(result);
       setInterpolationMeta((previous) => (
         previous
-          ? { ...previous, durationMs: response.durationMs, error: undefined }
+          ? { ...previous, durationMs: response.durationMs, error: undefined, krigingDiagnostics }
           : previous
       ));
+      recordHeatmapDebug((state) => {
+        state.lastKrigingDiagnostics = krigingDiagnostics ?? null;
+      });
     });
   }, [recordHeatmapDebug]);
 
@@ -655,6 +664,7 @@ export default function MapPage() {
       capped: interpolationWorkload.capped,
       krigingNeighbors: interpolationWorkload.krigingNeighbors,
       krigingTileSize: interpolationWorkload.krigingTileSize,
+      krigingDiagnostics: undefined,
     });
 
     recordHeatmapDebug((state) => {
@@ -1148,6 +1158,21 @@ export default function MapPage() {
                 )}
                 {interpolationMeta?.krigingTileSize && (
                   <span className={styles.statusPillMuted}>{interpolationMeta.krigingTileSize}x{interpolationMeta.krigingTileSize} tiles</span>
+                )}
+                {interpolationMeta?.krigingDiagnostics && (
+                  <span className={styles.statusPillMuted}>
+                    {interpolationMeta.krigingDiagnostics.mode === "exact"
+                      ? "Exact solve"
+                      : `${interpolationMeta.krigingDiagnostics.effectiveTileSize}x${interpolationMeta.krigingDiagnostics.effectiveTileSize} active tiles`}
+                  </span>
+                )}
+                {interpolationMeta?.krigingDiagnostics?.fallbackReason && (
+                  <span className={styles.statusPillMuted}>Tile fallback</span>
+                )}
+                {interpolationMeta?.krigingDiagnostics && import.meta.env.DEV && (
+                  <span className={styles.statusPillMuted}>
+                    seams {(interpolationMeta.krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%
+                  </span>
                 )}
                 {heatmapRuntimeLabel && (
                   <span className={styles.computing}>{heatmapRuntimeLabel}</span>

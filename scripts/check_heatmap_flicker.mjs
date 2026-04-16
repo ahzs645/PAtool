@@ -121,6 +121,7 @@ async function waitForKrigingRender(page) {
       debug
       && debug.sourceRefreshes > 0
       && debug.lastJob?.method === "kriging"
+      && debug.lastKrigingDiagnostics
       && bodyText.includes("Ordinary kriging")
       && bodyText.includes("sensors")
       && /\d+\s*ms/.test(bodyText),
@@ -141,6 +142,19 @@ async function assertHeatmapStillLive(page, label, baselineSourceRemovals) {
   }
   if (debug.lastJob?.gridWidth <= 0 || debug.lastJob?.gridHeight <= 0) {
     throw new Error(`${label}: invalid kriging grid dimensions`);
+  }
+  if (!debug.lastKrigingDiagnostics) {
+    throw new Error(`${label}: missing kriging diagnostics`);
+  }
+  const artifacts = debug.lastKrigingDiagnostics.artifacts;
+  if (artifacts.tileBoundaryOutlierRate > 0.35) {
+    throw new Error(`${label}: high kriging tile-boundary artifact rate (${(artifacts.tileBoundaryOutlierRate * 100).toFixed(1)}%)`);
+  }
+  if (artifacts.seamMeanRatio > 8) {
+    throw new Error(`${label}: high kriging seam ratio (${artifacts.seamMeanRatio.toFixed(1)}x)`);
+  }
+  if (artifacts.negativeRate > 0.001 || artifacts.severeOvershootRate > 0.01) {
+    throw new Error(`${label}: kriging value artifacts exceeded thresholds`);
   }
   if (debug.lastMainThreadRenderMs != null && debug.lastMainThreadRenderMs > 50) {
     throw new Error(`${label}: main-thread heatmap render exceeded 50ms (${debug.lastMainThreadRenderMs.toFixed(1)}ms)`);

@@ -1209,9 +1209,54 @@ export type InterpolationGrid = {
   values: Float64Array; // row-major, width * height
   min: number;
   max: number;
+  diagnostics?: InterpolationDiagnostics;
 };
 
 export type InterpolationMethod = "idw" | "kriging";
+
+export type InterpolationDiagnostics = {
+  kriging?: KrigingDiagnostics;
+};
+
+export type KrigingDiagnostics = {
+  variogram: {
+    nugget: number;
+    sill: number;
+    rangeKm: number;
+  };
+  maxNeighbors: number;
+  requestedTileSize: number;
+  effectiveTileSize: number;
+  mode: "exact" | "tiled";
+  fallbackReason?: "range-to-cell-spacing" | "tile-artifact-score";
+  artifacts: KrigingArtifactMetrics;
+};
+
+export type KrigingArtifactMetrics = {
+  inputMin: number;
+  inputMax: number;
+  outputMin: number;
+  outputMax: number;
+  overshootRate: number;
+  severeOvershootRate: number;
+  negativeRate: number;
+  gridCellSpacingKm: number;
+  variogramRangeKm: number;
+  rangeToCellSpacingRatio: number;
+  seamMeanRatio: number;
+  tileBoundaryOutlierRate: number;
+  interiorEdgeP95: number;
+  boundaryEdgeP95: number;
+  exactSampleComparison?: {
+    sampleCount: number;
+    meanAbs: number;
+    p95Abs: number;
+    p99Abs: number;
+    overOneUgM3Rate: number;
+    overTwoUgM3Rate: number;
+    overFiveUgM3Rate: number;
+  };
+};
 
 export type OrdinaryKrigingModel = {
   pointXs: Float64Array;
@@ -1221,10 +1266,15 @@ export type OrdinaryKrigingModel = {
   nugget: number;
   sill: number;
   range: number;
+  valueMin: number;
+  valueMax: number;
 };
 
 const EARTH_RADIUS_KM = 6371;
 const EARTH_RADIUS_KM_SQUARED = EARTH_RADIUS_KM * EARTH_RADIUS_KM;
+const KRIGING_MIN_RANGE_TO_CELL_SPACING_FOR_TILES = 2;
+const KRIGING_MAX_SAFE_SEAM_MEAN_RATIO = 8;
+const KRIGING_MAX_SAFE_BOUNDARY_OUTLIER_RATE = 0.35;
 
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
@@ -1860,6 +1910,165 @@ function interpolateKrigingTiles(
   return { min, max };
 }
 
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(
+    sorted.length - 1,
+    Math.max(0, Math.floor((sorted.length - 1) * p)),
+  );
+  return sorted[index];
+}
+
+function mean(values: number[]): number {
+  if (values.length === 0) return 0;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function estimateGridCellSpacingKm(
+  bounds: { west: number; east: number; south: number; north: number },
+  gridWidth: number,
+  gridHeight: number,
+): number {
+  const midLat = (bounds.south + bounds.north) / 2;
+  const horizontalSpacing = gridWidth > 1
+    ? approximateDistanceKm(bounds.west, midLat, bounds.east, midLat) / (gridWidth - 1)
+    : 0;
+  const verticalSpacing = gridHeight > 1
+    ? approximateDistanceKm(bounds.west, bounds.south, bounds.west, bounds.north) / (gridHeight - 1)
+    : 0;
+
+  return Math.max(horizontalSpacing, verticalSpacing, 1e-9);
+}
+
+function collectKrigingSeamStats(
+  values: Float64Array,
+  gridWidth: number,
+  gridHeight: number,
+  tileSize: number,
+): {
+  seamMeanRatio: number;
+  tileBoundaryOutlierRate: number;
+  interiorEdgeP95: number;
+  boundaryEdgeP95: number;
+} {
+  if (tileSize <= 1 || gridWidth < 2 || gridHeight < 2) {
+    return {
+      seamMeanRatio: 1,
+      tileBoundaryOutlierRate: 0,
+      interiorEdgeP95: 0,
+      boundaryEdgeP95: 0,
+    };
+  }
+
+  const boundaryEdges: number[] = [];
+  const interiorEdges: number[] = [];
+
+  for (let row = 0; row < gridHeight; row++) {
+    const rowOffset = row * gridWidth;
+    for (let col = 1; col < gridWidth; col++) {
+      const diff = Math.abs(values[rowOffset + col] - values[rowOffset + col - 1]);
+      (col % tileSize === 0 ? boundaryEdges : interiorEdges).push(diff);
+    }
+  }
+
+  for (let row = 1; row < gridHeight; row++) {
+    const rowOffset = row * gridWidth;
+    const previousRowOffset = (row - 1) * gridWidth;
+    for (let col = 0; col < gridWidth; col++) {
+      const diff = Math.abs(values[rowOffset + col] - values[previousRowOffset + col]);
+      (row % tileSize === 0 ? boundaryEdges : interiorEdges).push(diff);
+    }
+  }
+
+  const interiorMean = mean(interiorEdges);
+  const boundaryMean = mean(boundaryEdges);
+  const interiorEdgeP95 = percentile(interiorEdges, 0.95);
+  const boundaryEdgeP95 = percentile(boundaryEdges, 0.95);
+
+  return {
+    seamMeanRatio: boundaryMean / Math.max(interiorMean, 1e-9),
+    tileBoundaryOutlierRate: boundaryEdges.filter((diff) => diff > interiorEdgeP95).length / Math.max(boundaryEdges.length, 1),
+    interiorEdgeP95,
+    boundaryEdgeP95,
+  };
+}
+
+function computeKrigingArtifactMetrics(
+  grid: InterpolationGrid,
+  model: OrdinaryKrigingModel,
+  requestedTileSize: number,
+): KrigingArtifactMetrics {
+  const inputMin = model.valueMin;
+  const inputMax = model.valueMax;
+  const inputRange = Math.max(inputMax - inputMin, 1e-9);
+  let overshootCount = 0;
+  let severeOvershootCount = 0;
+  let negativeCount = 0;
+
+  for (const value of grid.values) {
+    if (value < inputMin || value > inputMax) overshootCount++;
+    if (value < inputMin - inputRange * 0.1 || value > inputMax + inputRange * 0.1) {
+      severeOvershootCount++;
+    }
+    if (value < 0) negativeCount++;
+  }
+
+  const cellCount = Math.max(grid.values.length, 1);
+  const gridCellSpacingKm = estimateGridCellSpacingKm(grid.bounds, grid.width, grid.height);
+  const seamStats = collectKrigingSeamStats(grid.values, grid.width, grid.height, requestedTileSize);
+
+  return {
+    inputMin,
+    inputMax,
+    outputMin: grid.min,
+    outputMax: grid.max,
+    overshootRate: overshootCount / cellCount,
+    severeOvershootRate: severeOvershootCount / cellCount,
+    negativeRate: negativeCount / cellCount,
+    gridCellSpacingKm,
+    variogramRangeKm: model.range,
+    rangeToCellSpacingRatio: model.range / gridCellSpacingKm,
+    ...seamStats,
+  };
+}
+
+function attachKrigingDiagnostics(
+  grid: InterpolationGrid,
+  model: OrdinaryKrigingModel,
+  maxNeighbors: number,
+  requestedTileSize: number,
+  effectiveTileSize: number,
+  mode: KrigingDiagnostics["mode"],
+  fallbackReason?: KrigingDiagnostics["fallbackReason"],
+): InterpolationGrid {
+  const artifacts = computeKrigingArtifactMetrics(grid, model, requestedTileSize);
+  return {
+    ...grid,
+    diagnostics: {
+      ...grid.diagnostics,
+      kriging: {
+        variogram: {
+          nugget: model.nugget,
+          sill: model.sill,
+          rangeKm: model.range,
+        },
+        maxNeighbors,
+        requestedTileSize,
+        effectiveTileSize,
+        mode,
+        fallbackReason,
+        artifacts,
+      },
+    },
+  };
+}
+
+function shouldFallbackTiledKriging(metrics: KrigingArtifactMetrics): boolean {
+  return metrics.seamMeanRatio > KRIGING_MAX_SAFE_SEAM_MEAN_RATIO
+    || metrics.tileBoundaryOutlierRate > KRIGING_MAX_SAFE_BOUNDARY_OUTLIER_RATE;
+}
+
 export function ordinaryKrigingInterpolate(
   knownPoints: InterpolationPoint[],
   gridWidth: number,
@@ -1878,13 +2087,18 @@ export function createOrdinaryKrigingModel(knownPoints: InterpolationPoint[]): O
   const pointXs = new Float64Array(pointCount);
   const pointYs = new Float64Array(pointCount);
   const pointValues = new Float64Array(pointCount);
+  let valueMin = Infinity;
+  let valueMax = -Infinity;
 
   for (let i = 0; i < pointCount; i++) {
     const x = normalizedPoints[i].x;
     const y = normalizedPoints[i].y;
+    const value = normalizedPoints[i].value;
     pointXs[i] = x;
     pointYs[i] = y;
-    pointValues[i] = normalizedPoints[i].value;
+    pointValues[i] = value;
+    if (value < valueMin) valueMin = value;
+    if (value > valueMax) valueMax = value;
   }
 
   const pairwiseDistances = buildPairwiseDistanceMatrix(pointXs, pointYs);
@@ -1910,6 +2124,8 @@ export function createOrdinaryKrigingModel(knownPoints: InterpolationPoint[]): O
     nugget,
     sill,
     range,
+    valueMin: Number.isFinite(valueMin) ? valueMin : 0,
+    valueMax: Number.isFinite(valueMax) ? valueMax : 0,
   };
 }
 
@@ -1963,7 +2179,18 @@ export function interpolateOrdinaryKrigingModel(
   const maxSystemSize = neighborLimit + 1;
   const aug = new Float64Array(maxSystemSize * (maxSystemSize + 1));
   const weights = new Float64Array(maxSystemSize);
-  const effectiveTileSize = Math.max(1, Math.floor(tileSize));
+  const requestedTileSize = Math.max(1, Math.floor(tileSize));
+  let effectiveTileSize = requestedTileSize;
+  let fallbackReason: KrigingDiagnostics["fallbackReason"];
+
+  if (effectiveTileSize > 1) {
+    const gridCellSpacingKm = estimateGridCellSpacingKm(bounds, gridWidth, gridHeight);
+    const rangeToCellSpacingRatio = range / gridCellSpacingKm;
+    if (rangeToCellSpacingRatio < KRIGING_MIN_RANGE_TO_CELL_SPACING_FOR_TILES) {
+      effectiveTileSize = 1;
+      fallbackReason = "range-to-cell-spacing";
+    }
+  }
 
   if (effectiveTileSize > 1) {
     const stats = interpolateKrigingTiles(
@@ -1984,7 +2211,30 @@ export function interpolateOrdinaryKrigingModel(
       neighborLimit,
       effectiveTileSize,
     );
-    return { width: gridWidth, height: gridHeight, bounds, values, min: stats.min, max: stats.max };
+    const tiledGrid = attachKrigingDiagnostics(
+      { width: gridWidth, height: gridHeight, bounds, values, min: stats.min, max: stats.max },
+      model,
+      neighborLimit,
+      requestedTileSize,
+      effectiveTileSize,
+      "tiled",
+    );
+
+    const artifacts = tiledGrid.diagnostics?.kriging?.artifacts;
+    if (artifacts && shouldFallbackTiledKriging(artifacts)) {
+      const exactGrid = interpolateOrdinaryKrigingModel(model, gridWidth, gridHeight, bounds, maxNeighbors, 1);
+      return attachKrigingDiagnostics(
+        { ...exactGrid, diagnostics: undefined },
+        model,
+        neighborLimit,
+        requestedTileSize,
+        1,
+        "exact",
+        "tile-artifact-score",
+      );
+    }
+
+    return tiledGrid;
   }
 
   // Step 3: Interpolate each grid point
@@ -2111,7 +2361,15 @@ export function interpolateOrdinaryKrigingModel(
     }
   }
 
-  return { width: gridWidth, height: gridHeight, bounds, values, min, max };
+  return attachKrigingDiagnostics(
+    { width: gridWidth, height: gridHeight, bounds, values, min, max },
+    model,
+    neighborLimit,
+    requestedTileSize,
+    1,
+    "exact",
+    fallbackReason,
+  );
 }
 
 // ---------------------------------------------------------------------------
