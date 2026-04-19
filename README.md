@@ -64,6 +64,12 @@ The output is written to `app/dist/`.
 - The committed `shared/src/generated/*.json` files are what make the public Pages deployment self-contained.
 - `worker/` is still useful for local API prototyping, but it is not required for the Pages deployment.
 
+## AirFuse static artifact viewer
+
+PAtool includes an AirFuse viewer that was ported from `/Users/ahmadjalil/Downloads/airfuse-main/examples/typical/map.html` in the downloaded AirFuse checkout. The viewer renders already-published AirFuse/GOES GeoJSON surfaces and validation CSVs; it does not run the Python AirFuse model in production.
+
+Because the public AirFuse S3 bucket does not expose browser CORS headers, the Cloudflare Worker exposes a serverless proxy at `/api/airfuse/proxy?path=...`. If the React app is deployed separately from the Worker, build it with `VITE_AIRFUSE_API_BASE` set to the Worker origin.
+
 ## PurpleAir ecosystem ideas incorporated
 
 - Local sensor `/json` ingestion inspired by [purpleair2mqtt](https://github.com/pridkett/purpleair2mqtt), [purpleair-prometheus](https://github.com/deaddawg/purpleair-prometheus), [homeassistant-local-purpleair](https://github.com/tommack/homeassistant-local-purpleair), and [PurpleAir LAN](https://github.com/shrisha/purpleair-lan).

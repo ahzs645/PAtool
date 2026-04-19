@@ -5,5 +5,6 @@ compatibility_date = "2026-04-13"
 [vars]
 ARCHIVE_BASE_URL = "https://example.invalid/PurpleAir/v1"
 PURPLEAIR_API_BASE = "https://api.purpleair.com/v1"
+AIRFUSE_BASE_URL = "https://airnow-navigator-layers.s3.us-east-2.amazonaws.com"
 # For local development only, comma-separate configured LAN sensors:
 # PURPLEAIR_LOCAL_SENSOR_URLS = "garage=192.168.1.24,deck=http://192.168.1.25/json"

@@ -26,6 +26,7 @@ type MockMap = {
   getBounds: ReturnType<typeof vi.fn>;
   getZoom: ReturnType<typeof vi.fn>;
   resize: ReturnType<typeof vi.fn>;
+  fitBounds: ReturnType<typeof vi.fn>;
 };
 
 const mockMaps: MockMap[] = [];
@@ -97,6 +98,7 @@ function createMockMap(): MockMap {
     isStyleLoaded: vi.fn(() => true),
     setStyle: vi.fn(),
     resize: vi.fn(),
+    fitBounds: vi.fn(),
     getBounds: vi.fn(() => ({
       getWest: () => -123,
       getEast: () => -121,
@@ -133,6 +135,10 @@ vi.mock("echarts-for-react/lib/core", () => ({
   default: () => <div data-testid="echart" />
 }));
 
+vi.mock("./components/EChart", () => ({
+  EChart: () => <div data-testid="echart" />
+}));
+
 describe("app", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -147,6 +153,7 @@ describe("app", () => {
         data: new Uint8ClampedArray(width * height * 4),
       }),
       putImageData: vi.fn(),
+      measureText: vi.fn((text: string) => ({ width: text.length * 8 })),
     }) as unknown as CanvasRenderingContext2D);
     vi.spyOn(HTMLCanvasElement.prototype, "toDataURL").mockReturnValue("data:image/png;base64,test");
     vi.stubGlobal("ResizeObserver", class MockResizeObserver {
@@ -197,6 +204,49 @@ describe("app", () => {
       "fetch",
       vi.fn(async (input: string | URL | Request) => {
         const url = String(input);
+        const decodedUrl = decodeURIComponent(url);
+        if (decodedUrl.includes("/api/airfuse/proxy?path=index.json")) {
+          const geojsonPath = "fusion/PM25/2024/03/01/00/Fusion_PM25_NAQFC_2024-03-01T00Z.geojson";
+          const csvPath = "fusion/PM25/2024/03/01/00/Fusion_PM25_NAQFC_2024-03-01T00Z_AirNow_CV.csv";
+          const ncPath = "fusion/PM25/2024/03/01/00/Fusion_PM25_NAQFC_2024-03-01T00Z.nc";
+          return new Response(JSON.stringify({
+            fusion: {
+              PM25: {
+                max_date: "2024-03-01T00:00:00",
+                "2024": {
+                  "03": {
+                    "01": {
+                      "00": {
+                        "Fusion_PM25_NAQFC_2024-03-01T00Z.geojson": geojsonPath,
+                        "Fusion_PM25_NAQFC_2024-03-01T00Z_AirNow_CV.csv": csvPath,
+                        "Fusion_PM25_NAQFC_2024-03-01T00Z.nc": ncPath,
+                      },
+                    },
+                  },
+                },
+              },
+            },
+          }));
+        }
+        if (decodedUrl.includes("Fusion_PM25_NAQFC_2024-03-01T00Z.geojson")) {
+          return new Response(JSON.stringify({
+            type: "FeatureCollection",
+            description: "AirFuse test artifact",
+            features: [
+              {
+                type: "Feature",
+                properties: { Name: "0 to 10", AQIC: 5, OGR_STYLE: "BRUSH(fc:#009500)" },
+                geometry: {
+                  type: "Polygon",
+                  coordinates: [[[-100, 40], [-99, 40], [-99, 41], [-100, 41], [-100, 40]]],
+                },
+              },
+            ],
+          }));
+        }
+        if (decodedUrl.includes("Fusion_PM25_NAQFC_2024-03-01T00Z_AirNow_CV.csv")) {
+          return new Response("pm25,FUSED_aVNA\n10,11\n20,19\n");
+        }
         if (url.includes("/api/pas")) {
           return new Response(JSON.stringify(samplePasCollection));
         }
@@ -277,5 +327,24 @@ describe("app", () => {
       },
       { timeout: 5000 }
     );
+  });
+
+  it("renders the AirFuse static artifact viewer", async () => {
+    window.history.pushState({}, "", "/airfuse");
+
+    render(<App />);
+
+    await waitFor(() => {
+      expect(screen.getByText("AirFuse surface viewer")).toBeInTheDocument();
+      expect(screen.getByText("GeoJSON surface")).toBeInTheDocument();
+      expect(screen.getByText("Validation CSV")).toBeInTheDocument();
+    });
+
+    const map = mockMaps.at(-1);
+    expect(map?.addSource).toHaveBeenCalledWith(
+      "airfuse-surface",
+      expect.objectContaining({ type: "geojson" }),
+    );
+    expect(map?.fitBounds).toHaveBeenCalled();
   });
 });

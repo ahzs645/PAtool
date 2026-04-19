@@ -50,6 +50,18 @@ npm run fixtures:convert
 - GET routes use edge caching headers and cache API lookups when available.
 - The Worker falls back to fixture data when archive or PurpleAir credentials are unavailable.
 
+## AirFuse viewer
+
+The AirFuse page ports the static artifact viewer from `/Users/ahmadjalil/Downloads/airfuse-main/examples/typical/map.html` and keeps the Python AirFuse runtime out of the deployed app. PAtool loads the AirFuse/GOES GeoJSON, CSV, and NetCDF artifacts through a small Worker proxy at `/api/airfuse/proxy?path=...` because the upstream S3 bucket does not send browser CORS headers.
+
+- Local source checkout: `/Users/ahmadjalil/Downloads/airfuse-main`
+- Upstream source: `https://github.com/barronh/airfuse`
+- Static artifact bucket: `https://airnow-navigator-layers.s3.us-east-2.amazonaws.com`
+- Optional Worker override: set `AIRFUSE_BASE_URL` if the artifact bucket changes.
+- Optional frontend override: set `VITE_AIRFUSE_API_BASE` to a deployed Worker origin when the static app is hosted separately from the Worker.
+
+This preserves the serverless deployment model: AirFuse computation still happens outside PAtool, PAtool only renders already-published static artifacts, and the Worker only proxies/cache-wraps those artifacts for browser access. WASM is not required for this viewer; it would only be needed later if PAtool needs in-browser NetCDF inspection or local model computation.
+
 ## Reference diagrams
 
 Data-flow and architecture diagrams from the original UMN Quality Air Quality Cities project (CC-licensed — see source repository). They describe the same PurpleAir QAQC → summarize → interpolate pipeline that PAtool implements client-side.

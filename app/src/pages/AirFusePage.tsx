@@ -325,10 +325,24 @@ function extendCoordinateBounds(
   }
 }
 
+function extendGeometryBounds(
+  geometry: GeoJSON.Geometry | null | undefined,
+  bounds: { west: number; east: number; south: number; north: number },
+) {
+  if (!geometry) return;
+  if (geometry.type === "GeometryCollection") {
+    for (const child of geometry.geometries) {
+      extendGeometryBounds(child, bounds);
+    }
+    return;
+  }
+  extendCoordinateBounds(geometry.coordinates, bounds);
+}
+
 function geoJsonBounds(collection: GeoJSON.FeatureCollection): [[number, number], [number, number]] | null {
   const bounds = { west: Infinity, east: -Infinity, south: Infinity, north: -Infinity };
   for (const feature of collection.features) {
-    extendCoordinateBounds(feature.geometry?.coordinates, bounds);
+    extendGeometryBounds(feature.geometry, bounds);
   }
   if (!Number.isFinite(bounds.west) || !Number.isFinite(bounds.south)) return null;
   return [[bounds.west, bounds.south], [bounds.east, bounds.north]];
