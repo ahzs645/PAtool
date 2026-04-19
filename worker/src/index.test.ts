@@ -104,6 +104,34 @@ describe("worker api", () => {
     expect(payload.warnings[0]).toContain("fixture data");
   });
 
+  it("proxies AirFuse static artifacts through the serverless API surface", async () => {
+    let requestedUrl = "";
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        requestedUrl = String(input);
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
+      })
+    );
+
+    const response = await app.request(
+      "/api/airfuse/proxy?path=fusion%2FPM25%2F2024%2F03%2F01%2F00%2FFusion_PM25_NAQFC_2024-03-01T00Z.geojson",
+      {},
+      { AIRFUSE_BASE_URL: "https://airfuse.example.test" }
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toContain("application/geo+json");
+    expect(requestedUrl).toBe("https://airfuse.example.test/fusion/PM25/2024/03/01/00/Fusion_PM25_NAQFC_2024-03-01T00Z.geojson");
+  });
+
+  it("rejects AirFuse proxy paths outside the known artifact tree", async () => {
+    const response = await app.request("/api/airfuse/proxy?path=https%3A%2F%2Fexample.com%2Findex.json");
+    expect(response.status).toBe(400);
+  });
+
   it("keeps AirNow AQI separate from PM2.5 concentration", async () => {
     vi.stubGlobal(
       "fetch",

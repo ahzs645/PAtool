@@ -263,4 +263,19 @@ describe("app", () => {
       expect(map?.removeSource).toHaveBeenCalledWith("heatmap-source");
     });
   });
+
+  it("renders the config-driven modeling page", async () => {
+    window.history.pushState({}, "", "/modeling");
+
+    render(<App />);
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Config-driven exposure surfaces")).toBeInTheDocument();
+        expect(screen.getByText("Observed PM2.5")).toBeInTheDocument();
+        expect(screen.getByText("Hazard index")).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
+  });
 });

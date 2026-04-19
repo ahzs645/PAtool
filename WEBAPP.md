@@ -49,3 +49,16 @@ npm run fixtures:convert
 - App, shared package, and worker all build and test successfully.
 - GET routes use edge caching headers and cache API lookups when available.
 - The Worker falls back to fixture data when archive or PurpleAir credentials are unavailable.
+
+## Reference diagrams
+
+Data-flow and architecture diagrams from the original UMN Quality Air Quality Cities project (CC-licensed — see source repository). They describe the same PurpleAir QAQC → summarize → interpolate pipeline that PAtool implements client-side.
+
+- High-level architecture: `app/public/docs/highlevelArchitecture.jpg`
+- Historic + real-time summaries DFD: `app/public/docs/DFDHistoric_RealTime_Summaries.jpg`
+- QAQC DFD: `app/public/docs/qaqcDFD.jpg`
+- QAQC diagram: `app/public/docs/QAQCdiagram.jpg`
+- Interpolation DFD: `app/public/docs/interpolationDFD.jpg`
+- Modeling overview: `app/public/docs/Modeling.jpg`
+
+When the app is served, each is also reachable at `/<basePath>/docs/<file>.jpg`.

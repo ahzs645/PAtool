@@ -20,6 +20,7 @@ export type WorkerEnv = {
   PURPLEAIR_READ_KEY?: string;
   PURPLEAIR_LOCAL_SENSOR_URLS?: string;
   AIRNOW_API_KEY?: string;
+  AIRFUSE_BASE_URL?: string;
 };
 
 type PurpleAirFieldsPayload = {

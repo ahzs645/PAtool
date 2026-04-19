@@ -40,10 +40,33 @@ import {
   purpleAirLocalPm25,
 } from "./purpleairLocal";
 import {
+  classifyWindDirection,
+  classifyWindIntensity,
   computePolarPlot,
   computeWindRose,
+  flagWindPoint,
   generateSyntheticWindData,
+  summarizeWindQc,
 } from "./wind";
+import { computeDailySummaries } from "./summaries";
+import {
+  applyElevationTrend,
+  compareInterpolationMethods,
+  detrendByElevation,
+  fitElevationTrend,
+  leaveOneOutCrossValidate,
+} from "./interpolationCv";
+import {
+  buildStudyGrid,
+  combineWeightedStudyGrids,
+  computeObservedStudyGrid,
+  createStudyAreaFromSensors,
+  deriveStudyBoundsFromSources,
+  rasterizeSourceLayer,
+  validateStudyGrid,
+  type SourceLayerConfig,
+  type StudySourceFeatureCollection,
+} from "./studyArea";
 
 describe("pas utilities", () => {
   it("filters by state and outside status", () => {
@@ -498,5 +521,226 @@ describe("spatial interpolation", () => {
 
     expect(topLeft).toEqual(Array.from(aqiToColor(pm25ToAqi(30))));
     expect(bottomLeft).toEqual(Array.from(aqiToColor(pm25ToAqi(10))));
+  });
+});
+
+describe("daily summaries", () => {
+  it("groups points by local day and computes window stats", () => {
+    const summaries = computeDailySummaries(samplePatSeries);
+    expect(summaries.length).toBeGreaterThan(0);
+
+    const first = summaries[0];
+    expect(first.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(first.nObservations).toBeGreaterThan(0);
+    expect(first.fullDay.count).toBeGreaterThan(0);
+    if (first.fullDay.mean !== null && first.fullDay.min !== null && first.fullDay.max !== null) {
+      expect(first.fullDay.min).toBeLessThanOrEqual(first.fullDay.mean);
+      expect(first.fullDay.mean).toBeLessThanOrEqual(first.fullDay.max);
+    }
+    expect(first.minutesAboveEpaThreshold).toBeGreaterThanOrEqual(0);
+    expect(first.minutesAboveEpaThreshold % 10).toBe(0);
+  });
+
+  it("respects a custom EPA threshold", () => {
+    const low = computeDailySummaries(samplePatSeries, { epaDailyThreshold: 0 });
+    const high = computeDailySummaries(samplePatSeries, { epaDailyThreshold: 1000 });
+    const lowTotal = low.reduce((s, d) => s + d.minutesAboveEpaThreshold, 0);
+    const highTotal = high.reduce((s, d) => s + d.minutesAboveEpaThreshold, 0);
+    expect(lowTotal).toBeGreaterThan(highTotal);
+    expect(highTotal).toBe(0);
+  });
+});
+
+describe("wind QC", () => {
+  it("flags out-of-range speeds and directions", () => {
+    const bad = flagWindPoint({ timestamp: "2024-01-01T00:00:00Z", windSpeed: -5, windDirection: 400, pm25: 10 });
+    expect(bad.speedError).toBe(1);
+    expect(bad.directionError).toBe(1);
+    expect(bad.intensity).toBe(0);
+    expect(bad.directionCategory).toBe(0);
+
+    const ok = flagWindPoint({ timestamp: "2024-01-01T00:00:00Z", windSpeed: 5, windDirection: 180, pm25: 10 });
+    expect(ok.speedError).toBe(0);
+    expect(ok.directionError).toBe(0);
+    expect(ok.intensity).toBe(1);
+    expect(ok.directionCategory).toBe(4);
+  });
+
+  it("classifies intensity and direction buckets at boundaries", () => {
+    expect(classifyWindIntensity(0)).toBe(1);
+    expect(classifyWindIntensity(10)).toBe(1);
+    expect(classifyWindIntensity(10.1)).toBe(2);
+    expect(classifyWindIntensity(20)).toBe(2);
+    expect(classifyWindIntensity(30.1)).toBe(4);
+    expect(classifyWindDirection(0)).toBe(1);
+    expect(classifyWindDirection(45)).toBe(1);
+    expect(classifyWindDirection(315)).toBe(7);
+    expect(classifyWindDirection(316)).toBe(8);
+  });
+
+  it("summarizes counts across a series", () => {
+    const wind = generateSyntheticWindData(samplePatSeries);
+    const summary = summarizeWindQc(wind);
+    expect(summary.total).toBe(wind.length);
+    const intensitySum = summary.intensityCounts[1] + summary.intensityCounts[2] + summary.intensityCounts[3] + summary.intensityCounts[4];
+    const directionSum = (Object.values(summary.directionCounts) as number[]).reduce((s, v) => s + v, 0);
+    expect(intensitySum + summary.speedErrorCount).toBe(summary.total);
+    expect(directionSum + summary.directionErrorCount).toBe(summary.total);
+  });
+});
+
+describe("interpolation cross-validation", () => {
+  const points: InterpolationPoint[] = [
+    { id: "a", x: -103.0, y: 44.0, value: 10 },
+    { id: "b", x: -103.1, y: 44.0, value: 12 },
+    { id: "c", x: -103.0, y: 44.1, value: 11 },
+    { id: "d", x: -103.1, y: 44.1, value: 13 },
+    { id: "e", x: -103.05, y: 44.05, value: 11.5 },
+  ];
+
+  it("returns one residual per held-out point for IDW", () => {
+    const result = leaveOneOutCrossValidate(points, { method: "idw" });
+    expect(result.method).toBe("idw");
+    expect(result.n).toBe(points.length);
+    expect(result.residuals).toHaveLength(points.length);
+    expect(result.rmse).toBeGreaterThanOrEqual(0);
+    expect(result.mae).toBeGreaterThanOrEqual(0);
+  });
+
+  it("compareInterpolationMethods runs both methods", () => {
+    const results = compareInterpolationMethods(points);
+    expect(results.map((r) => r.method)).toEqual(["idw", "kriging"]);
+    for (const r of results) {
+      expect(r.n).toBe(points.length);
+      expect(Number.isFinite(r.rmse)).toBe(true);
+    }
+  });
+
+  it("returns zero metrics when fewer than three points are available", () => {
+    const result = leaveOneOutCrossValidate(points.slice(0, 2), { method: "idw" });
+    expect(result.n).toBe(0);
+    expect(result.rmse).toBe(0);
+  });
+});
+
+describe("elevation trend", () => {
+  it("fits a slope/intercept when enough elevation samples exist", () => {
+    const withElev: InterpolationPoint[] = [
+      { x: 0, y: 0, value: 10, elevationMeters: 0 },
+      { x: 1, y: 0, value: 12, elevationMeters: 100 },
+      { x: 0, y: 1, value: 14, elevationMeters: 200 },
+      { x: 1, y: 1, value: 16, elevationMeters: 300 },
+    ];
+    const trend = fitElevationTrend(withElev);
+    expect(trend).not.toBeNull();
+    expect(trend!.slope).toBeCloseTo(0.02, 5);
+    expect(trend!.intercept).toBeCloseTo(10, 5);
+  });
+
+  it("returns null when fewer than three elevation samples exist", () => {
+    const sparse: InterpolationPoint[] = [
+      { x: 0, y: 0, value: 10, elevationMeters: 0 },
+      { x: 1, y: 0, value: 12, elevationMeters: 100 },
+      { x: 0, y: 1, value: 14 },
+    ];
+    expect(fitElevationTrend(sparse)).toBeNull();
+  });
+
+  it("detrend then apply recovers the original values", () => {
+    const withElev: InterpolationPoint[] = [
+      { x: 0, y: 0, value: 10, elevationMeters: 0 },
+      { x: 1, y: 0, value: 12, elevationMeters: 100 },
+      { x: 0, y: 1, value: 14, elevationMeters: 200 },
+    ];
+    const trend = fitElevationTrend(withElev)!;
+    const residuals = detrendByElevation(withElev, trend);
+    for (let i = 0; i < withElev.length; i += 1) {
+      const restored = applyElevationTrend(residuals[i].value, withElev[i].elevationMeters, trend);
+      expect(restored).toBeCloseTo(withElev[i].value, 5);
+    }
+  });
+});
+
+describe("config-driven study areas", () => {
+  it("derives a reusable study config and observed PM2.5 grid from PurpleAir records", () => {
+    const study = createStudyAreaFromSensors(samplePasCollection, {
+      resolutionMeters: 500,
+      sensorFilters: { isOutside: true },
+      sensorValueField: "pm25_1hr",
+    });
+
+    expect(study.sensorProvider).toBe("purpleair");
+    expect(study.bounds?.west).toBeLessThan(study.bounds!.east);
+
+    const observed = computeObservedStudyGrid(samplePasCollection, study, { maxCells: 2_500 });
+    expect(observed.width * observed.height).toBeLessThanOrEqual(2_500);
+    expect(observed.values.length).toBe(observed.width * observed.height);
+    expect(observed.max).toBeGreaterThanOrEqual(observed.min);
+  });
+
+  it("rasterizes generic GeoJSON sources, combines weighted layers, and validates against observations", () => {
+    const bounds = { west: -103.32, east: -103.12, south: 44.0, north: 44.16 };
+    const grid = buildStudyGrid(bounds, 1_000, 900);
+
+    const trafficLayer: SourceLayerConfig = {
+      id: "traffic",
+      name: "Traffic",
+      kind: "line",
+      valueField: "aadt",
+      weightDefault: 0.6,
+      dispersion: { method: "gaussian", sigmaMeters: 1_500, radiusMeters: 4_000 },
+    };
+    const facilityLayer: SourceLayerConfig = {
+      id: "facilities",
+      name: "Facilities",
+      kind: "point",
+      valueField: "pm25_lbs",
+      weightDefault: 0.4,
+      dispersion: { method: "gaussian", sigmaMeters: 2_000, radiusMeters: 5_000 },
+    };
+
+    const traffic: StudySourceFeatureCollection = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { aadt: 12_000 },
+          geometry: {
+            type: "LineString",
+            coordinates: [
+              [-103.3, 44.02],
+              [-103.14, 44.14],
+            ],
+          },
+        },
+      ],
+    };
+    const facilities: StudySourceFeatureCollection = {
+      type: "FeatureCollection",
+      features: [
+        {
+          type: "Feature",
+          properties: { pm25_lbs: 700 },
+          geometry: { type: "Point", coordinates: [-103.2, 44.08] },
+        },
+      ],
+    };
+
+    const sourceBounds = deriveStudyBoundsFromSources([traffic, facilities]);
+    expect(sourceBounds?.west).toBeLessThan(-103.2);
+    expect(sourceBounds?.east).toBeGreaterThan(-103.2);
+
+    const trafficGrid = rasterizeSourceLayer(traffic, trafficLayer, grid);
+    const facilityGrid = rasterizeSourceLayer(facilities, facilityLayer, grid);
+    const hazard = combineWeightedStudyGrids([trafficGrid, facilityGrid]);
+
+    expect(trafficGrid.sampleCount).toBeGreaterThan(1);
+    expect(facilityGrid.sampleCount).toBe(1);
+    expect(hazard).not.toBeNull();
+    expect(hazard!.max).toBeGreaterThan(0);
+
+    const validation = validateStudyGrid(hazard!, hazard!);
+    expect(validation.n).toBe(hazard!.values.length);
+    expect(validation.rmse).toBe(0);
   });
 });

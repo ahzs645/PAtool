@@ -42,6 +42,8 @@ const LAYER_ID = "sensors-circles";
 const SOURCE_ID = "sensors";
 const HEATMAP_LAYER_ID = "heatmap-layer";
 const HEATMAP_SOURCE_ID = "heatmap-source";
+const OVERLAY_ID_PREFIX = "user-overlay-";
+const OVERLAY_PALETTE = ["#2563eb", "#db2777", "#0d9488", "#ea580c", "#7c3aed"];
 const MISSING_PM_COLOR = "#94a3b8";
 const MIN_INTERPOLATION_POINTS = 3;
 const VIEWPORT_PADDING_RATIO = 0.2;
@@ -333,6 +335,37 @@ function getPm25ValueForWindow(record: PasRecord, window: Pm25Window): number | 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+type OverlayLayer = {
+  id: string;
+  name: string;
+  color: string;
+  data: GeoJSON.FeatureCollection;
+};
+
+function parseOverlayGeoJson(raw: unknown): GeoJSON.FeatureCollection {
+  if (!raw || typeof raw !== "object") {
+    throw new Error("GeoJSON root must be an object");
+  }
+  const obj = raw as { type?: string; features?: unknown };
+  if (obj.type === "FeatureCollection" && Array.isArray(obj.features)) {
+    return raw as GeoJSON.FeatureCollection;
+  }
+  if (obj.type === "Feature") {
+    return { type: "FeatureCollection", features: [raw as GeoJSON.Feature] };
+  }
+  if (
+    obj.type === "Point" || obj.type === "MultiPoint"
+    || obj.type === "LineString" || obj.type === "MultiLineString"
+    || obj.type === "Polygon" || obj.type === "MultiPolygon"
+  ) {
+    return {
+      type: "FeatureCollection",
+      features: [{ type: "Feature", geometry: raw as GeoJSON.Geometry, properties: {} }],
+    };
+  }
+  throw new Error(`Unsupported GeoJSON type "${obj.type ?? "unknown"}"`);
+}
+
 function buildGeoJson(
   records: PasRecord[],
   pm25Window: Pm25Window,
@@ -389,6 +422,10 @@ export default function MapPage() {
   const [idwPower, setIdwPower] = useState(2);
   const [followView, setFollowView] = useState(true);
   const [styleReloadTick, setStyleReloadTick] = useState(0);
+  const [overlays, setOverlays] = useState<OverlayLayer[]>([]);
+  const [overlayUrl, setOverlayUrl] = useState("");
+  const [overlayError, setOverlayError] = useState<string | null>(null);
+  const overlayInputRef = useRef<HTMLInputElement | null>(null);
   const [mapSize, setMapSize] = useState<MapSize>({ width: 1, height: 1 });
   const [interpolationResult, setInterpolationResult] = useState<InterpolationGrid | null>(null);
   const [interpolationMeta, setInterpolationMeta] = useState<InterpolationMeta | null>(null);
@@ -884,6 +921,91 @@ export default function MapPage() {
     }
   }, [geojson]);
 
+  const managedOverlayIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.isStyleLoaded()) return;
+
+    const beforeLayer = map.getLayer(LAYER_ID) ? LAYER_ID : undefined;
+    const wanted = new Set(overlays.map((o) => o.id));
+
+    for (const overlayId of Array.from(managedOverlayIdsRef.current)) {
+      if (wanted.has(overlayId)) continue;
+      const sourceId = `${OVERLAY_ID_PREFIX}${overlayId}`;
+      for (const suffix of ["-fill", "-line", "-point"]) {
+        const layerId = `${sourceId}${suffix}`;
+        if (map.getLayer(layerId)) map.removeLayer(layerId);
+      }
+      if (map.getSource(sourceId)) map.removeSource(sourceId);
+      managedOverlayIdsRef.current.delete(overlayId);
+    }
+
+    for (const overlay of overlays) {
+      const sourceId = `${OVERLAY_ID_PREFIX}${overlay.id}`;
+      const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
+      if (existingSource) {
+        existingSource.setData(overlay.data);
+      } else {
+        map.addSource(sourceId, { type: "geojson", data: overlay.data });
+      }
+      managedOverlayIdsRef.current.add(overlay.id);
+
+      const fillId = `${sourceId}-fill`;
+      const lineId = `${sourceId}-line`;
+      const pointId = `${sourceId}-point`;
+
+      if (!map.getLayer(fillId)) {
+        map.addLayer(
+          {
+            id: fillId,
+            source: sourceId,
+            type: "fill",
+            filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
+            paint: { "fill-color": overlay.color, "fill-opacity": 0.2 },
+          },
+          beforeLayer,
+        );
+      } else {
+        map.setPaintProperty(fillId, "fill-color", overlay.color);
+      }
+      if (!map.getLayer(lineId)) {
+        map.addLayer(
+          {
+            id: lineId,
+            source: sourceId,
+            type: "line",
+            filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
+            paint: { "line-color": overlay.color, "line-width": 1.5, "line-opacity": 0.8 },
+          },
+          beforeLayer,
+        );
+      } else {
+        map.setPaintProperty(lineId, "line-color", overlay.color);
+      }
+      if (!map.getLayer(pointId)) {
+        map.addLayer(
+          {
+            id: pointId,
+            source: sourceId,
+            type: "circle",
+            filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
+            paint: {
+              "circle-radius": 4,
+              "circle-color": overlay.color,
+              "circle-stroke-width": 1,
+              "circle-stroke-color": "#ffffff",
+              "circle-opacity": 0.85,
+            },
+          },
+          beforeLayer,
+        );
+      } else {
+        map.setPaintProperty(pointId, "circle-color", overlay.color);
+      }
+    }
+  }, [overlays, styleReloadTick]);
+
   // Switch map style when theme changes
   useEffect(() => {
     const map = mapRef.current;
@@ -1058,6 +1180,49 @@ export default function MapPage() {
     : 0;
   const meanBand = pm25ToAqiBand(averagePm);
   const heatmapMethodLabel = interpMethod === "idw" ? `IDW · p=${idwPower}` : "Ordinary kriging";
+
+  const addOverlay = useCallback((name: string, raw: unknown) => {
+    try {
+      const data = parseOverlayGeoJson(raw);
+      setOverlays((prev) => {
+        const id = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+        const color = OVERLAY_PALETTE[prev.length % OVERLAY_PALETTE.length];
+        return [...prev, { id, name, color, data }];
+      });
+      setOverlayError(null);
+    } catch (err) {
+      setOverlayError(err instanceof Error ? err.message : "Unable to load GeoJSON");
+    }
+  }, []);
+
+  const handleOverlayFile = useCallback(async (file: File) => {
+    try {
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+      addOverlay(file.name, parsed);
+    } catch (err) {
+      setOverlayError(err instanceof Error ? `Could not read ${file.name}: ${err.message}` : "Unable to read file");
+    }
+  }, [addOverlay]);
+
+  const handleOverlayUrl = useCallback(async (url: string) => {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    try {
+      const res = await fetch(trimmed);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = await res.json();
+      const name = trimmed.split("/").pop() || trimmed;
+      addOverlay(name, parsed);
+      setOverlayUrl("");
+    } catch (err) {
+      setOverlayError(err instanceof Error ? `Fetch failed: ${err.message}` : "Unable to fetch URL");
+    }
+  }, [addOverlay]);
+
+  const removeOverlay = useCallback((id: string) => {
+    setOverlays((prev) => prev.filter((o) => o.id !== id));
+  }, []);
   const heatmapRuntimeLabel = interpolationMeta?.durationMs != null
     ? `${interpolationMeta.durationMs.toFixed(0)} ms`
     : isComputing
@@ -1212,6 +1377,60 @@ export default function MapPage() {
           />
           Outside only
         </label>
+
+        <div className={styles.overlayControls}>
+          <button
+            type="button"
+            className={styles.modeButton}
+            onClick={() => overlayInputRef.current?.click()}
+            title="Load a GeoJSON overlay (boundaries, emissions, traffic, etc.)"
+          >
+            Load overlay
+          </button>
+          <input
+            ref={overlayInputRef}
+            type="file"
+            accept=".geojson,.json,application/geo+json,application/json"
+            style={{ display: "none" }}
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void handleOverlayFile(file);
+              e.target.value = "";
+            }}
+          />
+          <input
+            type="url"
+            className={styles.search}
+            placeholder="…or paste a GeoJSON URL"
+            value={overlayUrl}
+            onChange={(e) => setOverlayUrl(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleOverlayUrl(overlayUrl);
+              }
+            }}
+          />
+          {overlays.map((overlay) => (
+            <span
+              key={overlay.id}
+              className={styles.statusPill}
+              style={{ borderColor: overlay.color, color: overlay.color }}
+              title={overlay.name}
+            >
+              {overlay.name.length > 24 ? `${overlay.name.slice(0, 24)}…` : overlay.name}
+              <button
+                type="button"
+                onClick={() => removeOverlay(overlay.id)}
+                style={{ marginLeft: 6, background: "none", border: "none", cursor: "pointer", color: "inherit" }}
+                aria-label={`Remove overlay ${overlay.name}`}
+              >
+                ×
+              </button>
+            </span>
+          ))}
+          {overlayError && <span className={styles.statusPillError}>{overlayError}</span>}
+        </div>
       </div>
 
       <div className={styles.stats}>

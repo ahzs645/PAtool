@@ -51,6 +51,91 @@ const SPEED_BINS = [
 
 const SYNTHETIC_WIND_LABEL = "Synthetic wind generated from PAT timestamp and weather fields";
 
+export type WindQcFlag = {
+  timestamp: string;
+  speedError: 0 | 1;
+  directionError: 0 | 1;
+  intensity: 0 | 1 | 2 | 3 | 4;
+  directionCategory: 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
+};
+
+export type WindQcSummary = {
+  total: number;
+  speedErrorCount: number;
+  directionErrorCount: number;
+  intensityCounts: Record<1 | 2 | 3 | 4, number>;
+  directionCounts: Record<1 | 2 | 3 | 4 | 5 | 6 | 7 | 8, number>;
+  flags: WindQcFlag[];
+};
+
+const WIND_SPEED_MIN = 0;
+const WIND_SPEED_MAX = 100;
+const WIND_DIRECTION_MIN = 0;
+const WIND_DIRECTION_MAX = 360;
+
+export function classifyWindIntensity(speed: number): 0 | 1 | 2 | 3 | 4 {
+  if (!Number.isFinite(speed) || speed < 0 || speed > WIND_SPEED_MAX) return 0;
+  if (speed <= 10) return 1;
+  if (speed <= 20) return 2;
+  if (speed <= 30) return 3;
+  return 4;
+}
+
+export function classifyWindDirection(direction: number): 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 {
+  if (!Number.isFinite(direction) || direction < WIND_DIRECTION_MIN || direction > WIND_DIRECTION_MAX) return 0;
+  if (direction <= 45) return 1;
+  if (direction <= 90) return 2;
+  if (direction <= 135) return 3;
+  if (direction <= 180) return 4;
+  if (direction <= 225) return 5;
+  if (direction <= 270) return 6;
+  if (direction <= 315) return 7;
+  return 8;
+}
+
+function inRange(value: number, min: number, max: number): boolean {
+  return Number.isFinite(value) && value >= min && value <= max;
+}
+
+export function flagWindPoint(point: WindDataPoint): WindQcFlag {
+  return {
+    timestamp: point.timestamp,
+    speedError: inRange(point.windSpeed, WIND_SPEED_MIN, WIND_SPEED_MAX) ? 0 : 1,
+    directionError: inRange(point.windDirection, WIND_DIRECTION_MIN, WIND_DIRECTION_MAX) ? 0 : 1,
+    intensity: classifyWindIntensity(point.windSpeed),
+    directionCategory: classifyWindDirection(point.windDirection),
+  };
+}
+
+export function summarizeWindQc(points: WindDataPoint[]): WindQcSummary {
+  const flags: WindQcFlag[] = [];
+  const intensityCounts = { 1: 0, 2: 0, 3: 0, 4: 0 } as Record<1 | 2 | 3 | 4, number>;
+  const directionCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0 } as Record<
+    1 | 2 | 3 | 4 | 5 | 6 | 7 | 8,
+    number
+  >;
+  let speedErrors = 0;
+  let directionErrors = 0;
+
+  for (const point of points) {
+    const flag = flagWindPoint(point);
+    flags.push(flag);
+    if (flag.speedError) speedErrors += 1;
+    if (flag.directionError) directionErrors += 1;
+    if (flag.intensity !== 0) intensityCounts[flag.intensity] += 1;
+    if (flag.directionCategory !== 0) directionCounts[flag.directionCategory] += 1;
+  }
+
+  return {
+    total: points.length,
+    speedErrorCount: speedErrors,
+    directionErrorCount: directionErrors,
+    intensityCounts,
+    directionCounts,
+    flags,
+  };
+}
+
 export function generateSyntheticWindData(series: PatSeries): WindDataPoint[] {
   return series.points
     .filter((p) => p.pm25A !== null || p.pm25B !== null)

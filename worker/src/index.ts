@@ -74,6 +74,40 @@ const rollingMeanRequestSchema = z.object({
   windowSize: z.number().optional(),
 });
 
+const AIRFUSE_DEFAULT_BASE_URL = "https://airnow-navigator-layers.s3.us-east-2.amazonaws.com";
+const AIRFUSE_ALLOWED_EXTENSIONS = [".json", ".geojson", ".csv", ".nc", ".png"];
+
+function normalizeAirFusePath(rawPath: string | undefined): string | null {
+  const path = rawPath?.trim().replace(/^\/+/, "");
+  if (!path) return null;
+  if (/^https?:\/\//i.test(path) || path.startsWith("//") || path.includes("\\")) return null;
+
+  const segments = path.split("/");
+  if (segments.some((segment) => segment === "." || segment === ".." || segment === "")) return null;
+
+  const isAllowedPrefix = path === "index.json" || path.startsWith("fusion/") || path.startsWith("goes/");
+  if (!isAllowedPrefix) return null;
+
+  const lowerPath = path.toLowerCase();
+  if (!AIRFUSE_ALLOWED_EXTENSIONS.some((extension) => lowerPath.endsWith(extension))) return null;
+
+  return path;
+}
+
+function contentTypeForAirFusePath(path: string): string {
+  const lowerPath = path.toLowerCase();
+  if (lowerPath.endsWith(".geojson")) return "application/geo+json; charset=utf-8";
+  if (lowerPath.endsWith(".json")) return "application/json; charset=utf-8";
+  if (lowerPath.endsWith(".csv")) return "text/csv; charset=utf-8";
+  if (lowerPath.endsWith(".png")) return "image/png";
+  if (lowerPath.endsWith(".nc")) return "application/x-netcdf";
+  return "application/octet-stream";
+}
+
+function airFuseBaseUrl(env: WorkerEnv): string {
+  return (env.AIRFUSE_BASE_URL ?? AIRFUSE_DEFAULT_BASE_URL).replace(/\/+$/, "");
+}
+
 export function createApp() {
   const app = new Hono<{ Bindings: WorkerEnv }>();
   app.use("/api/*", cors());
@@ -100,6 +134,44 @@ export function createApp() {
   }
 
   app.get("/api/health", (c) => c.json({ ok: true, service: "airsensor-api" }));
+
+  app.get("/api/airfuse/proxy", async (c) => {
+    const path = normalizeAirFusePath(c.req.query("path"));
+    if (!path) {
+      return c.json({ error: "Unsupported AirFuse artifact path" }, 400);
+    }
+
+    const cache = typeof caches !== "undefined" ? (caches as unknown as { default?: Cache }).default : undefined;
+    const upstreamUrl = `${airFuseBaseUrl(c.env)}/${path}`;
+    const cacheRequest = new Request(upstreamUrl);
+    if (cache) {
+      const cached = await cache.match(cacheRequest);
+      if (cached) return cached;
+    }
+
+    const upstream = await fetch(upstreamUrl, {
+      headers: { "user-agent": "PAtool/0.1" },
+      signal: AbortSignal.timeout(20_000),
+    });
+
+    if (!upstream.ok || !upstream.body) {
+      return c.json({ error: `AirFuse artifact unavailable: ${path}` }, upstream.status === 404 ? 404 : 502);
+    }
+
+    const response = new Response(upstream.body, {
+      status: 200,
+      headers: {
+        "content-type": contentTypeForAirFusePath(path),
+        "cache-control": path === "index.json" ? "public, max-age=300" : "public, max-age=3600",
+      },
+    });
+
+    if (cache) {
+      c.executionCtx?.waitUntil(cache.put(cacheRequest, response.clone()));
+    }
+
+    return response;
+  });
 
   app.get("/api/status", async (c) => cachedJson(c, c.req.url, () => getDataStatus(c.env)));
 

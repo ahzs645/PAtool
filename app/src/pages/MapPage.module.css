@@ -111,6 +111,18 @@
   flex-wrap: wrap;
 }
 
+.overlayControls {
+  display: flex;
+  gap: var(--spacing-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.overlayControls .search {
+  flex: 0 1 220px;
+  min-width: 120px;
+}
+
 .rangeInput {
   width: 80px;
   accent-color: var(--accent-primary);

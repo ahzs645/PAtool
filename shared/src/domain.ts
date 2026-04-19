@@ -22,7 +22,8 @@ export const pasRecordSchema = z.object({
   humidity: z.number().nullable().optional(),
   pressure: z.number().nullable().optional(),
   temperature: z.number().nullable().optional(),
-  distanceToClosestMonitorKm: z.number().nullable().optional()
+  distanceToClosestMonitorKm: z.number().nullable().optional(),
+  elevationMeters: z.number().nullable().optional()
 });
 
 export const pasCollectionSchema = z.object({
@@ -1200,6 +1201,7 @@ export type InterpolationPoint = {
   x: number; // longitude
   y: number; // latitude
   value: number; // PM2.5 or AQI
+  elevationMeters?: number | null;
 };
 
 export type InterpolationGrid = {

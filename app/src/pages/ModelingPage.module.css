@@ -1,0 +1,219 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: var(--spacing-2);
+}
+
+.controls,
+.sourceForm {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-3);
+  align-items: end;
+}
+
+.field,
+.fieldWide {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.fieldWide {
+  grid-column: span 2;
+}
+
+.field span,
+.fieldWide span {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.field input,
+.field select,
+.fieldWide input {
+  width: 100%;
+  min-height: 34px;
+  padding: var(--spacing-1-5) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus,
+.fieldWide input:focus {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.field input:disabled {
+  color: var(--text-light);
+  background: var(--bg-tertiary);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  min-height: 34px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.bounds {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-height: 34px;
+  padding: var(--spacing-1-5) var(--spacing-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  line-height: var(--line-height-md);
+}
+
+.surfaceGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-3);
+}
+
+.previewWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2);
+}
+
+.previewCanvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-tertiary);
+  image-rendering: auto;
+}
+
+.previewMeta {
+  display: flex;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+}
+
+.emptySurface {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 260px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--border-radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+  text-align: center;
+}
+
+.actions {
+  display: flex;
+  gap: var(--spacing-2);
+}
+
+.error {
+  margin-top: var(--spacing-3);
+  color: var(--color-danger);
+  font-size: var(--font-size-sm);
+}
+
+.layerList {
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.layerRow {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 80px 64px 100px 100px auto;
+  gap: var(--spacing-2);
+  align-items: center;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.layerRow div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.layerRow strong {
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layerRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.layerRow button {
+  min-height: 30px;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.layerRow button:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+}
+
+.emptyText {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+@media (max-width: 1180px) {
+  .controls,
+  .sourceForm,
+  .surfaceGrid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .layerRow {
+    grid-template-columns: minmax(180px, 1fr) repeat(2, minmax(64px, auto));
+  }
+}
+
+@media (max-width: 680px) {
+  .controls,
+  .sourceForm,
+  .surfaceGrid,
+  .layerRow {
+    grid-template-columns: 1fr;
+  }
+
+  .fieldWide {
+    grid-column: span 1;
+  }
+}

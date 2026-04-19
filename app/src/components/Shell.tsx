@@ -8,7 +8,9 @@ import styles from "./Shell.module.css";
 const navItems = [
   { to: "/", label: "Explorer", icon: TableIcon },
   { to: "/map", label: "Map", icon: MapIcon },
+  { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
   { to: "/analytics", label: "Analytics", icon: ChartIcon },
+  { to: "/modeling", label: "Modeling", icon: LayersIcon },
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
@@ -90,12 +92,34 @@ function MapIcon() {
   );
 }
 
+function AirFuseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 15c3-6 8-8 16-7" />
+      <path d="M4 19c4-3 8-4 14-3" />
+      <circle cx="7" cy="8" r="2" />
+      <circle cx="15" cy="5" r="2" />
+      <path d="M9 8h4" />
+    </svg>
+  );
+}
+
 function ChartIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
       <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function LayersIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="12 2 2 7 12 12 22 7 12 2" />
+      <polyline points="2 12 12 17 22 12" />
+      <polyline points="2 17 12 22 22 17" />
     </svg>
   );
 }
