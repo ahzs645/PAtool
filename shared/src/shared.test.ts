@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  applyPurpleAirCorrection,
   calculateDailySoh,
   calculateSohIndex,
+  evaluateChannelAgreement,
   pasAddUniqueIds,
   pasEnhanceData,
   pasFilter,
@@ -24,6 +26,7 @@ import {
   patCreateAirSensor,
   calculateEnhancedDailySoh,
   calculateEnhancedSohIndex,
+  summarizeSensorHealth,
   idwInterpolate,
   ordinaryKrigingInterpolate,
   aqiToColor,
@@ -44,7 +47,7 @@ import {
   normalizePurpleAirLocalSeries,
   purpleAirLocalPm25,
 } from "./purpleairLocal";
-import { parseFirmsCsv } from "./hazards";
+import { attributePm25Event, parseFirmsCsv, parseHmsSmokeGeoJson } from "./hazards";
 import {
   classifyWindDirection,
   classifyWindIntensity,
@@ -133,6 +136,67 @@ describe("PurpleAir local JSON helpers", () => {
     expect(correctPurpleAirPm25(30, 60)).toBe(16.298);
     expect(correctPurpleAirPm25(8, null)).toBe(8);
     expect(purpleAirLocalPm25(localPayload, true)).toBe(7.108);
+  });
+});
+
+describe("PurpleAir correction profiles and health checks", () => {
+  it("applies correction profiles and rejects mismatched input bases", () => {
+    const barkjohn = applyPurpleAirCorrection({
+      pm25: 30,
+      humidity: 60,
+      inputBasis: "cf_1",
+      profileId: "epa-barkjohn-2021-cf1",
+    });
+    expect(barkjohn?.pm25Corrected).toBe(16.298);
+    expect(barkjohn?.provenance).toBe("epa-corrected-purpleair");
+
+    const smoke = applyPurpleAirCorrection({
+      pm25: 700,
+      humidity: 60,
+      inputBasis: "cf_1",
+      profileId: "epa-barkjohn-2022-smoke-cf1",
+    });
+    expect(smoke?.pm25Corrected).toBeCloseTo(484.13, 2);
+
+    const nilson = applyPurpleAirCorrection({
+      pm25: 20,
+      humidity: 50,
+      inputBasis: "atm",
+      profileId: "nilson-2022-rh-growth-atm",
+    });
+    expect(nilson?.pm25Corrected).toBeCloseTo(16.129, 3);
+
+    expect(() => applyPurpleAirCorrection({
+      pm25: 20,
+      humidity: 50,
+      inputBasis: "atm",
+      profileId: "epa-barkjohn-2021-cf1",
+    })).toThrow(/requires cf_1 input/);
+  });
+
+  it("evaluates A/B channel agreement at EPA-style threshold boundaries", () => {
+    expect(evaluateChannelAgreement(10, 15, "qapp-hourly").valid).toBe(true);
+    const questionable = evaluateChannelAgreement(100, 147, "qapp-hourly");
+    expect(questionable.valid).toBe(false);
+    expect(questionable.level).toBe("questionable");
+    expect(evaluateChannelAgreement(10, 1000, "qapp-hourly").level).toBe("severe");
+    expect(evaluateChannelAgreement(null, 10, "qapp-hourly").level).toBe("unavailable");
+  });
+
+  it("summarizes visible sensor health from channel disagreement and humidity", () => {
+    const health = summarizeSensorHealth({
+      ...samplePatSeries,
+      points: [
+        { ...samplePatSeries.points[0], pm25A: 10, pm25B: 11, humidity: 40 },
+        { ...samplePatSeries.points[1], pm25A: 100, pm25B: 170, humidity: 97 },
+        { ...samplePatSeries.points[2], pm25A: null, pm25B: 12, humidity: 50 },
+      ],
+    });
+
+    expect(health.level).toBe("severe");
+    expect(health.channelDisagreementCount).toBe(1);
+    expect(health.highHumidityCount).toBe(1);
+    expect(health.missingChannelCount).toBe(1);
   });
 });
 
@@ -518,11 +582,15 @@ describe("spatial interpolation", () => {
     expect(stableResult.pm25NowCast).toBe(10);
     expect(stableResult.aqi).toBe(pm25ToAqi(10));
     expect(stableResult.weightFactor).toBe(1);
+    expect(stableResult.status).toBe("stable");
+    expect(stableResult.hoursRequired).toBe(12);
     expect(stableResult.provenance).toBe("epa-nowcast-aqi");
 
     const variable = stable.map((sample, index) => ({ ...sample, pm25: index === 0 ? 100 : 1 }));
     expect(calculateNowCast(variable).weightFactor).toBe(0.5);
-    expect(calculateNowCast([{ timestamp: stable[0].timestamp, pm25: 10 }]).pm25NowCast).toBeNull();
+    const insufficient = calculateNowCast([{ timestamp: stable[0].timestamp, pm25: 10 }]);
+    expect(insufficient.pm25NowCast).toBeNull();
+    expect(insufficient.status).toBe("insufficient");
   });
 
   it("gridToImageData produces correct size", () => {
@@ -607,6 +675,35 @@ describe("reference comparison and hazard helpers", () => {
     expect(comparison.pairs[0].referenceAqi).toBe(42);
     expect(comparison.pairs[0].referencePm25).toBeNull();
     expect(comparison.fit).toBeNull();
+    expect(comparison.validation?.status).toBe("insufficient");
+  });
+
+  it("computes reference validation metrics for collocated PM2.5 observations", () => {
+    const hourly = patAggregate(samplePatSeries, 60);
+    const observations = hourly.points.slice(0, 4).map((point) => {
+      const sensorPm25 = point.pm25A !== null && point.pm25B !== null ? (point.pm25A + point.pm25B) / 2 : point.pm25A ?? point.pm25B ?? 0;
+      return {
+        timestamp: point.timestamp,
+        parameter: "PM2.5" as const,
+        pm25: Number((sensorPm25 * 1.02 + 0.1).toFixed(3)),
+        aqi: null,
+        provenance: "official-reference" as const,
+      };
+    });
+
+    const comparison = buildReferenceComparison(hourly, {
+      source: "aqs",
+      kind: "monitor",
+      label: "AQS",
+      latitude: hourly.meta.latitude ?? 47.6,
+      longitude: hourly.meta.longitude ?? -122.3,
+      observations,
+    });
+
+    expect(comparison.fit).not.toBeNull();
+    expect(comparison.validation?.n).toBeGreaterThanOrEqual(3);
+    expect(comparison.validation?.rmse).not.toBeNull();
+    expect(comparison.validation?.targets.minRSquared).toBe(0.7);
   });
 
   it("parses NASA FIRMS CSV fire detections into shared hazard records", () => {
@@ -623,6 +720,31 @@ describe("reference comparison and hazard helpers", () => {
       acquisitionTime: "2026-04-20T08:30:00.000Z",
       frpMw: 12.5,
     });
+  });
+
+  it("parses HMS smoke GeoJSON and builds event attribution labels", () => {
+    const smoke = parseHmsSmokeGeoJson({
+      type: "FeatureCollection",
+      features: [{
+        type: "Feature",
+        properties: { Density: "Heavy", Start: "2026-04-20T08:00:00Z" },
+        geometry: {
+          type: "Polygon",
+          coordinates: [[
+            [-123, 47],
+            [-122, 47],
+            [-122, 48],
+            [-123, 48],
+            [-123, 47],
+          ]],
+        },
+      }],
+    }, { west: -122.8, south: 47.2, east: -122.1, north: 47.9 });
+
+    expect(smoke).toHaveLength(1);
+    expect(smoke[0]).toMatchObject({ source: "hms", density: "heavy", timestamp: "2026-04-20T08:00:00.000Z" });
+    expect(attributePm25Event({ nearbySmoke: true, nearbyFire: true }).label).toBe("likely smoke event");
+    expect(attributePm25Event({ channelDisagreement: true }).label).toBe("likely sensor fault");
   });
 });
 

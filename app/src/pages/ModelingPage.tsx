@@ -22,6 +22,7 @@ import {
 
 import { Button, Card, Loader, PageHeader, StatCard } from "../components";
 import { getJson } from "../lib/api";
+import { REFERENCE_DIAGRAMS, REFERENCE_DIAGRAM_SOURCE, type ReferenceDiagram } from "./modeling/referenceDiagrams";
 import styles from "./ModelingPage.module.css";
 
 type LoadedSourceLayer = {
@@ -63,6 +64,10 @@ const defaultDraft: SourceDraft = {
 };
 
 const MAX_MODEL_GRID_CELLS = 28_000;
+
+function docsUrl(fileName: string): string {
+  return new URL(`docs/${fileName}`, document.baseURI).toString();
+}
 
 export default function ModelingPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -230,6 +235,25 @@ export default function ModelingPage() {
         </Card>
       </div>
 
+      <section className={styles.referenceSection} aria-labelledby="reference-diagrams-heading">
+        <div className={styles.referenceHeader}>
+          <div>
+            <span className={styles.sectionEyebrow}>Imported reference</span>
+            <h2 id="reference-diagrams-heading">PurpleAir workflow diagrams</h2>
+            <p>
+              Architecture, QAQC, summary, interpolation, and modeling diagrams aligned with PAtool's client-side workflow.
+            </p>
+          </div>
+          <span className={styles.sourceBadge}>{REFERENCE_DIAGRAM_SOURCE.label}</span>
+        </div>
+        <div className={styles.diagramGrid}>
+          {REFERENCE_DIAGRAMS.map((diagram) => (
+            <ReferenceDiagramCard key={diagram.id} diagram={diagram} />
+          ))}
+        </div>
+        <p className={styles.sourceAttribution}>{REFERENCE_DIAGRAM_SOURCE.attribution}</p>
+      </section>
+
       <Card title="Source layer">
         <div className={styles.sourceForm}>
           <label className={styles.field}>
@@ -366,6 +390,23 @@ export default function ModelingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function ReferenceDiagramCard({ diagram }: { diagram: ReferenceDiagram }) {
+  const imageUrl = docsUrl(diagram.fileName);
+
+  return (
+    <article className={styles.diagramItem}>
+      <a className={styles.diagramImageLink} href={imageUrl} target="_blank" rel="noreferrer">
+        <img src={imageUrl} alt={`${diagram.title} diagram`} loading="lazy" />
+      </a>
+      <div className={styles.diagramBody}>
+        <span>{diagram.category}</span>
+        <h3>{diagram.title}</h3>
+        <p>{diagram.summary}</p>
+      </div>
+    </article>
   );
 }
 

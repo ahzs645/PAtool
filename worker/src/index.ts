@@ -3,8 +3,10 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 
 import {
+  applyPurpleAirCorrection,
   calculateDailySoh,
   calculateEnhancedSohIndex,
+  calculateNowCast,
   calculateSohIndex,
   computePolarPlot,
   computeWindRose,
@@ -20,6 +22,7 @@ import {
   patSeriesSchema,
   runAdvancedHourlyAbQc,
   runHourlyAbQc,
+  summarizeSensorHealth,
 } from "@patool/shared";
 
 import {
@@ -27,6 +30,7 @@ import {
   getDataStatus,
   getFirmsFireDetections,
   getHazardContext,
+  getHmsSmokePolygons,
   getLocalPasCollection,
   getPasCollection,
   getPatSeries,
@@ -84,6 +88,24 @@ const scatterMatrixRequestSchema = z.object({
 const rollingMeanRequestSchema = z.object({
   series: patSeriesSchema,
   windowSize: z.number().optional(),
+});
+
+const correctionRequestSchema = z.object({
+  pm25: z.number().nullable().optional(),
+  humidity: z.number().nullable().optional(),
+  inputBasis: z.enum(["cf_1", "atm", "alt"]),
+  profileId: z.enum([
+    "epa-barkjohn-2021-cf1",
+    "epa-barkjohn-2022-smoke-cf1",
+    "nilson-2022-rh-growth-atm",
+    "nilson-2022-polynomial-atm",
+  ]),
+});
+
+const sensorHealthRequestSchema = z.object({
+  series: patSeriesSchema,
+  profileId: z.enum(["barkjohn-daily", "fire-smoke-10min", "qapp-hourly", "humid-research"]).optional(),
+  maxHumidity: z.number().optional(),
 });
 
 const AIRFUSE_DEFAULT_BASE_URL = "https://airnow-navigator-layers.s3.us-east-2.amazonaws.com";
@@ -228,6 +250,37 @@ export function createApp() {
     return c.json(runHourlyAbQc(parsed.series, { removeOutOfSpec: parsed.removeOutOfSpec }));
   });
 
+  app.post("/api/correction/purpleair", async (c) => {
+    const parsed = correctionRequestSchema.parse(await c.req.json());
+    try {
+      return c.json(applyPurpleAirCorrection({
+        pm25: parsed.pm25,
+        humidity: parsed.humidity,
+        inputBasis: parsed.inputBasis,
+        profileId: parsed.profileId,
+      }));
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : "Unable to apply correction profile" }, 400);
+    }
+  });
+
+  app.post("/api/qc/sensor-health", async (c) => {
+    const parsed = sensorHealthRequestSchema.parse(await c.req.json());
+    return c.json(summarizeSensorHealth(parsed.series, {
+      profileId: parsed.profileId,
+      maxHumidity: parsed.maxHumidity,
+    }));
+  });
+
+  app.post("/api/aqi/nowcast", async (c) => {
+    const payload = await c.req.json();
+    const series = patSeriesSchema.parse(payload.series ?? payload);
+    return c.json(calculateNowCast(series.points.map((point) => ({
+      timestamp: point.timestamp,
+      pm25: point.pm25A !== null && point.pm25B !== null ? (point.pm25A + point.pm25B) / 2 : point.pm25A ?? point.pm25B,
+    }))));
+  });
+
   app.post("/api/soh/daily", async (c) => {
     const payload = await c.req.json();
     const parsed = patSeriesSchema.parse(payload.series ?? payload);
@@ -332,8 +385,8 @@ export function createApp() {
     if (latitude === null || longitude === null) {
       return c.json({ error: "sensorId, latitude, and longitude query parameters are required" }, 400);
     }
-    if (source !== "airnow") {
-      return c.json({ error: "Only source=airnow is currently supported for live reference comparison" }, 400);
+    if (source !== "airnow" && source !== "aqs" && source !== "openaq") {
+      return c.json({ error: "source must be airnow, aqs, or openaq" }, 400);
     }
 
     return cachedJson(c, c.req.url, () => getReferenceComparison(
@@ -343,7 +396,7 @@ export function createApp() {
       longitude,
       c.req.query("start") ?? undefined,
       c.req.query("end") ?? undefined,
-      "airnow",
+      source,
     ));
   });
 
@@ -368,9 +421,9 @@ export function createApp() {
 
     return cachedJson(c, c.req.url, async () => ({
       generatedAt: new Date().toISOString(),
-      attribution: "NOAA HMS smoke overlay contract placeholder; route shape is reserved for the map overlay pipeline.",
-      cautions: ["HMS smoke polygons are not yet fetched by this deployment."],
-      smoke: [],
+      attribution: "NOAA HMS smoke polygons.",
+      cautions: c.env.HMS_SMOKE_GEOJSON_URL ? [] : ["HMS_SMOKE_GEOJSON_URL is not configured for this deployment."],
+      smoke: await getHmsSmokePolygons(c.env, bounds),
     }));
   });
 

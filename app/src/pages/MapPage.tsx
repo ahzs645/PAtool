@@ -72,6 +72,7 @@ export default function MapPage() {
   const interpolationJobIdRef = useRef(0);
   const heatmapDebugRef = useRef<HeatmapDebugState>(createHeatmapDebugState());
   const selectedPointKeysRef = useRef<string[]>([]);
+  const sensorLayerHandlersAttachedRef = useRef(false);
   const rawMapSizeRef = useRef<MapSize>({ width: 1, height: 1 });
   const workerBusyRef = useRef(false);
   const activeJobMethodRef = useRef<InterpolationMethod | null>(null);
@@ -81,6 +82,7 @@ export default function MapPage() {
   const [outsideOnly, setOutsideOnly] = useState(true);
   const [pm25Window, setPm25Window] = useState<Pm25Window>("pm25_1hr");
   const [mapMode, setMapMode] = useState<MapMode>("markers");
+  const [showSensorMarkers, setShowSensorMarkers] = useState(true);
   const [interpMethod, setInterpMethod] = useState<InterpolationMethod>("idw");
   const [gridRes, setGridRes] = useState(100);
   const [idwPower, setIdwPower] = useState(2);
@@ -403,25 +405,30 @@ export default function MapPage() {
   ]);
 
   const addSensorLayer = useCallback((map: maplibregl.Map) => {
-    if (map.getSource(SOURCE_ID)) return;
+    if (!map.getSource(SOURCE_ID)) {
+      map.addSource(SOURCE_ID, {
+        type: "geojson",
+        data: geojsonRef.current,
+      });
+    }
 
-    map.addSource(SOURCE_ID, {
-      type: "geojson",
-      data: geojsonRef.current,
-    });
+    if (!map.getLayer(LAYER_ID)) {
+      map.addLayer({
+        id: LAYER_ID,
+        type: "circle",
+        source: SOURCE_ID,
+        paint: {
+          "circle-radius": 6,
+          "circle-color": ["get", "color"],
+          "circle-stroke-width": 1.5,
+          "circle-stroke-color": "#ffffff",
+          "circle-opacity": 0.85,
+        },
+      });
+    }
 
-    map.addLayer({
-      id: LAYER_ID,
-      type: "circle",
-      source: SOURCE_ID,
-      paint: {
-        "circle-radius": 6,
-        "circle-color": ["get", "color"],
-        "circle-stroke-width": 1.5,
-        "circle-stroke-color": "#ffffff",
-        "circle-opacity": 0.85,
-      },
-    });
+    if (sensorLayerHandlersAttachedRef.current) return;
+    sensorLayerHandlersAttachedRef.current = true;
 
     map.on("click", LAYER_ID, (e) => {
       const feature = e.features?.[0];
@@ -444,6 +451,9 @@ export default function MapPage() {
   const syncSensorLayerPaint = useCallback((map: maplibregl.Map) => {
     if (!map.isStyleLoaded() || !map.getLayer(LAYER_ID)) return;
 
+    map.setLayoutProperty(LAYER_ID, "visibility", showSensorMarkers ? "visible" : "none");
+    if (!showSensorMarkers) return;
+
     if (mapMode === "heatmap") {
       map.setPaintProperty(LAYER_ID, "circle-radius", 3);
       map.setPaintProperty(LAYER_ID, "circle-opacity", 0.35);
@@ -452,7 +462,7 @@ export default function MapPage() {
 
     map.setPaintProperty(LAYER_ID, "circle-radius", 6);
     map.setPaintProperty(LAYER_ID, "circle-opacity", 0.85);
-  }, [mapMode]);
+  }, [mapMode, showSensorMarkers]);
 
   // Initialize map using a callback ref so it fires when the div mounts
   const mapContainerCallback = useCallback((node: HTMLDivElement | null) => {
@@ -464,6 +474,7 @@ export default function MapPage() {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
+        sensorLayerHandlersAttachedRef.current = false;
       }
       return;
     }
@@ -485,6 +496,7 @@ export default function MapPage() {
 
     map.on("load", () => {
       addSensorLayer(map);
+      setStyleReloadTick((tick) => tick + 1);
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -775,7 +787,7 @@ export default function MapPage() {
     });
   }, [interpolationResult, styleReloadTick, recordHeatmapDebug]);
 
-  // Toggle sensor circle visibility based on map mode
+  // Toggle sensor circle visibility and heatmap-mode emphasis.
   useEffect(() => {
     const map = mapRef.current;
     if (!map) return;
@@ -896,6 +908,8 @@ export default function MapPage() {
       <MapToolbar
         mapMode={mapMode}
         setMapMode={setMapMode}
+        showSensorMarkers={showSensorMarkers}
+        setShowSensorMarkers={setShowSensorMarkers}
         interpMethod={interpMethod}
         setInterpMethod={setInterpMethod}
         gridRes={gridRes}

@@ -20,6 +20,7 @@ type MockMap = {
   getLayer: ReturnType<typeof vi.fn>;
   removeLayer: ReturnType<typeof vi.fn>;
   setPaintProperty: ReturnType<typeof vi.fn>;
+  setLayoutProperty: ReturnType<typeof vi.fn>;
   getCanvas: ReturnType<typeof vi.fn>;
   isStyleLoaded: ReturnType<typeof vi.fn>;
   setStyle: ReturnType<typeof vi.fn>;
@@ -94,6 +95,7 @@ function createMockMap(): MockMap {
       layers.delete(id);
     }),
     setPaintProperty: vi.fn(),
+    setLayoutProperty: vi.fn(),
     getCanvas: vi.fn(() => ({ style: {} })),
     isStyleLoaded: vi.fn(() => true),
     setStyle: vi.fn(),
@@ -351,6 +353,8 @@ describe("app", () => {
         expect(screen.getByText("Config-driven exposure surfaces")).toBeInTheDocument();
         expect(screen.getByText("Observed PM2.5")).toBeInTheDocument();
         expect(screen.getByText("Hazard index")).toBeInTheDocument();
+        expect(screen.getByText("PurpleAir workflow diagrams")).toBeInTheDocument();
+        expect(screen.getByText("Final_Draft.pdf / Final_Draft.tex")).toBeInTheDocument();
       },
       { timeout: 5000 }
     );
@@ -383,8 +387,11 @@ describe("app", () => {
     await waitFor(
       () => {
         expect(screen.getByText("AirNow reference comparison")).toBeInTheDocument();
-        expect(screen.getByText(/AirNow AQI is official\/reference/)).toBeInTheDocument();
+        expect(screen.getByText(/AirNow is official\/reference context/)).toBeInTheDocument();
         expect(screen.getByText(/PurpleAir AQI is sensor-derived\/corrected/)).toBeInTheDocument();
+        expect(screen.getByText("AQS")).toBeInTheDocument();
+        expect(screen.getByText("OpenAQ")).toBeInTheDocument();
+        expect(screen.getByText("Reference validation")).toBeInTheDocument();
         expect(screen.getByText("Recent paired observations")).toBeInTheDocument();
       },
       { timeout: 5000 }

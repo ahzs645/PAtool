@@ -64,7 +64,7 @@ This preserves the serverless deployment model: AirFuse computation still happen
 
 ## Reference diagrams
 
-Data-flow and architecture diagrams from the original UMN Quality Air Quality Cities project (CC-licensed — see source repository). They describe the same PurpleAir QAQC → summarize → interpolate pipeline that PAtool implements client-side.
+Data-flow and architecture diagrams from the original UMN Quality Air Quality Cities project (CC-licensed — see source repository). They describe the same PurpleAir QAQC → summarize → interpolate pipeline that PAtool implements client-side. The app-side manifest lives in `app/src/pages/modeling/referenceDiagrams.ts` and attributes the imported draft source as `Final_Draft.pdf` / `Final_Draft.tex`.
 
 - High-level architecture: `app/public/docs/highlevelArchitecture.jpg`
 - Historic + real-time summaries DFD: `app/public/docs/DFDHistoric_RealTime_Summaries.jpg`

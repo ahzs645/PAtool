@@ -22,6 +22,42 @@
   margin-bottom: var(--spacing-2);
 }
 
+.provenanceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--spacing-3);
+}
+
+.provenanceGrid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provenanceGrid strong {
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}
+
+.provenanceGrid small {
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.provenanceLabel {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.healthChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+  margin-top: var(--spacing-3);
+}
+
 @media (max-width: 1080px) {
   .chartGrid {
     grid-template-columns: 1fr;

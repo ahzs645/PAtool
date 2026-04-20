@@ -1,5 +1,7 @@
 import {
+  applyPurpleAirCorrection,
   calculateEnhancedSohIndex,
+  calculateNowCast,
   calculateSohIndex,
   buildReferenceComparison,
   computePolarPlot,
@@ -18,10 +20,14 @@ import {
   pm25ToAqiBand,
   runAdvancedHourlyAbQc,
   runHourlyAbQc,
+  summarizeSensorHealth,
   type ComparisonResult,
+  type ChannelQcProfileId,
   type PasCollection,
   type PasRecord,
   type PatSeries,
+  type PurpleAirCorrectionProfileId,
+  type PurpleAirInputBasis,
   type ReferenceObservationSeries,
   type SensorRecord,
   type DataStatus,
@@ -303,8 +309,25 @@ export async function postStaticJson<T>(path: string, body: unknown): Promise<T>
   const series = payload.series ? patSeriesSchema.parse(payload.series) : undefined;
 
   switch (path) {
+    case "/api/correction/purpleair":
+      return applyPurpleAirCorrection({
+        pm25: typeof payload.pm25 === "number" ? payload.pm25 : null,
+        humidity: typeof payload.humidity === "number" ? payload.humidity : null,
+        inputBasis: payload.inputBasis as PurpleAirInputBasis,
+        profileId: payload.profileId as PurpleAirCorrectionProfileId,
+      }) as T;
     case "/api/qc/hourly-ab":
       return runHourlyAbQc(series!, { removeOutOfSpec: Boolean(payload.removeOutOfSpec) }) as T;
+    case "/api/qc/sensor-health":
+      return summarizeSensorHealth(series!, {
+        profileId: payload.profileId as ChannelQcProfileId,
+        maxHumidity: typeof payload.maxHumidity === "number" ? payload.maxHumidity : undefined,
+      }) as T;
+    case "/api/aqi/nowcast":
+      return calculateNowCast(series!.points.map((point) => ({
+        timestamp: point.timestamp,
+        pm25: point.pm25A !== null && point.pm25B !== null ? (point.pm25A + point.pm25B) / 2 : point.pm25A ?? point.pm25B,
+      }))) as T;
     case "/api/soh/index":
       return calculateSohIndex(series!) as T;
     case "/api/soh/enhanced":

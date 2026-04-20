@@ -8,11 +8,13 @@ import {
   type PurpleAirLocalOptions,
   type ReferenceObservationSeries,
   type SensorRecord,
+  type SmokePolygon,
   buildReferenceComparison,
   normalizePurpleAirLocalRecord,
   normalizePurpleAirLocalSeries,
   normalizePasCollection,
   parseFirmsCsv,
+  parseHmsSmokeGeoJson,
   patAggregate,
   patFilterDate,
 } from "@patool/shared";
@@ -29,6 +31,7 @@ export type WorkerEnv = {
   AQS_API_KEY?: string;
   AQS_EMAIL?: string;
   FIRMS_MAP_KEY?: string;
+  HMS_SMOKE_GEOJSON_URL?: string;
   AIRFUSE_BASE_URL?: string;
 };
 
@@ -39,12 +42,18 @@ type PurpleAirFieldsPayload = {
 
 export type PurpleAirAverage = "0" | "2" | "10" | "30" | "60" | "360" | "1440" | "10080" | "43200" | "525600";
 export type PurpleAirHistoryField =
-  | "pm2.5_atm_a"
-  | "pm2.5_atm_b"
-  | "pm2.5_a"
-  | "pm2.5_b"
   | "pm2.5_cf_1_a"
   | "pm2.5_cf_1_b"
+  | "pm2.5_atm_a"
+  | "pm2.5_atm_b"
+  | "pm2.5_alt_a"
+  | "pm2.5_alt_b"
+  | "pm2.5_a"
+  | "pm2.5_b"
+  | "0.3_um_count_a"
+  | "0.3_um_count_b"
+  | "confidence"
+  | "channel_flags"
   | "humidity"
   | "temperature"
   | "pressure";
@@ -66,7 +75,7 @@ export type PurpleAirHistoryWindowPlan = {
   windows: PurpleAirHistoryWindow[];
 };
 
-type ReferenceSourceParam = "airnow";
+type ReferenceSourceParam = "airnow" | "aqs" | "openaq";
 
 type BoundingBox = {
   west: number;
@@ -311,8 +320,16 @@ function parseTimestampSeconds(input: string | undefined, end = false): number |
 }
 
 const PURPLEAIR_HISTORY_FIELDS = [
+  "pm2.5_cf_1_a",
+  "pm2.5_cf_1_b",
   "pm2.5_atm_a",
   "pm2.5_atm_b",
+  "pm2.5_alt_a",
+  "pm2.5_alt_b",
+  "0.3_um_count_a",
+  "0.3_um_count_b",
+  "confidence",
+  "channel_flags",
   "humidity",
   "temperature",
   "pressure",
@@ -399,8 +416,18 @@ function normalizePatSeries(sensorId: string, payload: PurpleAirFieldsPayload): 
 
   const indexOf = (name: string) => payload.fields?.indexOf(name) ?? -1;
   const timeIndex = [indexOf("time_stamp"), indexOf("time_stamp_utc"), indexOf("time")].find((index) => index >= 0) ?? -1;
-  const aIndex = [indexOf("pm2.5_atm_a"), indexOf("pm2.5_a"), indexOf("pm2.5_cf_1_a")].find((index) => index >= 0) ?? -1;
-  const bIndex = [indexOf("pm2.5_atm_b"), indexOf("pm2.5_b"), indexOf("pm2.5_cf_1_b")].find((index) => index >= 0) ?? -1;
+  const cf1AIndex = indexOf("pm2.5_cf_1_a");
+  const cf1BIndex = indexOf("pm2.5_cf_1_b");
+  const atmAIndex = indexOf("pm2.5_atm_a");
+  const atmBIndex = indexOf("pm2.5_atm_b");
+  const altAIndex = indexOf("pm2.5_alt_a");
+  const altBIndex = indexOf("pm2.5_alt_b");
+  const aIndex = [cf1AIndex, atmAIndex, indexOf("pm2.5_a")].find((index) => index >= 0) ?? -1;
+  const bIndex = [cf1BIndex, atmBIndex, indexOf("pm2.5_b")].find((index) => index >= 0) ?? -1;
+  const particle03AIndex = indexOf("0.3_um_count_a");
+  const particle03BIndex = indexOf("0.3_um_count_b");
+  const confidenceIndex = indexOf("confidence");
+  const channelFlagsIndex = indexOf("channel_flags");
   const humidityIndex = indexOf("humidity");
   const temperatureIndex = indexOf("temperature");
   const pressureIndex = indexOf("pressure");
@@ -429,6 +456,16 @@ function normalizePatSeries(sensorId: string, payload: PurpleAirFieldsPayload): 
           timestamp,
           pm25A: toNumber(row[aIndex]),
           pm25B: toNumber(row[bIndex]),
+          pm25Cf1A: cf1AIndex >= 0 ? toNumber(row[cf1AIndex]) : null,
+          pm25Cf1B: cf1BIndex >= 0 ? toNumber(row[cf1BIndex]) : null,
+          pm25AtmA: atmAIndex >= 0 ? toNumber(row[atmAIndex]) : null,
+          pm25AtmB: atmBIndex >= 0 ? toNumber(row[atmBIndex]) : null,
+          pm25AltA: altAIndex >= 0 ? toNumber(row[altAIndex]) : null,
+          pm25AltB: altBIndex >= 0 ? toNumber(row[altBIndex]) : null,
+          particleCount03umA: particle03AIndex >= 0 ? toNumber(row[particle03AIndex]) : null,
+          particleCount03umB: particle03BIndex >= 0 ? toNumber(row[particle03BIndex]) : null,
+          confidence: confidenceIndex >= 0 ? toNumber(row[confidenceIndex]) : null,
+          channelFlags: channelFlagsIndex >= 0 ? toNumber(row[channelFlagsIndex]) : null,
           humidity: humidityIndex >= 0 ? toNumber(row[humidityIndex]) : null,
           temperature: temperatureIndex >= 0 ? toNumber(row[temperatureIndex]) : null,
           pressure: pressureIndex >= 0 ? toNumber(row[pressureIndex]) : null
@@ -512,7 +549,7 @@ export async function getPasCollection(env: WorkerEnv = {}, date?: string): Prom
   if (env.PURPLEAIR_API_KEY) {
     const liveBase = env.PURPLEAIR_API_BASE ?? "https://api.purpleair.com/v1";
     const live = await fetchWithEdgeCache(
-      `${liveBase}/sensors?fields=sensor_index,name,latitude,longitude,location_type,pm2.5,pm2.5_10minute,pm2.5_30minute,pm2.5_1hour,pm2.5_6hour,pm2.5_24hour,pm2.5_1week,humidity,pressure,temperature`,
+      `${liveBase}/sensors?fields=sensor_index,name,latitude,longitude,location_type,last_seen,date_created,pm2.5,pm2.5_10minute,pm2.5_30minute,pm2.5_1hour,pm2.5_6hour,pm2.5_24hour,pm2.5_1week,pm2.5_cf_1,pm2.5_cf_1_a,pm2.5_cf_1_b,pm2.5_atm,pm2.5_atm_a,pm2.5_atm_b,pm2.5_alt,pm2.5_alt_a,pm2.5_alt_b,pm1.0_atm,pm10.0_atm,0.3_um_count,0.5_um_count,10.0_um_count,humidity,pressure,temperature,confidence,channel_flags,rssi,uptime,pa_latency,memory,firmware_version,hardware`,
       { headers: purpleAirHeaders(env) },
       300,
       {
@@ -624,6 +661,128 @@ export async function getAirNowConditions(
   return null;
 }
 
+function dateParam(input: string | undefined, fallback: string): string {
+  const raw = input ?? fallback;
+  const parsed = new Date(raw);
+  if (Number.isFinite(parsed.getTime())) {
+    return parsed.toISOString().slice(0, 10).replaceAll("-", "");
+  }
+  return raw.replaceAll("-", "").slice(0, 8);
+}
+
+function isoFromLocalDateTime(date: unknown, time: unknown): string {
+  const rawDate = typeof date === "string" ? date : new Date().toISOString().slice(0, 10);
+  const rawTime = typeof time === "string" && time.trim() ? time : "00:00";
+  const parsed = new Date(`${rawDate}T${rawTime.length === 5 ? `${rawTime}:00` : rawTime}Z`);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : new Date().toISOString();
+}
+
+export async function getAqsPm25Observations(
+  env: WorkerEnv,
+  latitude: number,
+  longitude: number,
+  start?: string,
+  end?: string,
+  distanceKm = 25,
+): Promise<ReferenceObservationSeries | null> {
+  if (!env.AQS_EMAIL || !env.AQS_API_KEY) return null;
+  const latDelta = distanceKm / 111;
+  const lonDelta = distanceKm / (111 * Math.max(Math.cos(latitude * Math.PI / 180), 0.2));
+  const url = new URL("https://aqs.epa.gov/data/api/sampleData/byBox");
+  url.searchParams.set("email", env.AQS_EMAIL);
+  url.searchParams.set("key", env.AQS_API_KEY);
+  url.searchParams.set("param", "88101");
+  url.searchParams.set("bdate", dateParam(start, new Date(Date.now() - 7 * SECONDS_PER_DAY * 1000).toISOString()));
+  url.searchParams.set("edate", dateParam(end, new Date().toISOString()));
+  url.searchParams.set("minlat", String(latitude - latDelta));
+  url.searchParams.set("maxlat", String(latitude + latDelta));
+  url.searchParams.set("minlon", String(longitude - lonDelta));
+  url.searchParams.set("maxlon", String(longitude + lonDelta));
+
+  const payload = await tryFetchJson(url.toString(), undefined, { retries: 1, timeoutMs: 15_000 });
+  const rows = (payload as { Data?: Array<Record<string, unknown>> } | null)?.Data;
+  if (!rows?.length) return null;
+  const first = rows[0];
+  const siteLatitude = Number(first.latitude ?? latitude);
+  const siteLongitude = Number(first.longitude ?? longitude);
+
+  return {
+    source: "aqs",
+    kind: "monitor",
+    label: String(first.local_site_name ?? first.site_number ?? "AQS PM2.5 monitor"),
+    latitude: Number.isFinite(siteLatitude) ? siteLatitude : latitude,
+    longitude: Number.isFinite(siteLongitude) ? siteLongitude : longitude,
+    siteId: [first.state_code, first.county_code, first.site_number].filter(Boolean).join("-") || undefined,
+    sourceUrl: "https://aqs.epa.gov/aqsweb/documents/data_mart_welcome.html",
+    attribution: "EPA AQS regulatory monitor observations.",
+    observations: rows.flatMap((row): ReferenceObservationSeries["observations"] => {
+      const pm25 = Number(row.sample_measurement);
+      if (!Number.isFinite(pm25)) return [];
+      return [{
+        timestamp: isoFromLocalDateTime(row.date_local, row.time_local),
+        parameter: "PM2.5",
+        pm25,
+        aqi: null,
+        provenance: "official-reference",
+        reportingArea: String(row.local_site_name ?? row.county ?? "AQS monitor"),
+      }];
+    }),
+  };
+}
+
+export async function getOpenAqPm25Observations(
+  env: WorkerEnv,
+  latitude: number,
+  longitude: number,
+  start?: string,
+  end?: string,
+  distanceKm = 25,
+): Promise<ReferenceObservationSeries | null> {
+  const url = new URL("https://api.openaq.org/v3/measurements");
+  url.searchParams.set("coordinates", `${latitude},${longitude}`);
+  url.searchParams.set("radius", String(Math.round(distanceKm * 1000)));
+  url.searchParams.set("parameters_id", "2");
+  url.searchParams.set("limit", "1000");
+  if (start) url.searchParams.set("datetime_from", new Date(start).toISOString());
+  if (end) url.searchParams.set("datetime_to", new Date(end).toISOString());
+
+  const payload = await tryFetchJson(
+    url.toString(),
+    env.OPENAQ_API_KEY ? { headers: { "X-API-Key": env.OPENAQ_API_KEY } } : undefined,
+    { retries: 1, timeoutMs: 15_000 },
+  );
+  const rows = (payload as { results?: Array<Record<string, unknown>> } | null)?.results;
+  if (!rows?.length) return null;
+  const first = rows[0] as Record<string, unknown>;
+  const coordinates = first.coordinates as { latitude?: number; longitude?: number } | undefined;
+
+  return {
+    source: "openaq",
+    kind: "monitor",
+    label: String(first.location_name ?? first.location ?? "OpenAQ PM2.5 monitor"),
+    latitude: typeof coordinates?.latitude === "number" ? coordinates.latitude : latitude,
+    longitude: typeof coordinates?.longitude === "number" ? coordinates.longitude : longitude,
+    siteId: String(first.location_id ?? first.sensors_id ?? ""),
+    sourceUrl: "https://docs.openaq.org/",
+    attribution: "OpenAQ aggregated PM2.5 observations.",
+    observations: rows.flatMap((row): ReferenceObservationSeries["observations"] => {
+      const pm25 = Number(row.value);
+      const period = row.period as { datetimeFrom?: { utc?: string } } | undefined;
+      const date = row.date as { utc?: string } | undefined;
+      const timestamp = period?.datetimeFrom?.utc ?? date?.utc;
+      if (!Number.isFinite(pm25) || typeof timestamp !== "string") return [];
+      return [{
+        timestamp,
+        parameter: "PM2.5",
+        pm25,
+        aqi: null,
+        provenance: "official-reference",
+        reportingArea: String(row.location_name ?? "OpenAQ monitor"),
+      }];
+    }),
+  };
+}
+
 export async function getPwfslMonitorData(
   env: WorkerEnv,
   latitude: number,
@@ -643,7 +802,11 @@ export async function getReferenceComparison(
 ): Promise<ComparisonResult> {
   const [series, reference] = await Promise.all([
     getPatSeries(env, sensorId, start, end, "hourly"),
-    source === "airnow" ? getAirNowConditions(env, latitude, longitude) : Promise.resolve(null),
+    source === "airnow"
+      ? getAirNowConditions(env, latitude, longitude)
+      : source === "aqs"
+        ? getAqsPm25Observations(env, latitude, longitude, start, end)
+        : getOpenAqPm25Observations(env, latitude, longitude, start, end),
   ]);
 
   return buildReferenceComparison(series, reference);
@@ -697,21 +860,33 @@ export async function getFirmsFireDetections(
   }
 }
 
+export async function getHmsSmokePolygons(
+  env: WorkerEnv,
+  bounds: BoundingBox,
+): Promise<SmokePolygon[]> {
+  if (!env.HMS_SMOKE_GEOJSON_URL || !isValidBounds(bounds)) return [];
+  const payload = await tryFetchJson(env.HMS_SMOKE_GEOJSON_URL, undefined, { retries: 1, timeoutMs: 15_000 });
+  return parseHmsSmokeGeoJson(payload, bounds);
+}
+
 export async function getHazardContext(
   env: WorkerEnv,
   bounds: BoundingBox,
   options: { dayRange?: number; date?: string } = {},
 ): Promise<HazardContext> {
-  const fires = await getFirmsFireDetections(env, bounds, options);
+  const [fires, smoke] = await Promise.all([
+    getFirmsFireDetections(env, bounds, options),
+    getHmsSmokePolygons(env, bounds),
+  ]);
   return {
     generatedAt: new Date().toISOString(),
-    attribution: "NASA FIRMS active fire detections; HMS smoke and HRRR wind layers are reserved for the overlay pipeline.",
+    attribution: "NASA FIRMS active fire detections and NOAA HMS smoke polygons where configured.",
     cautions: [
       "FIRMS detections are satellite hotspots, not confirmed incident perimeters.",
       "Use smoke/fire context to explain possible PM2.5 spikes; do not treat it as a monitor replacement.",
     ],
     fires,
-    smoke: [],
+    smoke,
     wind: [],
   };
 }

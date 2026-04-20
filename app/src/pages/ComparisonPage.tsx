@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EChartsCoreOption } from "echarts/core";
 
@@ -25,6 +25,13 @@ const DEFAULT_END = "2018-08-28T06:59:00Z";
 
 type PairRow = ComparisonResult["pairs"][number];
 type ConcentrationPair = PairRow & { sensorPm25Mean: number; referencePm25: number };
+type ReferenceSourceOption = "airnow" | "aqs" | "openaq";
+
+const REFERENCE_SOURCES: Array<{ id: ReferenceSourceOption; label: string; note: string }> = [
+  { id: "airnow", label: "AirNow", note: "current public AQI" },
+  { id: "aqs", label: "AQS", note: "historical regulatory" },
+  { id: "openaq", label: "OpenAQ", note: "supplemental global" },
+];
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -76,22 +83,33 @@ function aqiVariant(value: number | null | undefined): "default" | "success" | "
   return "danger";
 }
 
-function referenceSourceName(reference: ReferenceObservationSeries | null | undefined): string {
-  if (!reference) return "Reference";
-  if (reference.source === "airnow") return "AirNow";
-  if (reference.source === "aqs") return "AQS";
-  if (reference.source === "openaq") return "OpenAQ";
+function referenceSourceName(referenceOrSource: ReferenceObservationSeries | ReferenceObservationSeries["source"] | null | undefined): string {
+  const source = typeof referenceOrSource === "string" ? referenceOrSource : referenceOrSource?.source;
+  if (!source) return "Reference";
+  if (source === "airnow") return "AirNow";
+  if (source === "aqs") return "AQS";
+  if (source === "openaq") return "OpenAQ";
   return "Static reference";
 }
 
-function buildReferenceComparePath(series: PatSeries): string {
+function validationTone(status: NonNullable<ComparisonResult["validation"]>["status"] | undefined): "good" | "warn" | "neutral" {
+  if (status === "pass") return "good";
+  if (status === "watch" || status === "fail") return "warn";
+  return "neutral";
+}
+
+function formatMetric(value: number | null | undefined, digits = 3): string {
+  return isFiniteNumber(value) ? value.toFixed(digits) : "Unavailable";
+}
+
+function buildReferenceComparePath(series: PatSeries, source: ReferenceSourceOption): string {
   const params = new URLSearchParams({
     sensorId: series.meta.sensorId || DEFAULT_SENSOR_ID,
     latitude: String(series.meta.latitude ?? DEFAULT_LATITUDE),
     longitude: String(series.meta.longitude ?? DEFAULT_LONGITUDE),
     start: series.points[0]?.timestamp ?? DEFAULT_START,
     end: series.points.at(-1)?.timestamp ?? DEFAULT_END,
-    source: "airnow",
+    source,
   });
 
   return `/api/reference/compare?${params.toString()}`;
@@ -148,6 +166,8 @@ const pairColumns: Column<PairRow>[] = [
 
 export default function ComparisonPage() {
   const ct = useChartTheme();
+  const [referenceSource, setReferenceSource] = useState<ReferenceSourceOption>("airnow");
+  const selectedSourceName = referenceSourceName(referenceSource);
 
   const {
     data: series,
@@ -157,7 +177,7 @@ export default function ComparisonPage() {
     queryFn: () => getJson<PatSeries>(`/api/pat?id=${DEFAULT_SENSOR_ID}&aggregate=raw`),
   });
 
-  const referenceComparePath = useMemo(() => (series ? buildReferenceComparePath(series) : null), [series]);
+  const referenceComparePath = useMemo(() => (series ? buildReferenceComparePath(series, referenceSource) : null), [series, referenceSource]);
 
   const {
     data: comparison,
@@ -258,7 +278,7 @@ export default function ComparisonPage() {
       <div className={styles.layout}>
         <PageHeader
           eyebrow="Comparison"
-          title="AirNow reference comparison"
+          title={`${selectedSourceName} reference comparison`}
           subtitle="PurpleAir sensor readings compared with official/reference AQI observations."
         />
         <Card title="Reference comparison unavailable">
@@ -276,6 +296,7 @@ export default function ComparisonPage() {
 
   const reference = comparison.reference;
   const sourceName = referenceSourceName(reference);
+  const validation = comparison.validation;
   const latestSensorAqi = sensorAqiFromPm25(latestPair?.sensorPm25Mean);
   const latestSensorBand = pm25ToAqiBand(latestPair?.sensorPm25Mean);
   const latestReferenceAqi = latestPair?.referenceAqi ?? sensorAqiFromPm25(latestPair?.referencePm25);
@@ -285,12 +306,27 @@ export default function ComparisonPage() {
     <div className={styles.layout}>
       <PageHeader
         eyebrow="Comparison"
-        title="AirNow reference comparison"
+        title={`${selectedSourceName} reference comparison`}
         subtitle="PurpleAir sensor readings paired with official/reference PM2.5 and AQI observations for calibration review."
       />
 
+      <div className={styles.sourceSelector} role="group" aria-label="Reference data source">
+        {REFERENCE_SOURCES.map((source) => (
+          <button
+            key={source.id}
+            type="button"
+            className={`${styles.sourceOption} ${referenceSource === source.id ? styles.sourceOptionActive : ""}`}
+            aria-pressed={referenceSource === source.id}
+            onClick={() => setReferenceSource(source.id)}
+          >
+            <span>{source.label}</span>
+            <small>{source.note}</small>
+          </button>
+        ))}
+      </div>
+
       <p className={styles.disclosure}>
-        <strong>AirNow AQI is official/reference.</strong> PurpleAir AQI is sensor-derived/corrected from the paired PM2.5 value and is shown only as a comparison aid.
+        <strong>{selectedSourceName} is official/reference context.</strong> PurpleAir AQI is sensor-derived/corrected from the paired PM2.5 value and is shown only as a comparison aid.
       </p>
 
       <div className={styles.summaryGrid}>
@@ -361,6 +397,13 @@ export default function ComparisonPage() {
           value={comparison.fit ? comparison.fit.rSquared.toFixed(3) : "Unavailable"}
           tone={comparison.fit && comparison.fit.rSquared >= 0.75 ? "good" : "neutral"}
         />
+        <StatCard
+          label="Validation"
+          value={validation?.status ?? "Unavailable"}
+          tone={validationTone(validation?.status)}
+        />
+        <StatCard label="RMSE" value={validation ? formatMetric(validation.rmse) : "Unavailable"} tone={validationTone(validation?.status)} />
+        <StatCard label="Bias" value={validation ? formatSignedPm25(validation.bias) : "Unavailable"} />
       </div>
 
       <Card title="Concentration fit">
@@ -368,7 +411,7 @@ export default function ComparisonPage() {
           <>
             <div className={styles.fitSummary}>
               <span>{sourceName} PM2.5 is plotted against paired PurpleAir PM2.5.</span>
-              <span>{comparison.fit ? `n=${comparison.fit.n}, slope=${comparison.fit.slope.toFixed(3)}, R2=${comparison.fit.rSquared.toFixed(3)}` : "Not enough paired concentration values for a fit."}</span>
+              <span>{comparison.fit ? `n=${comparison.fit.n}, slope=${comparison.fit.slope.toFixed(3)}, R2=${comparison.fit.rSquared.toFixed(3)}, RMSE=${formatMetric(validation?.rmse)}` : "Not enough paired concentration values for a fit."}</span>
             </div>
             <EChart option={scatterOption} height={360} />
           </>
@@ -378,6 +421,37 @@ export default function ComparisonPage() {
           </p>
         )}
       </Card>
+
+      {validation && (
+        <Card title="Reference validation">
+          <div className={styles.validationGrid}>
+            <div>
+              <span>Pairing</span>
+              <strong>{validation.n} rows, {validation.timeOverlapHours} hourly overlaps</strong>
+            </div>
+            <div>
+              <span>Distance</span>
+              <strong>{isFiniteNumber(validation.distanceKm) ? `${validation.distanceKm.toFixed(1)} km` : "Unavailable"}</strong>
+            </div>
+            <div>
+              <span>Target thresholds</span>
+              <strong>{`R2 >= ${validation.targets.minRSquared.toFixed(2)}, RMSE <= ${validation.targets.maxRmse.toFixed(1)} ug/m3`}</strong>
+            </div>
+            <div>
+              <span>Slope/intercept</span>
+              <strong>{formatMetric(validation.slope)} / {formatMetric(validation.intercept)}</strong>
+            </div>
+            <div>
+              <span>MAE / NRMSE</span>
+              <strong>{formatMetric(validation.mae)} / {isFiniteNumber(validation.nrmsePct) ? `${validation.nrmsePct.toFixed(1)}%` : "Unavailable"}</strong>
+            </div>
+            <div>
+              <span>Source</span>
+              <strong>{referenceSourceName(validation.source)}</strong>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card title="Recent paired observations">
         <div className={styles.tableWrap}>

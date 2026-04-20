@@ -19,9 +19,36 @@ export const pasRecordSchema = z.object({
   pm25_6hr: z.number().nullable().optional(),
   pm25_1day: z.number().nullable().optional(),
   pm25_1week: z.number().nullable().optional(),
+  pm25Cf1: z.number().nullable().optional(),
+  pm25Cf1A: z.number().nullable().optional(),
+  pm25Cf1B: z.number().nullable().optional(),
+  pm25Atm: z.number().nullable().optional(),
+  pm25AtmA: z.number().nullable().optional(),
+  pm25AtmB: z.number().nullable().optional(),
+  pm25Alt: z.number().nullable().optional(),
+  pm25AltA: z.number().nullable().optional(),
+  pm25AltB: z.number().nullable().optional(),
+  pm1Atm: z.number().nullable().optional(),
+  pm10Atm: z.number().nullable().optional(),
+  particleCount03um: z.number().nullable().optional(),
+  particleCount05um: z.number().nullable().optional(),
+  particleCount10um: z.number().nullable().optional(),
   humidity: z.number().nullable().optional(),
   pressure: z.number().nullable().optional(),
   temperature: z.number().nullable().optional(),
+  adjustedHumidity: z.number().nullable().optional(),
+  adjustedTemperature: z.number().nullable().optional(),
+  dewpoint: z.number().nullable().optional(),
+  confidence: z.number().nullable().optional(),
+  channelFlags: z.number().nullable().optional(),
+  rssi: z.number().nullable().optional(),
+  uptimeMinutes: z.number().nullable().optional(),
+  paLatencyMs: z.number().nullable().optional(),
+  memoryKb: z.number().nullable().optional(),
+  firmwareVersion: z.string().optional(),
+  hardwareVersion: z.string().optional(),
+  lastSeen: z.string().optional(),
+  sensorAgeDays: z.number().nullable().optional(),
   distanceToClosestMonitorKm: z.number().nullable().optional(),
   elevationMeters: z.number().nullable().optional()
 });
@@ -44,8 +71,21 @@ export const patPointSchema = z.object({
   timestamp: z.string(),
   pm25A: z.number().nullable(),
   pm25B: z.number().nullable(),
+  pm25Cf1A: z.number().nullable().optional(),
+  pm25Cf1B: z.number().nullable().optional(),
+  pm25AtmA: z.number().nullable().optional(),
+  pm25AtmB: z.number().nullable().optional(),
+  pm25AltA: z.number().nullable().optional(),
+  pm25AltB: z.number().nullable().optional(),
+  particleCount03umA: z.number().nullable().optional(),
+  particleCount03umB: z.number().nullable().optional(),
+  confidence: z.number().nullable().optional(),
+  channelFlags: z.number().nullable().optional(),
   humidity: z.number().nullable().optional(),
   temperature: z.number().nullable().optional(),
+  adjustedHumidity: z.number().nullable().optional(),
+  adjustedTemperature: z.number().nullable().optional(),
+  dewpoint: z.number().nullable().optional(),
   pressure: z.number().nullable().optional()
 });
 
@@ -248,6 +288,33 @@ export type ComparisonResult = {
   reference: ReferenceObservationSeries | null;
   pairs: ComparisonPair[];
   fit: LinearFitResult | null;
+  validation: ReferenceValidationResult | null;
+};
+
+export type ReferenceValidationTargets = {
+  minRSquared: number;
+  maxRmse: number;
+  maxNrmsePct: number;
+  slopeLow: number;
+  slopeHigh: number;
+  interceptLow: number;
+  interceptHigh: number;
+};
+
+export type ReferenceValidationResult = {
+  source: ReferenceSource;
+  n: number;
+  timeOverlapHours: number;
+  distanceKm: number | null;
+  slope: number | null;
+  intercept: number | null;
+  rSquared: number | null;
+  rmse: number | null;
+  nrmsePct: number | null;
+  mae: number | null;
+  bias: number | null;
+  status: "pass" | "watch" | "fail" | "insufficient";
+  targets: ReferenceValidationTargets;
 };
 
 export type AqiCategory =
@@ -291,7 +358,85 @@ export type NowCastResult = {
   aqi: number | null;
   weightFactor: number | null;
   hoursUsed: number;
+  hoursRequired: number;
+  status: "stable" | "calculating" | "insufficient";
   provenance: ProvenanceLabel;
+};
+
+export type PurpleAirInputBasis = "cf_1" | "atm" | "alt";
+
+export type PurpleAirCorrectionProfileId =
+  | "epa-barkjohn-2021-cf1"
+  | "epa-barkjohn-2022-smoke-cf1"
+  | "nilson-2022-rh-growth-atm"
+  | "nilson-2022-polynomial-atm";
+
+export type PurpleAirCorrectionProfile = {
+  id: PurpleAirCorrectionProfileId;
+  label: string;
+  inputBasis: PurpleAirInputBasis;
+  scope: "default-outdoor" | "extreme-smoke" | "advanced";
+  citation: Citation;
+  requiresHumidity: boolean;
+  correct: (pm25: number, humidity: number | null) => number;
+};
+
+export type PurpleAirCorrectionInput = {
+  pm25: number | null | undefined;
+  humidity?: number | null;
+  inputBasis: PurpleAirInputBasis;
+  profileId: PurpleAirCorrectionProfileId;
+};
+
+export type PurpleAirCorrectionResult = {
+  profileId: PurpleAirCorrectionProfileId;
+  label: string;
+  inputBasis: PurpleAirInputBasis;
+  pm25Raw: number;
+  humidity: number | null;
+  pm25Corrected: number;
+  provenance: "epa-corrected-purpleair";
+  citation: Citation;
+};
+
+export type ChannelQcProfileId = "barkjohn-daily" | "fire-smoke-10min" | "qapp-hourly" | "humid-research";
+
+export type ChannelQcProfile = {
+  id: ChannelQcProfileId;
+  label: string;
+  absoluteThreshold: number;
+  relativePercentThreshold: number;
+  averagingBasis: "10-minute" | "hourly" | "daily";
+  citation: Citation;
+};
+
+export type ChannelAgreementResult = {
+  profileId: ChannelQcProfileId;
+  valid: boolean;
+  level: SensorConfidenceLevel;
+  absoluteDifference: number | null;
+  relativePercentDifference: number | null;
+  message: string;
+};
+
+export type SensorConfidenceLevel = "good" | "questionable" | "severe" | "unavailable";
+
+export type SensorHealthIssue = {
+  code: string;
+  message: string;
+  severity: Exclude<SensorConfidenceLevel, "good">;
+};
+
+export type SensorHealthResult = {
+  sensorId: string;
+  level: SensorConfidenceLevel;
+  profileId: ChannelQcProfileId;
+  totalPoints: number;
+  channelDisagreementCount: number;
+  highHumidityCount: number;
+  missingChannelCount: number;
+  confidenceField: number | null;
+  issues: SensorHealthIssue[];
 };
 
 // Advanced QC options
@@ -324,6 +469,172 @@ export type AirSensorSeries = {
   }>;
 };
 
+const BARKJOHN_2021_CITATION: Citation = {
+  title: "Development and application of a United States-wide correction for PM2.5 data collected with the PurpleAir sensor",
+  url: "https://amt.copernicus.org/articles/14/4617/2021/",
+  year: 2021,
+};
+
+const BARKJOHN_2022_SMOKE_CITATION: Citation = {
+  title: "Correction and Accuracy of PurpleAir PM2.5 Measurements for Extreme Wildfire Smoke",
+  url: "https://doi.org/10.3390/s22249669",
+  year: 2022,
+};
+
+const NILSON_2022_CITATION: Citation = {
+  title: "Intra-comparison of calibration curves for PurpleAir PM2.5 sensors",
+  url: "https://doi.org/10.5194/amt-15-3315-2022",
+  year: 2022,
+};
+
+function roundNonNegative(value: number, digits = 3): number {
+  if (!Number.isFinite(value)) return 0;
+  return Number(Math.max(0, value).toFixed(digits));
+}
+
+function barkjohn2021(pm25Cf1: number, humidity: number | null): number {
+  if (humidity === null) {
+    throw new Error("Barkjohn 2021 correction requires PurpleAir relative humidity.");
+  }
+  return roundNonNegative(0.524 * pm25Cf1 - 0.0862 * humidity + 5.75);
+}
+
+function barkjohn2022Smoke(pm25Cf1: number, humidity: number | null): number {
+  const quadratic = 4.21e-4 * pm25Cf1 ** 2 + 0.392 * pm25Cf1 + 3.44;
+  if (pm25Cf1 >= 611) return roundNonNegative(quadratic);
+
+  const linear = barkjohn2021(pm25Cf1, humidity);
+  if (pm25Cf1 < 570) return linear;
+
+  const transition = (pm25Cf1 - 570) / (611 - 570);
+  return roundNonNegative(linear * (1 - transition) + quadratic * transition);
+}
+
+function nilsonRhGrowth(pm25Atm: number, humidity: number | null): number {
+  if (humidity === null || humidity <= 0 || humidity >= 100) {
+    throw new Error("Nilson RH-growth correction requires relative humidity between 0 and 100.");
+  }
+  return roundNonNegative(pm25Atm / (1 + 0.24 / (100 / humidity - 1)));
+}
+
+function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
+  if (humidity === null) {
+    throw new Error("Nilson polynomial correction requires relative humidity.");
+  }
+  return roundNonNegative(0.53 * pm25Atm + 0.000952 * pm25Atm ** 2 - 0.0914 * humidity + 6.3);
+}
+
+export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId, PurpleAirCorrectionProfile> = {
+  "epa-barkjohn-2021-cf1": {
+    id: "epa-barkjohn-2021-cf1",
+    label: "US EPA/Barkjohn 2021 CF=1 + RH correction",
+    inputBasis: "cf_1",
+    scope: "default-outdoor",
+    citation: BARKJOHN_2021_CITATION,
+    requiresHumidity: true,
+    correct: barkjohn2021,
+  },
+  "epa-barkjohn-2022-smoke-cf1": {
+    id: "epa-barkjohn-2022-smoke-cf1",
+    label: "Barkjohn 2022 extreme-smoke CF=1 extension",
+    inputBasis: "cf_1",
+    scope: "extreme-smoke",
+    citation: BARKJOHN_2022_SMOKE_CITATION,
+    requiresHumidity: true,
+    correct: barkjohn2022Smoke,
+  },
+  "nilson-2022-rh-growth-atm": {
+    id: "nilson-2022-rh-growth-atm",
+    label: "Nilson 2022 RH-growth ATM correction",
+    inputBasis: "atm",
+    scope: "advanced",
+    citation: NILSON_2022_CITATION,
+    requiresHumidity: true,
+    correct: nilsonRhGrowth,
+  },
+  "nilson-2022-polynomial-atm": {
+    id: "nilson-2022-polynomial-atm",
+    label: "Nilson 2022 polynomial ATM + RH correction",
+    inputBasis: "atm",
+    scope: "advanced",
+    citation: NILSON_2022_CITATION,
+    requiresHumidity: true,
+    correct: nilsonPolynomial,
+  },
+};
+
+export function applyPurpleAirCorrection(input: PurpleAirCorrectionInput): PurpleAirCorrectionResult | null {
+  if (typeof input.pm25 !== "number" || !Number.isFinite(input.pm25)) return null;
+
+  const profile = PURPLEAIR_CORRECTION_PROFILES[input.profileId];
+  if (!profile) {
+    throw new Error(`Unknown PurpleAir correction profile: ${input.profileId}`);
+  }
+  if (profile.inputBasis !== input.inputBasis) {
+    throw new Error(`${profile.label} requires ${profile.inputBasis} input, not ${input.inputBasis}.`);
+  }
+
+  const humidity = typeof input.humidity === "number" && Number.isFinite(input.humidity) ? input.humidity : null;
+  const pm25Corrected = profile.correct(input.pm25, humidity);
+  return {
+    profileId: profile.id,
+    label: profile.label,
+    inputBasis: profile.inputBasis,
+    pm25Raw: input.pm25,
+    humidity,
+    pm25Corrected,
+    provenance: "epa-corrected-purpleair",
+    citation: profile.citation,
+  };
+}
+
+export const CHANNEL_QC_PROFILES: Record<ChannelQcProfileId, ChannelQcProfile> = {
+  "barkjohn-daily": {
+    id: "barkjohn-daily",
+    label: "Barkjohn 2021 daily A/B agreement",
+    absoluteThreshold: 5,
+    relativePercentThreshold: 61,
+    averagingBasis: "daily",
+    citation: BARKJOHN_2021_CITATION,
+  },
+  "fire-smoke-10min": {
+    id: "fire-smoke-10min",
+    label: "AirNow Fire and Smoke Map 10-minute A/B agreement",
+    absoluteThreshold: 5,
+    relativePercentThreshold: 70,
+    averagingBasis: "10-minute",
+    citation: {
+      title: "AirNow Fire and Smoke Map Questions and Answers",
+      url: "https://document.airnow.gov/airnow-fire-and-smoke-map-questions-and-answers.pdf",
+      year: 2026,
+    },
+  },
+  "qapp-hourly": {
+    id: "qapp-hourly",
+    label: "EPA PM2.5 Sensor Loan Program QAPP hourly A/B agreement",
+    absoluteThreshold: 5,
+    relativePercentThreshold: 35,
+    averagingBasis: "hourly",
+    citation: {
+      title: "Particulate Matter (PM2.5) Sensor Loan Program QAPP",
+      url: "https://www.epa.gov/system/files/documents/2024-06/particulate-matter-pm2.5-sensor-loan-program-qapp-aasb-qapp-004-r1.1.pdf",
+      year: 2024,
+    },
+  },
+  "humid-research": {
+    id: "humid-research",
+    label: "High-humidity research A/B agreement",
+    absoluteThreshold: 5,
+    relativePercentThreshold: 20,
+    averagingBasis: "hourly",
+    citation: {
+      title: "Calibration of PurpleAir low-cost particulate matter sensors under high relative humidity conditions",
+      url: "https://amt.copernicus.org/articles/17/6735/2024/",
+      year: 2024,
+    },
+  },
+};
+
 function safeNumber(value: unknown): number | null | undefined {
   if (value === null || value === undefined || value === "") {
     return null;
@@ -331,6 +642,28 @@ function safeNumber(value: unknown): number | null | undefined {
 
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function timestampString(value: unknown): string | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value > 10_000_000_000 ? value : value * 1000).toISOString();
+  }
+  if (typeof value === "string" && value.trim()) {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) {
+      return new Date(numeric > 10_000_000_000 ? numeric : numeric * 1000).toISOString();
+    }
+    const parsed = new Date(value);
+    if (Number.isFinite(parsed.getTime())) return parsed.toISOString();
+  }
+  return undefined;
+}
+
+function ageDaysFromTimestamp(value: unknown): number | null {
+  const timestamp = timestampString(value);
+  if (!timestamp) return null;
+  const ageMs = Date.now() - new Date(timestamp).getTime();
+  return Number.isFinite(ageMs) && ageMs >= 0 ? Number((ageMs / 86_400_000).toFixed(2)) : null;
 }
 
 function locationTypeFromRaw(value: unknown): "inside" | "outside" | "unknown" {
@@ -361,9 +694,36 @@ function normalizeRecord(raw: Record<string, unknown>): PasRecord {
     pm25_6hr: safeNumber(raw.pm25_6hr ?? raw["pm2.5_6hour"]),
     pm25_1day: safeNumber(raw.pm25_1day ?? raw["pm2.5_24hour"]),
     pm25_1week: safeNumber(raw.pm25_1week ?? raw["pm2.5_1week"]),
+    pm25Cf1: safeNumber(raw.pm25Cf1 ?? raw["pm2.5_cf_1"]),
+    pm25Cf1A: safeNumber(raw.pm25Cf1A ?? raw["pm2.5_cf_1_a"]),
+    pm25Cf1B: safeNumber(raw.pm25Cf1B ?? raw["pm2.5_cf_1_b"]),
+    pm25Atm: safeNumber(raw.pm25Atm ?? raw["pm2.5_atm"]),
+    pm25AtmA: safeNumber(raw.pm25AtmA ?? raw["pm2.5_atm_a"]),
+    pm25AtmB: safeNumber(raw.pm25AtmB ?? raw["pm2.5_atm_b"]),
+    pm25Alt: safeNumber(raw.pm25Alt ?? raw["pm2.5_alt"]),
+    pm25AltA: safeNumber(raw.pm25AltA ?? raw["pm2.5_alt_a"]),
+    pm25AltB: safeNumber(raw.pm25AltB ?? raw["pm2.5_alt_b"]),
+    pm1Atm: safeNumber(raw.pm1Atm ?? raw["pm1.0_atm"]),
+    pm10Atm: safeNumber(raw.pm10Atm ?? raw["pm10.0_atm"]),
+    particleCount03um: safeNumber(raw.particleCount03um ?? raw["0.3_um_count"]),
+    particleCount05um: safeNumber(raw.particleCount05um ?? raw["0.5_um_count"]),
+    particleCount10um: safeNumber(raw.particleCount10um ?? raw["10.0_um_count"]),
     humidity: safeNumber(raw.humidity),
     pressure: safeNumber(raw.pressure),
     temperature: safeNumber(raw.temperature),
+    adjustedHumidity: safeNumber(raw.adjustedHumidity),
+    adjustedTemperature: safeNumber(raw.adjustedTemperature),
+    dewpoint: safeNumber(raw.dewpoint),
+    confidence: safeNumber(raw.confidence),
+    channelFlags: safeNumber(raw.channelFlags ?? raw.channel_flags),
+    rssi: safeNumber(raw.rssi),
+    uptimeMinutes: safeNumber(raw.uptimeMinutes ?? raw.uptime),
+    paLatencyMs: safeNumber(raw.paLatencyMs ?? raw.pa_latency),
+    memoryKb: safeNumber(raw.memoryKb ?? raw.memory),
+    firmwareVersion: typeof raw.firmwareVersion === "string" ? raw.firmwareVersion : typeof raw.firmware_version === "string" ? raw.firmware_version : undefined,
+    hardwareVersion: typeof raw.hardwareVersion === "string" ? raw.hardwareVersion : typeof raw.hardware === "string" ? raw.hardware : undefined,
+    lastSeen: timestampString(raw.lastSeen ?? raw.last_seen),
+    sensorAgeDays: safeNumber(raw.sensorAgeDays) ?? ageDaysFromTimestamp(raw.date_created),
     distanceToClosestMonitorKm: safeNumber(raw.distanceToClosestMonitorKm ?? raw.pwfsl_closestDistance)
   });
 }
@@ -592,8 +952,8 @@ export function patJoin(left: PatSeries, right: PatSeries): PatSeries {
 
 export function findOutlierIndices(series: PatSeries): number[] {
   return series.points.flatMap((point, index) => {
-    if (point.pm25A === null || point.pm25B === null) return [];
-    return Math.abs(point.pm25A - point.pm25B) > 4 ? [index] : [];
+    const agreement = evaluateChannelAgreement(point.pm25A, point.pm25B, "qapp-hourly");
+    return !agreement.valid && agreement.level !== "unavailable" ? [index] : [];
   });
 }
 
@@ -634,6 +994,124 @@ export function runHourlyAbQc(series: PatSeries, options: { removeOutOfSpec?: bo
 function average(values: number[]): number {
   if (!values.length) return 0;
   return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+export function channelRelativePercentDifference(a: number, b: number): number | null {
+  const denominator = a + b;
+  if (!Number.isFinite(a) || !Number.isFinite(b) || denominator <= 0) return null;
+  return Math.abs(a - b) * 2 / denominator * 100;
+}
+
+export function evaluateChannelAgreement(
+  a: number | null | undefined,
+  b: number | null | undefined,
+  profileId: ChannelQcProfileId = "qapp-hourly",
+): ChannelAgreementResult {
+  const profile = CHANNEL_QC_PROFILES[profileId];
+  if (typeof a !== "number" || !Number.isFinite(a) || typeof b !== "number" || !Number.isFinite(b)) {
+    return {
+      profileId,
+      valid: false,
+      level: "unavailable",
+      absoluteDifference: null,
+      relativePercentDifference: null,
+      message: "One or both PurpleAir channels are missing.",
+    };
+  }
+
+  const absoluteDifference = Math.abs(a - b);
+  const relativePercentDifference = channelRelativePercentDifference(a, b);
+  const validByAbsolute = absoluteDifference <= profile.absoluteThreshold;
+  const validByRelative = relativePercentDifference !== null && relativePercentDifference <= profile.relativePercentThreshold;
+  const valid = validByAbsolute || validByRelative;
+  const level: SensorConfidenceLevel = valid
+    ? "good"
+    : absoluteDifference > 300 || (relativePercentDifference !== null && relativePercentDifference > profile.relativePercentThreshold * 2)
+      ? "severe"
+      : "questionable";
+
+  return {
+    profileId,
+    valid,
+    level,
+    absoluteDifference: Number(absoluteDifference.toFixed(3)),
+    relativePercentDifference: relativePercentDifference === null ? null : Number(relativePercentDifference.toFixed(3)),
+    message: valid
+      ? `A/B channels meet ${profile.label}.`
+      : `A/B channels exceed ${profile.absoluteThreshold} ug/m3 and ${profile.relativePercentThreshold}% agreement thresholds.`,
+  };
+}
+
+export function summarizeSensorHealth(
+  series: PatSeries,
+  options: { profileId?: ChannelQcProfileId; maxHumidity?: number } = {},
+): SensorHealthResult {
+  const profileId = options.profileId ?? "qapp-hourly";
+  const maxHumidity = options.maxHumidity ?? 95;
+  let channelDisagreementCount = 0;
+  let highHumidityCount = 0;
+  let missingChannelCount = 0;
+  let severeCount = 0;
+  let confidenceField: number | null = null;
+
+  for (const point of series.points) {
+    if (typeof point.confidence === "number" && Number.isFinite(point.confidence)) {
+      confidenceField = point.confidence;
+    }
+    const agreement = evaluateChannelAgreement(point.pm25A, point.pm25B, profileId);
+    if (agreement.level === "unavailable") missingChannelCount += 1;
+    else if (!agreement.valid) channelDisagreementCount += 1;
+    if (agreement.level === "severe") severeCount += 1;
+    if ((point.humidity ?? 0) > maxHumidity) highHumidityCount += 1;
+  }
+
+  const totalPoints = series.points.length;
+  const disagreementRate = channelDisagreementCount / Math.max(totalPoints, 1);
+  const missingRate = missingChannelCount / Math.max(totalPoints, 1);
+  const highHumidityRate = highHumidityCount / Math.max(totalPoints, 1);
+  const issues: SensorHealthIssue[] = [];
+
+  if (missingChannelCount > 0) {
+    issues.push({
+      code: "missing-channel",
+      message: `${missingChannelCount} points are missing one or both PM2.5 channels.`,
+      severity: missingRate > 0.2 ? "severe" : "questionable",
+    });
+  }
+  if (channelDisagreementCount > 0) {
+    issues.push({
+      code: "channel-disagreement",
+      message: `${channelDisagreementCount} points exceed the selected A/B agreement profile.`,
+      severity: severeCount > 0 || disagreementRate > 0.2 ? "severe" : "questionable",
+    });
+  }
+  if (highHumidityCount > 0) {
+    issues.push({
+      code: "high-humidity",
+      message: `${highHumidityCount} points exceed ${maxHumidity}% RH, where optical PM readings can be less reliable.`,
+      severity: highHumidityRate > 0.2 ? "severe" : "questionable",
+    });
+  }
+
+  const level: SensorConfidenceLevel = totalPoints === 0
+    ? "unavailable"
+    : issues.some((issue) => issue.severity === "severe")
+      ? "severe"
+      : issues.length
+        ? "questionable"
+        : "good";
+
+  return {
+    sensorId: series.meta.sensorId,
+    level,
+    profileId,
+    totalPoints,
+    channelDisagreementCount,
+    highHumidityCount,
+    missingChannelCount,
+    confidenceField,
+    issues,
+  };
 }
 
 function pearsonCorrelation(left: number[], right: number[]): number {
@@ -996,7 +1474,8 @@ export function runAdvancedHourlyAbQc(series: PatSeries, options: AdvancedQcOpti
 
   series.points.forEach((point, index) => {
     // Basic drift check
-    if (point.pm25A !== null && point.pm25B !== null && Math.abs(point.pm25A - point.pm25B) > 4) {
+    const agreement = evaluateChannelAgreement(point.pm25A, point.pm25B, "qapp-hourly");
+    if (!agreement.valid && agreement.level !== "unavailable") {
       channelDriftIndices.add(index);
     }
     // Humidity check
@@ -1241,6 +1720,101 @@ export function patExternalFit(
   };
 }
 
+export const EPA_SENSOR_VALIDATION_TARGETS: ReferenceValidationTargets = {
+  minRSquared: 0.7,
+  maxRmse: 7,
+  maxNrmsePct: 30,
+  slopeLow: 0.65,
+  slopeHigh: 1.35,
+  interceptLow: -5,
+  interceptHigh: 5,
+};
+
+function referenceDistanceKm(series: PatSeries, reference: ReferenceObservationSeries | null): number | null {
+  if (
+    typeof series.meta.latitude !== "number"
+    || typeof series.meta.longitude !== "number"
+    || !reference
+    || !Number.isFinite(reference.latitude)
+    || !Number.isFinite(reference.longitude)
+  ) {
+    return null;
+  }
+
+  return Number(haversineKm(
+    { latitude: series.meta.latitude, longitude: series.meta.longitude },
+    { latitude: reference.latitude, longitude: reference.longitude },
+  ).toFixed(3));
+}
+
+function buildReferenceValidation(
+  series: PatSeries,
+  reference: ReferenceObservationSeries | null,
+  regressionPairs: Array<ComparisonPair & { sensorPm25Mean: number; referencePm25: number }>,
+  fit: LinearFitResult | null,
+): ReferenceValidationResult | null {
+  if (!reference) return null;
+  const n = regressionPairs.length;
+  if (n < 3 || !fit) {
+    return {
+      source: reference.source,
+      n,
+      timeOverlapHours: new Set(regressionPairs.map((pair) => pair.timestamp.slice(0, 13))).size,
+      distanceKm: referenceDistanceKm(series, reference),
+      slope: fit?.slope ?? null,
+      intercept: fit?.intercept ?? null,
+      rSquared: fit?.rSquared ?? null,
+      rmse: null,
+      nrmsePct: null,
+      mae: null,
+      bias: null,
+      status: "insufficient",
+      targets: EPA_SENSOR_VALIDATION_TARGETS,
+    };
+  }
+
+  let sqSum = 0;
+  let absSum = 0;
+  let biasSum = 0;
+  const referenceValues: number[] = [];
+  for (const pair of regressionPairs) {
+    const error = pair.sensorPm25Mean - pair.referencePm25;
+    sqSum += error * error;
+    absSum += Math.abs(error);
+    biasSum += error;
+    referenceValues.push(pair.referencePm25);
+  }
+
+  const rmse = Math.sqrt(sqSum / n);
+  const mae = absSum / n;
+  const bias = biasSum / n;
+  const referenceRange = Math.max(...referenceValues) - Math.min(...referenceValues);
+  const nrmsePct = referenceRange > 0 ? (rmse / referenceRange) * 100 : null;
+  const targetFailures = [
+    fit.rSquared < EPA_SENSOR_VALIDATION_TARGETS.minRSquared,
+    rmse > EPA_SENSOR_VALIDATION_TARGETS.maxRmse,
+    nrmsePct !== null && nrmsePct > EPA_SENSOR_VALIDATION_TARGETS.maxNrmsePct,
+    fit.slope < EPA_SENSOR_VALIDATION_TARGETS.slopeLow || fit.slope > EPA_SENSOR_VALIDATION_TARGETS.slopeHigh,
+    fit.intercept < EPA_SENSOR_VALIDATION_TARGETS.interceptLow || fit.intercept > EPA_SENSOR_VALIDATION_TARGETS.interceptHigh,
+  ].filter(Boolean).length;
+
+  return {
+    source: reference.source,
+    n,
+    timeOverlapHours: new Set(regressionPairs.map((pair) => pair.timestamp.slice(0, 13))).size,
+    distanceKm: referenceDistanceKm(series, reference),
+    slope: fit.slope,
+    intercept: fit.intercept,
+    rSquared: fit.rSquared,
+    rmse: Number(rmse.toFixed(3)),
+    nrmsePct: nrmsePct === null ? null : Number(nrmsePct.toFixed(2)),
+    mae: Number(mae.toFixed(3)),
+    bias: Number(bias.toFixed(3)),
+    status: targetFailures === 0 ? "pass" : targetFailures <= 2 ? "watch" : "fail",
+    targets: EPA_SENSOR_VALIDATION_TARGETS,
+  };
+}
+
 export function buildReferenceComparison(
   series: PatSeries,
   reference: ReferenceObservationSeries | null,
@@ -1289,6 +1863,7 @@ export function buildReferenceComparison(
     reference,
     pairs,
     fit,
+    validation: buildReferenceValidation(series, reference, regressionPairs, fit),
   };
 }
 
@@ -2573,12 +3148,15 @@ function hourlyPm25Buckets(samples: NowCastSample[]): number[] {
 
 export function calculateNowCast(samples: NowCastSample[], profile: AqiProfile = EPA_PM25_AQI_PROFILE): NowCastResult {
   const hourlyValues = hourlyPm25Buckets(samples);
+  const hoursRequired = 12;
   if (hourlyValues.length < 2) {
     return {
       pm25NowCast: null,
       aqi: null,
       weightFactor: null,
       hoursUsed: hourlyValues.length,
+      hoursRequired,
+      status: "insufficient",
       provenance: "epa-nowcast-aqi",
     };
   }
@@ -2601,6 +3179,8 @@ export function calculateNowCast(samples: NowCastSample[], profile: AqiProfile =
     aqi: pm25ToAqi(pm25NowCast, profile),
     weightFactor: Number(weightFactor.toFixed(3)),
     hoursUsed: hourlyValues.length,
+    hoursRequired,
+    status: hourlyValues.length >= hoursRequired ? "stable" : "calculating",
     provenance: "epa-nowcast-aqi",
   };
 }

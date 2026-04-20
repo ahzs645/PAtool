@@ -8,6 +8,8 @@ import styles from "../MapPage.module.css";
 type MapToolbarProps = {
   mapMode: MapMode;
   setMapMode: Dispatch<SetStateAction<MapMode>>;
+  showSensorMarkers: boolean;
+  setShowSensorMarkers: Dispatch<SetStateAction<boolean>>;
   interpMethod: InterpolationMethod;
   setInterpMethod: Dispatch<SetStateAction<InterpolationMethod>>;
   gridRes: number;
@@ -39,6 +41,8 @@ type MapToolbarProps = {
 export function MapToolbar({
   mapMode,
   setMapMode,
+  showSensorMarkers,
+  setShowSensorMarkers,
   interpMethod,
   setInterpMethod,
   gridRes,
@@ -66,6 +70,28 @@ export function MapToolbar({
   onOverlayUrl,
   onRemoveOverlay,
 }: MapToolbarProps) {
+  const heatmapMetaLabel = interpolationMeta
+    ? `${interpolationMeta.pointsUsed}/${interpolationMeta.totalPoints} sensors, ${interpolationMeta.gridWidth}x${interpolationMeta.gridHeight} grid`
+    : null;
+  const heatmapDetailParts = interpolationMeta
+    ? [
+        interpolationMeta.capped ? "Capped for speed" : null,
+        interpolationMeta.krigingNeighbors ? `${interpolationMeta.krigingNeighbors} neighbors` : null,
+        interpolationMeta.krigingDiagnostics
+          ? interpolationMeta.krigingDiagnostics.mode === "exact"
+            ? "Exact solve"
+            : `${interpolationMeta.krigingDiagnostics.effectiveTileSize}x${interpolationMeta.krigingDiagnostics.effectiveTileSize} active tiles`
+          : interpolationMeta.krigingTileSize
+            ? `${interpolationMeta.krigingTileSize}x${interpolationMeta.krigingTileSize} tiles`
+            : null,
+        interpolationMeta.krigingDiagnostics?.fallbackReason ? "Tile fallback" : null,
+        interpolationMeta.krigingDiagnostics && import.meta.env.DEV
+          ? `boundary ${(interpolationMeta.krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%`
+          : null,
+      ].filter((part): part is string => Boolean(part))
+    : [];
+  const heatmapDetailLabel = heatmapDetailParts.join(" / ");
+
   return (
     <div className={styles.toolbar}>
       <div className={styles.modeToggle}>
@@ -84,6 +110,14 @@ export function MapToolbar({
           Heatmap
         </button>
       </div>
+      <label className={styles.toggle}>
+        <input
+          type="checkbox"
+          checked={showSensorMarkers}
+          onChange={() => setShowSensorMarkers((value) => !value)}
+        />
+        Show markers
+      </label>
 
       {mapMode === "heatmap" && (
         <div className={styles.interpControls}>
@@ -136,38 +170,14 @@ export function MapToolbar({
           </button>
           <div className={styles.heatmapStatus}>
             <span className={styles.statusPill}>{heatmapMethodLabel}</span>
-            {interpolationMeta && (
-              <span className={styles.statusPill}>
-                {interpolationMeta.pointsUsed}/{interpolationMeta.totalPoints} sensors
+            {heatmapMetaLabel && (
+              <span className={`${styles.statusPill} ${styles.statusPillMeta}`} title={heatmapMetaLabel}>
+                <span className={styles.statusPillText}>{heatmapMetaLabel}</span>
               </span>
             )}
-            {interpolationMeta && (
-              <span className={styles.statusPill}>
-                {interpolationMeta.gridWidth}x{interpolationMeta.gridHeight}
-              </span>
-            )}
-            {interpolationMeta?.capped && (
-              <span className={styles.statusPillMuted}>Capped for speed</span>
-            )}
-            {interpolationMeta?.krigingNeighbors && (
-              <span className={styles.statusPillMuted}>{interpolationMeta.krigingNeighbors} neighbors</span>
-            )}
-            {interpolationMeta?.krigingTileSize && (
-              <span className={styles.statusPillMuted}>{interpolationMeta.krigingTileSize}x{interpolationMeta.krigingTileSize} tiles</span>
-            )}
-            {interpolationMeta?.krigingDiagnostics && (
-              <span className={styles.statusPillMuted}>
-                {interpolationMeta.krigingDiagnostics.mode === "exact"
-                  ? "Exact solve"
-                  : `${interpolationMeta.krigingDiagnostics.effectiveTileSize}x${interpolationMeta.krigingDiagnostics.effectiveTileSize} active tiles`}
-              </span>
-            )}
-            {interpolationMeta?.krigingDiagnostics?.fallbackReason && (
-              <span className={styles.statusPillMuted}>Tile fallback</span>
-            )}
-            {interpolationMeta?.krigingDiagnostics && import.meta.env.DEV && (
-              <span className={styles.statusPillMuted}>
-                boundary {(interpolationMeta.krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%
+            {heatmapDetailLabel && (
+              <span className={`${styles.statusPillMuted} ${styles.statusPillDetail}`} title={heatmapDetailLabel}>
+                <span className={styles.statusPillText}>{heatmapDetailLabel}</span>
               </span>
             )}
             {heatmapRuntimeLabel && (
