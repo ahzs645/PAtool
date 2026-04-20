@@ -1,13 +1,18 @@
 import {
   type DataStatus,
+  type ComparisonResult,
+  type FireDetection,
+  type HazardContext,
   type PasCollection,
   type PatSeries,
   type PurpleAirLocalOptions,
   type ReferenceObservationSeries,
   type SensorRecord,
+  buildReferenceComparison,
   normalizePurpleAirLocalRecord,
   normalizePurpleAirLocalSeries,
   normalizePasCollection,
+  parseFirmsCsv,
   patAggregate,
   patFilterDate,
 } from "@patool/shared";
@@ -20,12 +25,54 @@ export type WorkerEnv = {
   PURPLEAIR_READ_KEY?: string;
   PURPLEAIR_LOCAL_SENSOR_URLS?: string;
   AIRNOW_API_KEY?: string;
+  OPENAQ_API_KEY?: string;
+  AQS_API_KEY?: string;
+  AQS_EMAIL?: string;
+  FIRMS_MAP_KEY?: string;
   AIRFUSE_BASE_URL?: string;
 };
 
 type PurpleAirFieldsPayload = {
   fields?: string[];
   data?: unknown[][];
+};
+
+export type PurpleAirAverage = "0" | "2" | "10" | "30" | "60" | "360" | "1440" | "10080" | "43200" | "525600";
+export type PurpleAirHistoryField =
+  | "pm2.5_atm_a"
+  | "pm2.5_atm_b"
+  | "pm2.5_a"
+  | "pm2.5_b"
+  | "pm2.5_cf_1_a"
+  | "pm2.5_cf_1_b"
+  | "humidity"
+  | "temperature"
+  | "pressure";
+
+export type PurpleAirApiError = {
+  status: number;
+  message: string;
+  retryable: boolean;
+  body?: unknown;
+};
+
+export type PurpleAirHistoryWindow = {
+  startTimestamp: number;
+  endTimestamp: number;
+};
+
+export type PurpleAirHistoryWindowPlan = {
+  average: PurpleAirAverage;
+  windows: PurpleAirHistoryWindow[];
+};
+
+type ReferenceSourceParam = "airnow";
+
+type BoundingBox = {
+  west: number;
+  south: number;
+  east: number;
+  north: number;
 };
 
 type LocalSensorConfig = PurpleAirLocalOptions & {
@@ -36,6 +83,12 @@ type FetchJsonOptions = {
   retries?: number;
   retryDelayMs?: number;
   timeoutMs?: number;
+  cache?: boolean;
+};
+
+type FetchCacheOptions = {
+  cache?: boolean;
+  cacheKeyScope?: string;
 };
 
 function sleep(ms: number): Promise<void> {
@@ -44,6 +97,17 @@ function sleep(ms: number): Promise<void> {
 
 function isRetryableStatus(status: number): boolean {
   return status === 429 || status === 503 || status >= 500;
+}
+
+export function parsePurpleAirRetryAfter(value: string | null): number | null {
+  if (!value) return null;
+  const deltaSeconds = Number(value);
+  if (Number.isFinite(deltaSeconds) && deltaSeconds >= 0) {
+    return deltaSeconds * 1000;
+  }
+  const dateMs = Date.parse(value);
+  if (!Number.isFinite(dateMs)) return null;
+  return Math.max(0, dateMs - Date.now());
 }
 
 async function tryFetchJson(url: string, init?: RequestInit, options: FetchJsonOptions = {}): Promise<unknown | null> {
@@ -62,11 +126,10 @@ async function tryFetchJson(url: string, init?: RequestInit, options: FetchJsonO
         return null;
       }
 
-      const retryAfter = Number(response.headers.get("retry-after"));
-      await sleep(Number.isFinite(retryAfter) ? retryAfter * 1000 : retryDelayMs * (attempt + 1));
+      await sleep(parsePurpleAirRetryAfter(response.headers.get("retry-after")) ?? retryDelayMs * 2 ** attempt);
     } catch {
       if (attempt === retries) return null;
-      await sleep(retryDelayMs * (attempt + 1));
+      await sleep(retryDelayMs * 2 ** attempt);
     }
   }
 
@@ -82,9 +145,18 @@ function purpleAirHeaders(env: WorkerEnv): HeadersInit | undefined {
   };
 }
 
-async function fetchWithEdgeCache(url: string, init?: RequestInit, ttlSeconds = 300): Promise<unknown | null> {
+async function fetchWithEdgeCache(
+  url: string,
+  init?: RequestInit,
+  ttlSeconds = 300,
+  options: FetchCacheOptions = {},
+): Promise<unknown | null> {
+  if (options.cache === false) {
+    return tryFetchJson(url, init);
+  }
   const cache = typeof caches !== "undefined" ? (caches as unknown as { default?: Cache }).default : undefined;
-  const key = new Request(url, { method: "GET" });
+  const cacheUrl = options.cacheKeyScope ? `${url}#scope=${encodeURIComponent(options.cacheKeyScope)}` : url;
+  const key = new Request(cacheUrl, { method: "GET" });
 
   if (cache) {
     const cached = await cache.match(key);
@@ -238,24 +310,85 @@ function parseTimestampSeconds(input: string | undefined, end = false): number |
   return Number.isFinite(parsed.getTime()) ? Math.floor(parsed.getTime() / 1000) : undefined;
 }
 
+const PURPLEAIR_HISTORY_FIELDS = [
+  "pm2.5_atm_a",
+  "pm2.5_atm_b",
+  "humidity",
+  "temperature",
+  "pressure",
+] as const satisfies readonly PurpleAirHistoryField[];
+
+const PURPLEAIR_AVERAGE_BY_AGGREGATE: Record<"raw" | "hourly", PurpleAirAverage> = {
+  raw: "0",
+  hourly: "60",
+};
+
+const SECONDS_PER_DAY = 86_400;
+
+const PURPLEAIR_MAX_HISTORY_WINDOW_SECONDS: Record<PurpleAirAverage, number> = {
+  "0": 2 * SECONDS_PER_DAY,
+  "2": 14 * SECONDS_PER_DAY,
+  "10": 30 * SECONDS_PER_DAY,
+  "30": 60 * SECONDS_PER_DAY,
+  "60": 180 * SECONDS_PER_DAY,
+  "360": 365 * SECONDS_PER_DAY,
+  "1440": 3 * 365 * SECONDS_PER_DAY,
+  "10080": 10 * 365 * SECONDS_PER_DAY,
+  "43200": 30 * 365 * SECONDS_PER_DAY,
+  "525600": 100 * 365 * SECONDS_PER_DAY,
+};
+
+export function planPurpleAirHistoryWindows(
+  start?: string,
+  end?: string,
+  average: PurpleAirAverage = "0",
+): PurpleAirHistoryWindowPlan {
+  const startTimestamp = parseTimestampSeconds(start);
+  const endTimestamp = parseTimestampSeconds(end, true);
+  if (startTimestamp === undefined || endTimestamp === undefined || endTimestamp <= startTimestamp) {
+    return { average, windows: [] };
+  }
+
+  const maxSpan = PURPLEAIR_MAX_HISTORY_WINDOW_SECONDS[average];
+  const windows: PurpleAirHistoryWindow[] = [];
+  for (let cursor = startTimestamp; cursor < endTimestamp; cursor += maxSpan) {
+    windows.push({
+      startTimestamp: cursor,
+      endTimestamp: Math.min(cursor + maxSpan, endTimestamp),
+    });
+  }
+
+  return { average, windows };
+}
+
 function buildPurpleAirHistoryUrl(
   liveBase: string,
   sensorId: string,
-  start?: string,
-  end?: string,
-  aggregate: "raw" | "hourly" = "raw",
+  options: {
+    startTimestamp?: number;
+    endTimestamp?: number;
+    start?: string;
+    end?: string;
+    average?: PurpleAirAverage;
+    fields?: readonly PurpleAirHistoryField[];
+    readKey?: string;
+  } = {},
 ): string {
   const url = new URL(`${liveBase.replace(/\/$/, "")}/sensors/${encodeURIComponent(sensorId)}/history`);
-  url.searchParams.set("fields", "pm2.5_atm_a,pm2.5_atm_b,humidity,temperature,pressure");
-  url.searchParams.set("average", aggregate === "hourly" ? "60" : "0");
+  const fields = options.fields ?? PURPLEAIR_HISTORY_FIELDS;
+  url.searchParams.set("fields", fields.join(","));
+  url.searchParams.set("average", options.average ?? "0");
 
-  const startTimestamp = parseTimestampSeconds(start);
-  const endTimestamp = parseTimestampSeconds(end, true);
+  const startTimestamp = options.startTimestamp ?? parseTimestampSeconds(options.start);
+  const endTimestamp = options.endTimestamp ?? parseTimestampSeconds(options.end, true);
   if (startTimestamp !== undefined) {
     url.searchParams.set("start_timestamp", String(startTimestamp));
   }
   if (endTimestamp !== undefined) {
     url.searchParams.set("end_timestamp", String(endTimestamp));
+  }
+  if (options.readKey) {
+    url.searchParams.set("read_key", options.readKey);
   }
 
   return url.toString();
@@ -305,6 +438,65 @@ function normalizePatSeries(sensorId: string, payload: PurpleAirFieldsPayload): 
   };
 }
 
+function mergePatSeries(sensorId: string, parts: PatSeries[]): PatSeries | null {
+  const pointsByTimestamp = new Map<string, PatSeries["points"][number]>();
+  for (const part of parts) {
+    for (const point of part.points) {
+      pointsByTimestamp.set(point.timestamp, point);
+    }
+  }
+
+  if (!pointsByTimestamp.size) return null;
+  return {
+    meta: {
+      ...samplePatSeries.meta,
+      sensorId,
+    },
+    points: [...pointsByTimestamp.values()].sort((left, right) => left.timestamp.localeCompare(right.timestamp)),
+  };
+}
+
+async function fetchPurpleAirSensorHistory(
+  env: WorkerEnv,
+  liveBase: string,
+  sensorId: string,
+  start?: string,
+  end?: string,
+  aggregate: "raw" | "hourly" = "raw",
+): Promise<PatSeries | null> {
+  const average = PURPLEAIR_AVERAGE_BY_AGGREGATE[aggregate];
+  const windowPlan = planPurpleAirHistoryWindows(start, end, average);
+  const windows = windowPlan.windows.length
+    ? windowPlan.windows
+    : [{ startTimestamp: parseTimestampSeconds(start), endTimestamp: parseTimestampSeconds(end, true) }];
+
+  const payloads = await Promise.all(windows.map((window) => {
+    const url = buildPurpleAirHistoryUrl(liveBase, sensorId, {
+      average,
+      startTimestamp: window.startTimestamp,
+      endTimestamp: window.endTimestamp,
+      readKey: env.PURPLEAIR_READ_KEY,
+    });
+    return fetchWithEdgeCache(
+      url,
+      { headers: purpleAirHeaders(env) },
+      300,
+      {
+        cache: !env.PURPLEAIR_READ_KEY,
+        cacheKeyScope: env.PURPLEAIR_READ_KEY ? undefined : `purpleair-history-${sensorId}-${average}`,
+      },
+    );
+  }));
+
+  const normalized = payloads.flatMap((payload): PatSeries[] => {
+    if (!payload) return [];
+    const series = normalizePatSeries(sensorId, payload as PurpleAirFieldsPayload);
+    return series ? [series] : [];
+  });
+
+  return mergePatSeries(sensorId, normalized);
+}
+
 export async function getPasCollection(env: WorkerEnv = {}, date?: string): Promise<PasCollection> {
   if (env.ARCHIVE_BASE_URL && date) {
     const stamp = date.replaceAll("-", "");
@@ -321,7 +513,12 @@ export async function getPasCollection(env: WorkerEnv = {}, date?: string): Prom
     const liveBase = env.PURPLEAIR_API_BASE ?? "https://api.purpleair.com/v1";
     const live = await fetchWithEdgeCache(
       `${liveBase}/sensors?fields=sensor_index,name,latitude,longitude,location_type,pm2.5,pm2.5_10minute,pm2.5_30minute,pm2.5_1hour,pm2.5_6hour,pm2.5_24hour,pm2.5_1week,humidity,pressure,temperature`,
-      { headers: purpleAirHeaders(env) }
+      { headers: purpleAirHeaders(env) },
+      300,
+      {
+        cache: !env.PURPLEAIR_READ_KEY,
+        cacheKeyScope: "purpleair-sensors-public",
+      },
     );
     if (live) {
       const liveCollection = normalizePasCollection(live, "live");
@@ -350,11 +547,7 @@ export async function getPatSeries(
     series = localSeries;
   } else if (env.PURPLEAIR_API_KEY) {
     const liveBase = env.PURPLEAIR_API_BASE ?? "https://api.purpleair.com/v1";
-    const history = await fetchWithEdgeCache(
-      buildPurpleAirHistoryUrl(liveBase, sensorId, start, end, aggregate ?? "raw"),
-      { headers: purpleAirHeaders(env) }
-    );
-    const normalized = history ? normalizePatSeries(sensorId, history as PurpleAirFieldsPayload) : null;
+    const normalized = await fetchPurpleAirSensorHistory(env, liveBase, sensorId, start, end, aggregate ?? "raw");
     if (normalized) {
       series = normalized;
     }
@@ -381,29 +574,45 @@ export async function getSensorRecord(env: WorkerEnv = {}, sensorId: string, per
   };
 }
 
-export async function getPwfslMonitorData(
+function airNowTimestamp(obs: Record<string, unknown>): string {
+  const date = typeof obs.DateObserved === "string" ? obs.DateObserved : new Date().toISOString().slice(0, 10);
+  const hour = String(obs.HourObserved ?? "12").padStart(2, "0");
+  return new Date(`${date}T${hour}:00:00Z`).toISOString();
+}
+
+export async function getAirNowConditions(
   env: WorkerEnv,
   latitude: number,
-  longitude: number
+  longitude: number,
+  distanceKm = 50,
 ): Promise<ReferenceObservationSeries | null> {
-  // Try to fetch from AirNow API if available
   if (env.AIRNOW_API_KEY) {
-    const url = `https://www.airnowapi.org/aq/observation/latLong/current/?format=application/json&latitude=${latitude}&longitude=${longitude}&distance=50&API_KEY=${env.AIRNOW_API_KEY}`;
-    const data = await tryFetchJson(url);
+    const url = new URL("https://www.airnowapi.org/aq/observation/latLong/current/");
+    url.searchParams.set("format", "application/json");
+    url.searchParams.set("latitude", String(latitude));
+    url.searchParams.set("longitude", String(longitude));
+    url.searchParams.set("distance", String(distanceKm));
+    url.searchParams.set("API_KEY", env.AIRNOW_API_KEY);
+
+    const data = await tryFetchJson(url.toString());
     if (data && Array.isArray(data)) {
       const pm25Obs = (data as any[]).filter((d: any) => d.ParameterName === "PM2.5");
       if (pm25Obs.length > 0) {
         const label = `${pm25Obs[0].ReportingArea} (Federal)`;
         return {
           source: "airnow",
+          kind: "conditions",
           label,
           latitude,
           longitude,
+          sourceUrl: "https://docs.airnowapi.org/webservices",
+          attribution: "AirNow reporting-area AQI from federal, state, local, and tribal monitoring agencies.",
           observations: pm25Obs.map((obs: any) => ({
-            timestamp: new Date(`${obs.DateObserved}T${String(obs.HourObserved ?? "12").padStart(2, "0")}:00:00Z`).toISOString(),
+            timestamp: airNowTimestamp(obs),
             parameter: "PM2.5",
             pm25: null,
             aqi: obs.AQI === null || obs.AQI === undefined ? null : Number(obs.AQI),
+            provenance: "official-reference",
             category: typeof obs.Category?.Name === "string" ? obs.Category.Name : undefined,
             reportingArea: typeof obs.ReportingArea === "string" ? obs.ReportingArea : undefined,
           }))
@@ -413,4 +622,96 @@ export async function getPwfslMonitorData(
   }
 
   return null;
+}
+
+export async function getPwfslMonitorData(
+  env: WorkerEnv,
+  latitude: number,
+  longitude: number,
+): Promise<ReferenceObservationSeries | null> {
+  return getAirNowConditions(env, latitude, longitude);
+}
+
+export async function getReferenceComparison(
+  env: WorkerEnv,
+  sensorId: string,
+  latitude: number,
+  longitude: number,
+  start?: string,
+  end?: string,
+  source: ReferenceSourceParam = "airnow",
+): Promise<ComparisonResult> {
+  const [series, reference] = await Promise.all([
+    getPatSeries(env, sensorId, start, end, "hourly"),
+    source === "airnow" ? getAirNowConditions(env, latitude, longitude) : Promise.resolve(null),
+  ]);
+
+  return buildReferenceComparison(series, reference);
+}
+
+function clampDayRange(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 1;
+  return Math.min(5, Math.max(1, Math.round(value)));
+}
+
+function isValidBounds(bounds: BoundingBox): boolean {
+  return Number.isFinite(bounds.west)
+    && Number.isFinite(bounds.south)
+    && Number.isFinite(bounds.east)
+    && Number.isFinite(bounds.north)
+    && bounds.west >= -180
+    && bounds.east <= 180
+    && bounds.south >= -90
+    && bounds.north <= 90
+    && bounds.west < bounds.east
+    && bounds.south < bounds.north;
+}
+
+export async function getFirmsFireDetections(
+  env: WorkerEnv,
+  bounds: BoundingBox,
+  options: { dayRange?: number; date?: string; source?: string } = {},
+): Promise<FireDetection[]> {
+  if (!env.FIRMS_MAP_KEY || !isValidBounds(bounds)) return [];
+  const dayRange = clampDayRange(options.dayRange);
+  const source = options.source ?? "VIIRS_SNPP_NRT";
+  const coordinates = `${bounds.west},${bounds.south},${bounds.east},${bounds.north}`;
+  const path = [
+    "https://firms.modaps.eosdis.nasa.gov/api/area/csv",
+    encodeURIComponent(env.FIRMS_MAP_KEY),
+    encodeURIComponent(source),
+    encodeURIComponent(coordinates),
+    String(dayRange),
+    ...(options.date ? [encodeURIComponent(options.date)] : []),
+  ].join("/");
+
+  try {
+    const response = await fetch(path, {
+      headers: { "user-agent": "PAtool/0.1" },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) return [];
+    return parseFirmsCsv(await response.text());
+  } catch {
+    return [];
+  }
+}
+
+export async function getHazardContext(
+  env: WorkerEnv,
+  bounds: BoundingBox,
+  options: { dayRange?: number; date?: string } = {},
+): Promise<HazardContext> {
+  const fires = await getFirmsFireDetections(env, bounds, options);
+  return {
+    generatedAt: new Date().toISOString(),
+    attribution: "NASA FIRMS active fire detections; HMS smoke and HRRR wind layers are reserved for the overlay pipeline.",
+    cautions: [
+      "FIRMS detections are satellite hotspots, not confirmed incident perimeters.",
+      "Use smoke/fire context to explain possible PM2.5 spikes; do not treat it as a monitor replacement.",
+    ],
+    fires,
+    smoke: [],
+    wind: [],
+  };
 }

@@ -22,7 +22,19 @@ import {
   runHourlyAbQc,
 } from "@patool/shared";
 
-import { getDataStatus, getLocalPasCollection, getPasCollection, getPatSeries, getPwfslMonitorData, getSensorRecord, type WorkerEnv } from "./purpleair";
+import {
+  getAirNowConditions,
+  getDataStatus,
+  getFirmsFireDetections,
+  getHazardContext,
+  getLocalPasCollection,
+  getPasCollection,
+  getPatSeries,
+  getPwfslMonitorData,
+  getReferenceComparison,
+  getSensorRecord,
+  type WorkerEnv,
+} from "./purpleair";
 
 const qcRequestSchema = z.object({
   series: patSeriesSchema,
@@ -106,6 +118,20 @@ function contentTypeForAirFusePath(path: string): string {
 
 function airFuseBaseUrl(env: WorkerEnv): string {
   return (env.AIRFUSE_BASE_URL ?? AIRFUSE_DEFAULT_BASE_URL).replace(/\/+$/, "");
+}
+
+function parseRequiredNumber(value: string | undefined): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function parseBounds(c: Context<{ Bindings: WorkerEnv }>) {
+  const west = parseRequiredNumber(c.req.query("west"));
+  const south = parseRequiredNumber(c.req.query("south"));
+  const east = parseRequiredNumber(c.req.query("east"));
+  const north = parseRequiredNumber(c.req.query("north"));
+  if (west === null || south === null || east === null || north === null) return null;
+  return { west, south, east, north };
 }
 
 export function createApp() {
@@ -285,6 +311,79 @@ export function createApp() {
   app.get("/api/palette/:parameter", (c) => {
     const parameter = c.req.param("parameter") as "pm25" | "temperature" | "humidity";
     return c.json(pasPalette(parameter));
+  });
+
+  app.get("/api/reference/airnow/conditions", async (c) => {
+    const latitude = parseRequiredNumber(c.req.query("latitude"));
+    const longitude = parseRequiredNumber(c.req.query("longitude"));
+    const distanceKm = parseRequiredNumber(c.req.query("distanceKm")) ?? 50;
+    if (latitude === null || longitude === null) {
+      return c.json({ error: "latitude and longitude query parameters are required" }, 400);
+    }
+
+    return cachedJson(c, c.req.url, () => getAirNowConditions(c.env, latitude, longitude, distanceKm));
+  });
+
+  app.get("/api/reference/compare", async (c) => {
+    const sensorId = c.req.query("sensorId") ?? c.req.query("id") ?? "1001";
+    const latitude = parseRequiredNumber(c.req.query("latitude"));
+    const longitude = parseRequiredNumber(c.req.query("longitude"));
+    const source = c.req.query("source") ?? "airnow";
+    if (latitude === null || longitude === null) {
+      return c.json({ error: "sensorId, latitude, and longitude query parameters are required" }, 400);
+    }
+    if (source !== "airnow") {
+      return c.json({ error: "Only source=airnow is currently supported for live reference comparison" }, 400);
+    }
+
+    return cachedJson(c, c.req.url, () => getReferenceComparison(
+      c.env,
+      sensorId,
+      latitude,
+      longitude,
+      c.req.query("start") ?? undefined,
+      c.req.query("end") ?? undefined,
+      "airnow",
+    ));
+  });
+
+  app.get("/api/firms/fire", async (c) => {
+    const bounds = parseBounds(c);
+    if (!bounds) {
+      return c.json({ error: "west, south, east, and north query parameters are required" }, 400);
+    }
+
+    return cachedJson(c, c.req.url, () => getFirmsFireDetections(c.env, bounds, {
+      dayRange: parseRequiredNumber(c.req.query("dayRange")) ?? undefined,
+      date: c.req.query("date") ?? undefined,
+      source: c.req.query("source") ?? undefined,
+    }));
+  });
+
+  app.get("/api/hms/smoke", async (c) => {
+    const bounds = parseBounds(c);
+    if (!bounds) {
+      return c.json({ error: "west, south, east, and north query parameters are required" }, 400);
+    }
+
+    return cachedJson(c, c.req.url, async () => ({
+      generatedAt: new Date().toISOString(),
+      attribution: "NOAA HMS smoke overlay contract placeholder; route shape is reserved for the map overlay pipeline.",
+      cautions: ["HMS smoke polygons are not yet fetched by this deployment."],
+      smoke: [],
+    }));
+  });
+
+  app.get("/api/hazards/context", async (c) => {
+    const bounds = parseBounds(c);
+    if (!bounds) {
+      return c.json({ error: "west, south, east, and north query parameters are required" }, 400);
+    }
+
+    return cachedJson(c, c.req.url, () => getHazardContext(c.env, bounds, {
+      dayRange: parseRequiredNumber(c.req.query("dayRange")) ?? undefined,
+      date: c.req.query("date") ?? undefined,
+    }));
   });
 
   app.get("/api/pwfsl", async (c) => {

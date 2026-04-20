@@ -27,7 +27,11 @@ import {
   idwInterpolate,
   ordinaryKrigingInterpolate,
   aqiToColor,
+  buildReferenceComparison,
+  calculateNowCast,
+  EPA_PM25_AQI_PROFILE,
   pm25ToAqi,
+  pm25ToAqiBand,
   gridToImageData,
   type InterpolationPoint,
   type InterpolationGrid,
@@ -35,10 +39,12 @@ import {
 import { samplePasCollection, samplePatSeries, samplePatFailureA } from "./fixtures";
 import {
   correctPurpleAirPm25,
+  correctionProfile,
   normalizePurpleAirLocalRecord,
   normalizePurpleAirLocalSeries,
   purpleAirLocalPm25,
 } from "./purpleairLocal";
+import { parseFirmsCsv } from "./hazards";
 import {
   classifyWindDirection,
   classifyWindIntensity,
@@ -122,6 +128,8 @@ describe("PurpleAir local JSON helpers", () => {
   });
 
   it("computes the US EPA PurpleAir PM2.5 correction when humidity is available", () => {
+    expect(correctionProfile.id).toBe("epa-barkjohn-2021");
+    expect(correctionProfile.label).toContain("PurpleAir");
     expect(correctPurpleAirPm25(30, 60)).toBe(16.298);
     expect(correctPurpleAirPm25(8, null)).toBe(8);
     expect(purpleAirLocalPm25(localPayload, true)).toBe(7.108);
@@ -224,7 +232,7 @@ describe("new analytics functions", () => {
 describe("pasPalette", () => {
   it("returns PM2.5 palette by default", () => {
     const palette = pasPalette();
-    expect(palette.breaks).toEqual([0, 12, 35.4, 55.4, 150.4, 250.4, 500]);
+    expect(palette.breaks).toEqual([0, 9.1, 35.5, 55.5, 125.5, 225.5, 325.5]);
     expect(palette.colors).toHaveLength(6);
     expect(palette.labels[0]).toBe("Good");
     expect(palette.labels[5]).toBe("Hazardous");
@@ -484,11 +492,37 @@ describe("spatial interpolation", () => {
   });
 
   it("pm25ToAqi respects EPA breakpoint boundaries", () => {
+    expect(EPA_PM25_AQI_PROFILE.id).toBe("epa-pm25-2024");
     expect(pm25ToAqi(0)).toBe(0);
-    expect(pm25ToAqi(12.0)).toBe(50);
-    expect(pm25ToAqi(12.1)).toBe(51);
+    expect(pm25ToAqi(9.0)).toBe(50);
+    expect(pm25ToAqi(9.1)).toBe(51);
     expect(pm25ToAqi(35.4)).toBe(100);
-    expect(pm25ToAqi(500.5)).toBe(500);
+    expect(pm25ToAqi(55.4)).toBe(150);
+    expect(pm25ToAqi(125.4)).toBe(200);
+    expect(pm25ToAqi(225.4)).toBe(300);
+    expect(pm25ToAqi(325.4)).toBe(500);
+    expect(pm25ToAqi(500.5)).toBeGreaterThan(500);
+  });
+
+  it("does not classify missing PM2.5 as good AQI", () => {
+    expect(pm25ToAqiBand(null)).toEqual({ label: "Unavailable", color: "#94a3b8", aqi: null });
+    expect(pm25ToAqiBand(226).label).toBe("Hazardous");
+  });
+
+  it("computes EPA NowCast values from hourly PM2.5 samples", () => {
+    const stable = Array.from({ length: 12 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2026, 3, 20, 12 - index)).toISOString(),
+      pm25: 10,
+    }));
+    const stableResult = calculateNowCast(stable);
+    expect(stableResult.pm25NowCast).toBe(10);
+    expect(stableResult.aqi).toBe(pm25ToAqi(10));
+    expect(stableResult.weightFactor).toBe(1);
+    expect(stableResult.provenance).toBe("epa-nowcast-aqi");
+
+    const variable = stable.map((sample, index) => ({ ...sample, pm25: index === 0 ? 100 : 1 }));
+    expect(calculateNowCast(variable).weightFactor).toBe(0.5);
+    expect(calculateNowCast([{ timestamp: stable[0].timestamp, pm25: 10 }]).pm25NowCast).toBeNull();
   });
 
   it("gridToImageData produces correct size", () => {
@@ -548,6 +582,47 @@ describe("daily summaries", () => {
     const highTotal = high.reduce((s, d) => s + d.minutesAboveEpaThreshold, 0);
     expect(lowTotal).toBeGreaterThan(highTotal);
     expect(highTotal).toBe(0);
+  });
+});
+
+describe("reference comparison and hazard helpers", () => {
+  it("builds concentration-only reference comparison pairs without mixing AQI into fit", () => {
+    const comparison = buildReferenceComparison(samplePatSeries, {
+      source: "airnow",
+      kind: "conditions",
+      label: "Reference",
+      latitude: 47.6,
+      longitude: -122.3,
+      observations: [
+        {
+          timestamp: samplePatSeries.points[0].timestamp,
+          parameter: "PM2.5",
+          pm25: null,
+          aqi: 42,
+          provenance: "official-reference",
+        },
+      ],
+    });
+
+    expect(comparison.pairs[0].referenceAqi).toBe(42);
+    expect(comparison.pairs[0].referencePm25).toBeNull();
+    expect(comparison.fit).toBeNull();
+  });
+
+  it("parses NASA FIRMS CSV fire detections into shared hazard records", () => {
+    const detections = parseFirmsCsv(
+      "latitude,longitude,acq_date,acq_time,satellite,instrument,confidence,frp,brightness\n"
+      + "47.61,-122.33,2026-04-20,0830,N,VIIRS,n,12.5,330.1\n",
+    );
+
+    expect(detections).toHaveLength(1);
+    expect(detections[0]).toMatchObject({
+      source: "firms",
+      latitude: 47.61,
+      longitude: -122.33,
+      acquisitionTime: "2026-04-20T08:30:00.000Z",
+      frpMw: 12.5,
+    });
   });
 });
 

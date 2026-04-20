@@ -66,9 +66,7 @@
   flex: 1 1 auto;
   border-radius: var(--border-radius-md);
   overflow: hidden;
-  background:
-    radial-gradient(circle at top left, color-mix(in srgb, var(--accent-primary) 12%, transparent), transparent 35%),
-    var(--bg-secondary);
+  background: var(--bg-secondary);
 }
 
 .map {
@@ -224,4 +222,32 @@
   margin-top: var(--spacing-2);
   font-size: var(--font-size-xxs);
   color: var(--text-tertiary);
+}
+
+.diagnosticsPanel {
+  margin-top: var(--spacing-2);
+  padding-top: var(--spacing-2);
+  border-top: 1px solid var(--border-light);
+}
+
+.diagnosticsTitle {
+  margin-bottom: var(--spacing-1);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-secondary);
+}
+
+.diagnosticsGrid {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: 2px var(--spacing-2);
+  align-items: baseline;
+  font-size: var(--font-size-xxs);
+  color: var(--text-tertiary);
+}
+
+.diagnosticsGrid strong {
+  justify-self: end;
+  font-weight: var(--font-weight-semibold);
+  color: var(--text-primary);
 }

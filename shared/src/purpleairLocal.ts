@@ -1,4 +1,5 @@
 import {
+  type Citation,
   pasRecordSchema,
   patSeriesSchema,
   type PasRecord,
@@ -13,6 +14,15 @@ export type PurpleAirLocalOptions = {
   timezone?: string;
   locationType?: "inside" | "outside" | "unknown";
   timestamp?: string;
+};
+
+export type CorrectionProfile = {
+  id: "epa-barkjohn-2021";
+  label: string;
+  citation: Citation;
+  appliesTo: "purpleair-pm25";
+  requiresHumidity: true;
+  correct: (pm25: number | null | undefined, humidity: number | null | undefined) => number | null;
 };
 
 function safeNumber(value: unknown): number | null | undefined {
@@ -106,6 +116,19 @@ export function correctPurpleAirPm25(
 
   return Number(Math.max(0, 0.524 * pm25 - 0.0862 * humidity + 5.75).toFixed(3));
 }
+
+export const correctionProfile: CorrectionProfile = {
+  id: "epa-barkjohn-2021",
+  label: "US EPA/Barkjohn PurpleAir PM2.5 correction",
+  citation: {
+    title: "A correction model for PurpleAir PM2.5 data in the United States",
+    url: "https://amt.copernicus.org/articles/14/4617/2021/",
+    year: 2021,
+  },
+  appliesTo: "purpleair-pm25",
+  requiresHumidity: true,
+  correct: correctPurpleAirPm25,
+};
 
 export function purpleAirLocalPm25(raw: Record<string, unknown>, corrected = false): number | null {
   const humidity = firstNumber(raw, ["current_humidity", "humidity", "Humidity"]);

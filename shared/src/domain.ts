@@ -103,6 +103,20 @@ export type QcResult = z.infer<typeof qcResultSchema>;
 export type SohDailyMetrics = z.infer<typeof sohDailyMetricsSchema>;
 export type SohIndexResult = z.infer<typeof sohIndexResultSchema>;
 
+export type Citation = {
+  title: string;
+  url: string;
+  year?: number;
+};
+
+export type ProvenanceLabel =
+  | "raw-purpleair"
+  | "epa-corrected-purpleair"
+  | "epa-daily-aqi"
+  | "epa-nowcast-aqi"
+  | "official-reference"
+  | "modeled-aqi";
+
 export type DataStatus = {
   mode: "api" | "static";
   collectionSource: PasCollection["source"] | "unknown";
@@ -200,16 +214,84 @@ export type ReferenceObservationPoint = {
   parameter: "PM2.5";
   pm25: number | null;
   aqi: number | null;
+  provenance?: ProvenanceLabel;
   category?: string;
   reportingArea?: string;
 };
 
+export type ReferenceSource = "airnow" | "aqs" | "openaq" | "static";
+export type ReferenceObservationKind = "conditions" | "monitor" | "forecast" | "synthetic";
+
 export type ReferenceObservationSeries = {
-  source: "airnow";
+  source: ReferenceSource;
+  kind?: ReferenceObservationKind;
   label: string;
   latitude: number;
   longitude: number;
+  siteId?: string;
+  sourceUrl?: string;
+  attribution?: string;
   observations: ReferenceObservationPoint[];
+};
+
+export type ComparisonPair = {
+  timestamp: string;
+  sensorPm25A: number | null;
+  sensorPm25B: number | null;
+  sensorPm25Mean: number | null;
+  referencePm25: number | null;
+  referenceAqi: number | null;
+};
+
+export type ComparisonResult = {
+  sensor: PatMeta;
+  reference: ReferenceObservationSeries | null;
+  pairs: ComparisonPair[];
+  fit: LinearFitResult | null;
+};
+
+export type AqiCategory =
+  | "Good"
+  | "Moderate"
+  | "USG"
+  | "Unhealthy"
+  | "Very Unhealthy"
+  | "Hazardous";
+
+export type AqiBreakpoint = {
+  category: AqiCategory;
+  concLow: number;
+  concHigh: number;
+  aqiLow: number;
+  aqiHigh: number;
+  color: string;
+};
+
+export type AqiBandResult = {
+  label: AqiCategory | "Unavailable";
+  color: string;
+  aqi: number | null;
+};
+
+export type AqiProfile = {
+  id: "epa-pm25-2024";
+  pollutant: "pm25";
+  basis: "daily-average" | "nowcast";
+  citation: Citation;
+  breakpoints: AqiBreakpoint[];
+};
+
+export type NowCastSample = {
+  timestamp: string;
+  pm25: number | null | undefined;
+};
+
+export type NowCastResult = {
+  pm25NowCast: number | null;
+  aqi: number | null;
+  weightFactor: number | null;
+  hoursUsed: number;
+  provenance: ProvenanceLabel;
 };
 
 // Advanced QC options
@@ -745,13 +827,39 @@ export function calculateSohIndex(series: PatSeries): SohIndexResult {
   });
 }
 
-export function pm25ToAqiBand(value: number | null | undefined): { label: string; color: string } {
-  const pm25 = value ?? 0;
-  if (pm25 <= 12) return { label: "Good", color: "#2e9d5b" };
-  if (pm25 <= 35.4) return { label: "Moderate", color: "#f0c419" };
-  if (pm25 <= 55.4) return { label: "USG", color: "#f2994a" };
-  if (pm25 <= 150.4) return { label: "Unhealthy", color: "#d64545" };
-  return { label: "Very Unhealthy", color: "#7d3c98" };
+export const EPA_PM25_AQI_PROFILE: AqiProfile = {
+  id: "epa-pm25-2024",
+  pollutant: "pm25",
+  basis: "daily-average",
+  citation: {
+    title: "US EPA AQS AQI Breakpoints",
+    url: "https://aqs.epa.gov/aqsweb/documents/codetables/aqi_breakpoints.html",
+    year: 2026,
+  },
+  breakpoints: [
+    { category: "Good", concLow: 0.0, concHigh: 9.0, aqiLow: 0, aqiHigh: 50, color: "#2e9d5b" },
+    { category: "Moderate", concLow: 9.1, concHigh: 35.4, aqiLow: 51, aqiHigh: 100, color: "#f0c419" },
+    { category: "USG", concLow: 35.5, concHigh: 55.4, aqiLow: 101, aqiHigh: 150, color: "#f2994a" },
+    { category: "Unhealthy", concLow: 55.5, concHigh: 125.4, aqiLow: 151, aqiHigh: 200, color: "#d64545" },
+    { category: "Very Unhealthy", concLow: 125.5, concHigh: 225.4, aqiLow: 201, aqiHigh: 300, color: "#7d3c98" },
+    { category: "Hazardous", concLow: 225.5, concHigh: 325.4, aqiLow: 301, aqiHigh: 500, color: "#8b0000" },
+    { category: "Hazardous", concLow: 325.5, concHigh: 99_999.9, aqiLow: 501, aqiHigh: 999, color: "#8b0000" },
+  ],
+};
+
+export const AQI_UNAVAILABLE_BAND: AqiBandResult = {
+  label: "Unavailable",
+  color: "#94a3b8",
+  aqi: null,
+};
+
+export function pm25ToAqiBand(value: number | null | undefined, profile: AqiProfile = EPA_PM25_AQI_PROFILE): AqiBandResult {
+  if (typeof value !== "number" || !Number.isFinite(value)) return AQI_UNAVAILABLE_BAND;
+  const aqi = pm25ToAqi(value, profile);
+  const breakpoint = profile.breakpoints.find((bp) => aqi >= bp.aqiLow && aqi <= bp.aqiHigh)
+    ?? profile.breakpoints.at(-1);
+  if (!breakpoint) return AQI_UNAVAILABLE_BAND;
+  return { label: breakpoint.category, color: breakpoint.color, aqi };
 }
 
 export function patDistinct(series: PatSeries): PatSeries {
@@ -1039,7 +1147,7 @@ export function calculateEnhancedSohIndex(series: PatSeries): EnhancedSohIndexRe
 export function pasPalette(parameter: "pm25" | "temperature" | "humidity" = "pm25"): { breaks: number[]; colors: string[]; labels: string[] } {
   if (parameter === "pm25") {
     return {
-      breaks: [0, 12, 35.4, 55.4, 150.4, 250.4, 500],
+      breaks: [0, 9.1, 35.5, 55.5, 125.5, 225.5, 325.5],
       colors: ["#2e9d5b", "#f0c419", "#f2994a", "#d64545", "#7d3c98", "#8b0000"],
       labels: ["Good", "Moderate", "USG", "Unhealthy", "Very Unhealthy", "Hazardous"]
     };
@@ -1130,6 +1238,57 @@ export function patExternalFit(
     referenceSensorId: reference.meta.sensorId,
     referenceLabel: reference.meta.label,
     pairs
+  };
+}
+
+export function buildReferenceComparison(
+  series: PatSeries,
+  reference: ReferenceObservationSeries | null,
+): ComparisonResult {
+  const hourKey = (timestamp: string) => {
+    const time = new Date(timestamp).getTime();
+    if (!Number.isFinite(time)) return timestamp.slice(0, 13);
+    return new Date(Math.floor(time / 3_600_000) * 3_600_000).toISOString().slice(0, 13);
+  };
+  const referenceByHour = new Map<string, ReferenceObservationPoint>();
+  for (const observation of reference?.observations ?? []) {
+    referenceByHour.set(hourKey(observation.timestamp), observation);
+  }
+
+  const pairs: ComparisonPair[] = series.points.map((point) => {
+    const referencePoint = referenceByHour.get(hourKey(point.timestamp));
+    const sensorPm25Mean = point.pm25A !== null && point.pm25B !== null
+      ? Number(((point.pm25A + point.pm25B) / 2).toFixed(3))
+      : point.pm25A ?? point.pm25B;
+
+    return {
+      timestamp: point.timestamp,
+      sensorPm25A: point.pm25A,
+      sensorPm25B: point.pm25B,
+      sensorPm25Mean,
+      referencePm25: referencePoint?.pm25 ?? null,
+      referenceAqi: referencePoint?.aqi ?? null,
+    };
+  }).filter((pair) => pair.sensorPm25Mean !== null || pair.referencePm25 !== null || pair.referenceAqi !== null);
+
+  const regressionPairs = pairs.filter((pair): pair is ComparisonPair & { sensorPm25Mean: number; referencePm25: number } => (
+    typeof pair.sensorPm25Mean === "number"
+    && Number.isFinite(pair.sensorPm25Mean)
+    && typeof pair.referencePm25 === "number"
+    && Number.isFinite(pair.referencePm25)
+  ));
+  const fit = regressionPairs.length >= 3
+    ? linearRegression(
+      regressionPairs.map((pair) => pair.sensorPm25Mean),
+      regressionPairs.map((pair) => pair.referencePm25),
+    )
+    : null;
+
+  return {
+    sensor: series.meta,
+    reference,
+    pairs,
+    fit,
   };
 }
 
@@ -2380,27 +2539,70 @@ export function interpolateOrdinaryKrigingModel(
 
 /**
  * Convert PM2.5 (ug/m3) to US EPA AQI index.
- * Uses EPA's piecewise-linear breakpoints.
+ * Uses EPA's piecewise-linear PM2.5 breakpoint table.
  */
-export function pm25ToAqi(pm25: number): number {
-  const bp: Array<[number, number, number, number]> = [
-    // [concLow, concHigh, aqiLow, aqiHigh]
-    [0.0, 12.0, 0, 50],
-    [12.1, 35.4, 51, 100],
-    [35.5, 55.4, 101, 150],
-    [55.5, 150.4, 151, 200],
-    [150.5, 250.4, 201, 300],
-    [250.5, 350.4, 301, 400],
-    [350.5, 500.4, 401, 500],
-  ];
+export function pm25ToAqi(pm25: number, profile: AqiProfile = EPA_PM25_AQI_PROFILE): number {
+  if (!Number.isFinite(pm25)) return 0;
   const c = Math.max(0, pm25);
-  if (c > 500.4) return 500;
-  for (const [cLo, cHi, aLo, aHi] of bp) {
-    if (c >= cLo && c <= cHi) {
-      return ((aHi - aLo) / (cHi - cLo)) * (c - cLo) + aLo;
+  const last = profile.breakpoints.at(-1);
+  for (const bp of profile.breakpoints) {
+    if (c >= bp.concLow && c <= bp.concHigh) {
+      return Math.round(((bp.aqiHigh - bp.aqiLow) / (bp.concHigh - bp.concLow)) * (c - bp.concLow) + bp.aqiLow);
     }
   }
-  return 0;
+  return last ? last.aqiHigh : 0;
+}
+
+function hourlyPm25Buckets(samples: NowCastSample[]): number[] {
+  const buckets = new Map<number, number[]>();
+  for (const sample of samples) {
+    if (typeof sample.pm25 !== "number" || !Number.isFinite(sample.pm25)) continue;
+    const timestamp = new Date(sample.timestamp).getTime();
+    if (!Number.isFinite(timestamp)) continue;
+    const hour = Math.floor(timestamp / 3_600_000) * 3_600_000;
+    const values = buckets.get(hour) ?? [];
+    values.push(sample.pm25);
+    buckets.set(hour, values);
+  }
+
+  return [...buckets.entries()]
+    .sort((left, right) => right[0] - left[0])
+    .map(([, values]) => average(values))
+    .slice(0, 12);
+}
+
+export function calculateNowCast(samples: NowCastSample[], profile: AqiProfile = EPA_PM25_AQI_PROFILE): NowCastResult {
+  const hourlyValues = hourlyPm25Buckets(samples);
+  if (hourlyValues.length < 2) {
+    return {
+      pm25NowCast: null,
+      aqi: null,
+      weightFactor: null,
+      hoursUsed: hourlyValues.length,
+      provenance: "epa-nowcast-aqi",
+    };
+  }
+
+  const maxValue = Math.max(...hourlyValues);
+  const minValue = Math.min(...hourlyValues);
+  const weightFactor = maxValue > 0 ? Math.max(0.5, minValue / maxValue) : 1;
+  let weightedSum = 0;
+  let weightSum = 0;
+
+  for (let index = 0; index < hourlyValues.length; index += 1) {
+    const weight = weightFactor ** index;
+    weightedSum += hourlyValues[index] * weight;
+    weightSum += weight;
+  }
+
+  const pm25NowCast = Number((weightedSum / Math.max(weightSum, 1e-9)).toFixed(3));
+  return {
+    pm25NowCast,
+    aqi: pm25ToAqi(pm25NowCast, profile),
+    weightFactor: Number(weightFactor.toFixed(3)),
+    hoursUsed: hourlyValues.length,
+    provenance: "epa-nowcast-aqi",
+  };
 }
 
 /** Convert AQI to RGBA color */

@@ -1,6 +1,7 @@
 import {
   calculateEnhancedSohIndex,
   calculateSohIndex,
+  buildReferenceComparison,
   computePolarPlot,
   computeWindRose,
   generateSyntheticWindData,
@@ -13,11 +14,15 @@ import {
   patScatterMatrix,
   pasCollectionSchema,
   patSeriesSchema,
+  pm25ToAqi,
+  pm25ToAqiBand,
   runAdvancedHourlyAbQc,
   runHourlyAbQc,
+  type ComparisonResult,
   type PasCollection,
   type PasRecord,
   type PatSeries,
+  type ReferenceObservationSeries,
   type SensorRecord,
   type DataStatus,
 } from "@patool/shared";
@@ -77,6 +82,14 @@ function averagePm25(series: PatSeries): number {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 1;
 }
 
+function pointPm25Mean(point: PatSeries["points"][number]): number | null {
+  if (point.pm25A !== null && point.pm25B !== null) {
+    return (point.pm25A + point.pm25B) / 2;
+  }
+
+  return point.pm25A ?? point.pm25B;
+}
+
 function deriveStaticSeries(template: PatSeries, sensorId: string, sensorRecord?: PasRecord): PatSeries {
   const seed = hashString(`${sensorId}:${sensorRecord?.label ?? ""}`);
   const targetPm25 = sensorRecord?.pm25_1hr ?? sensorRecord?.pm25Current ?? sensorRecord?.pm25_1day ?? averagePm25(template);
@@ -123,6 +136,88 @@ function deriveStaticSeries(template: PatSeries, sensorId: string, sensorRecord?
       };
     }),
   };
+}
+
+function parseReferenceSource(value: string | null): ReferenceObservationSeries["source"] {
+  if (value === "airnow" || value === "aqs" || value === "openaq" || value === "static") {
+    return value;
+  }
+
+  return "airnow";
+}
+
+function parseCoordinate(value: string | null, fallback: number): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function buildStaticReferenceSeries(
+  series: PatSeries,
+  latitude: number,
+  longitude: number,
+  source: ReferenceObservationSeries["source"],
+): ReferenceObservationSeries {
+  const seed = hashString(`${series.meta.sensorId}:${latitude.toFixed(3)}:${longitude.toFixed(3)}`);
+  const reportingArea = series.meta.label ? `${series.meta.label} reporting area` : "Nearest reporting area";
+  const siteId = `AIRNOW-STATIC-${String(seed % 10000).padStart(4, "0")}`;
+  const bias = (((seed >>> 6) % 17) - 8) / 10;
+  const phase = (seed % 24) / 24;
+
+  return {
+    source,
+    kind: "synthetic",
+    label: source === "airnow"
+      ? "AirNow PM2.5 reference (static fallback)"
+      : "Reference PM2.5 fallback",
+    latitude,
+    longitude,
+    siteId,
+    sourceUrl: source === "airnow" ? "https://www.airnow.gov/" : undefined,
+    attribution: source === "airnow"
+      ? "EPA AirNow reference metadata with PAtool static fallback observations."
+      : "PAtool static fallback reference observations.",
+    observations: series.points.map((point, index) => {
+      const sensorPm25 = pointPm25Mean(point);
+      if (sensorPm25 === null || !Number.isFinite(sensorPm25)) {
+        return {
+          timestamp: point.timestamp,
+          parameter: "PM2.5" as const,
+          pm25: null,
+          aqi: null,
+          provenance: "official-reference" as const,
+          reportingArea,
+        };
+      }
+
+      const dayCycle = Math.sin(((index / 24) + phase) * Math.PI * 2);
+      const regionalOffset = dayCycle * 0.45 + bias;
+      const referencePm25 = Number(clamp((sensorPm25 * 0.84) + 1.2 + regionalOffset, 0, 250).toFixed(1));
+      const band = pm25ToAqiBand(referencePm25);
+
+      return {
+        timestamp: point.timestamp,
+        parameter: "PM2.5" as const,
+        pm25: referencePm25,
+        aqi: pm25ToAqi(referencePm25),
+        provenance: "official-reference" as const,
+        category: band.label === "Unavailable" ? undefined : band.label,
+        reportingArea,
+      };
+    }),
+  };
+}
+
+async function buildStaticReferenceComparison(path: URL): Promise<ComparisonResult> {
+  const sensorId = path.searchParams.get("sensorId") ?? path.searchParams.get("id") ?? "1001";
+  const start = path.searchParams.get("start") ?? undefined;
+  const end = path.searchParams.get("end") ?? undefined;
+  const source = parseReferenceSource(path.searchParams.get("source"));
+  const series = await loadPatSeriesForSensor(sensorId, start, end, "hourly");
+  const latitude = parseCoordinate(path.searchParams.get("latitude"), series.meta.latitude ?? 47.61702);
+  const longitude = parseCoordinate(path.searchParams.get("longitude"), series.meta.longitude ?? -122.343761);
+  const reference = buildStaticReferenceSeries(series, latitude, longitude, source);
+
+  return buildReferenceComparison(series, reference);
 }
 
 function buildSeriesForSensor(template: PatSeries, sensorId: string, sensorRecord?: PasRecord): PatSeries {
@@ -189,6 +284,10 @@ export async function getStaticJson<T>(path: string): Promise<T> {
     const end = url.searchParams.get("end") ?? undefined;
     const aggregate = (url.searchParams.get("aggregate") as "raw" | "hourly" | null) ?? "raw";
     return (await loadPatSeriesForSensor(sensorId, start, end, aggregate)) as T;
+  }
+
+  if (url.pathname === "/api/reference/compare") {
+    return (await buildStaticReferenceComparison(url)) as T;
   }
 
   if (url.pathname.startsWith("/api/sensor/")) {

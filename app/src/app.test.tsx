@@ -2,7 +2,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { idwInterpolate, ordinaryKrigingInterpolate } from "@patool/shared";
+import { buildReferenceComparison, idwInterpolate, ordinaryKrigingInterpolate, pm25ToAqi } from "@patool/shared";
 import { samplePasCollection, samplePatSeries, sampleSensorRecord } from "@patool/shared/fixtures";
 
 import { App } from "./App";
@@ -253,6 +253,33 @@ describe("app", () => {
         if (url.includes("/api/pat")) {
           return new Response(JSON.stringify(samplePatSeries));
         }
+        if (url.includes("/api/reference/compare")) {
+          const comparisonSeries = {
+            ...samplePatSeries,
+            points: samplePatSeries.points.filter((_, index) => index % 60 === 0).slice(0, 12),
+          };
+          const reference = {
+            source: "airnow" as const,
+            kind: "conditions" as const,
+            label: "AirNow PM2.5 reference",
+            latitude: samplePatSeries.meta.latitude ?? 47.61702,
+            longitude: samplePatSeries.meta.longitude ?? -122.343761,
+            siteId: "AIRNOW-TEST",
+            sourceUrl: "https://www.airnow.gov/",
+            attribution: "EPA AirNow test reference.",
+            observations: comparisonSeries.points.map((point) => {
+              const pm25 = point.pm25A === null ? null : Number((point.pm25A * 0.85 + 1).toFixed(1));
+              return {
+                timestamp: point.timestamp,
+                parameter: "PM2.5" as const,
+                pm25,
+                aqi: pm25 === null ? null : pm25ToAqi(pm25),
+                provenance: "official-reference" as const,
+              };
+            }),
+          };
+          return new Response(JSON.stringify(buildReferenceComparison(comparisonSeries, reference)));
+        }
         if (url.includes("/api/sensor")) {
           return new Response(JSON.stringify(sampleSensorRecord));
         }
@@ -346,5 +373,34 @@ describe("app", () => {
       expect.objectContaining({ type: "geojson" }),
     );
     expect(map?.fitBounds).toHaveBeenCalled();
+  });
+
+  it("renders the AirNow reference comparison page", async () => {
+    window.history.pushState({}, "", "/comparison");
+
+    render(<App />);
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("AirNow reference comparison")).toBeInTheDocument();
+        expect(screen.getByText(/AirNow AQI is official\/reference/)).toBeInTheDocument();
+        expect(screen.getByText(/PurpleAir AQI is sensor-derived\/corrected/)).toBeInTheDocument();
+        expect(screen.getByText("Recent paired observations")).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
+
+    const referenceCall = vi.mocked(fetch).mock.calls
+      .map(([input]) => String(input))
+      .find((url) => url.includes("/api/reference/compare"));
+    const referenceUrl = new URL(referenceCall ?? "", "https://patool.local");
+
+    expect(referenceUrl.pathname).toBe("/api/reference/compare");
+    expect(referenceUrl.searchParams.get("sensorId")).toBe(samplePatSeries.meta.sensorId);
+    expect(referenceUrl.searchParams.get("latitude")).toBe(String(samplePatSeries.meta.latitude));
+    expect(referenceUrl.searchParams.get("longitude")).toBe(String(samplePatSeries.meta.longitude));
+    expect(referenceUrl.searchParams.get("start")).toBe(samplePatSeries.points[0].timestamp);
+    expect(referenceUrl.searchParams.get("end")).toBe(samplePatSeries.points.at(-1)?.timestamp);
+    expect(referenceUrl.searchParams.get("source")).toBe("airnow");
   });
 });

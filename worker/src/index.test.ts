@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { samplePatSeries } from "@patool/shared/fixtures";
 
 import { createApp } from "./index";
+import { parsePurpleAirRetryAfter, planPurpleAirHistoryWindows } from "./purpleair";
 
 describe("worker api", () => {
   const app = createApp();
@@ -94,6 +95,38 @@ describe("worker api", () => {
     expect(url.searchParams.get("fields")).toContain("pm2.5_atm_a");
   });
 
+  it("plans PurpleAir history windows and includes private read keys without edge caching", async () => {
+    const rawPlan = planPurpleAirHistoryWindows("2024-07-01", "2024-07-06", "0");
+    expect(rawPlan.windows).toHaveLength(3);
+    expect(rawPlan.windows[0]).toEqual({ startTimestamp: 1719792000, endTimestamp: 1719964800 });
+
+    const requestedUrls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        requestedUrls.push(String(input));
+        return new Response(JSON.stringify({
+          fields: ["time_stamp", "pm2.5_atm_a", "pm2.5_atm_b", "humidity", "temperature", "pressure"],
+          data: [[1_720_000_000, 11, 12, 44, 71, 1011]],
+        }));
+      })
+    );
+
+    const response = await app.request(
+      "/api/pat?id=1001&start=2024-07-01&end=2024-07-06",
+      {},
+      { PURPLEAIR_API_KEY: "test-key", PURPLEAIR_READ_KEY: "private-key", PURPLEAIR_API_BASE: "https://api.example.test/v1" }
+    );
+    expect(response.status).toBe(200);
+    expect(requestedUrls).toHaveLength(3);
+    expect(new URL(requestedUrls[0]).searchParams.get("read_key")).toBe("private-key");
+  });
+
+  it("parses PurpleAir retry-after hints", () => {
+    expect(parsePurpleAirRetryAfter("2")).toBe(2000);
+    expect(parsePurpleAirRetryAfter("not-a-date")).toBeNull();
+  });
+
   it("reports fallback data source status", async () => {
     const response = await app.request("/api/status");
     expect(response.status).toBe(200);
@@ -159,5 +192,81 @@ describe("worker api", () => {
     expect(payload.observations[0].timestamp).toBe("2024-07-02T03:00:00.000Z");
     expect(payload.observations[0].aqi).toBe(0);
     expect(payload.observations[0].pm25).toBeNull();
+
+    const referenceResponse = await app.request(
+      "/api/reference/airnow/conditions?latitude=47.61&longitude=-122.33&distanceKm=25",
+      {},
+      { AIRNOW_API_KEY: "test-key" }
+    );
+    expect(referenceResponse.status).toBe(200);
+    const referencePayload = (await referenceResponse.json()) as { source: string; kind: string };
+    expect(referencePayload).toMatchObject({ source: "airnow", kind: "conditions" });
+  });
+
+  it("serves reference comparison routes without fitting AQI-only AirNow values", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL | Request) => {
+        const url = String(input);
+        if (url.includes("/history")) {
+          return new Response(JSON.stringify({
+            fields: ["time_stamp", "pm2.5_atm_a", "pm2.5_atm_b", "humidity", "temperature", "pressure"],
+            data: [[1_720_000_000, 11, 12, 44, 71, 1011]],
+          }));
+        }
+        return new Response(JSON.stringify([
+          {
+            ParameterName: "PM2.5",
+            ReportingArea: "Seattle",
+            DateObserved: "2024-07-03",
+            HourObserved: 9,
+            AQI: 32,
+            Category: { Name: "Good" },
+          },
+        ]));
+      })
+    );
+
+    const response = await app.request(
+      "/api/reference/compare?sensorId=1001&latitude=47.61&longitude=-122.33&start=2024-07-03&end=2024-07-03&source=airnow",
+      {},
+      { PURPLEAIR_API_KEY: "test-key", AIRNOW_API_KEY: "airnow-key", PURPLEAIR_API_BASE: "https://api.example.test/v1" }
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { reference: { source: string }; pairs: Array<{ referenceAqi: number | null; referencePm25: number | null }>; fit: unknown };
+
+    expect(payload.reference.source).toBe("airnow");
+    expect(payload.pairs.some((pair) => pair.referenceAqi === 32 && pair.referencePm25 === null)).toBe(true);
+    expect(payload.fit).toBeNull();
+  });
+
+  it("serves FIRMS fire and hazard context routes", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(
+        "latitude,longitude,acq_date,acq_time,satellite,instrument,confidence,frp,brightness\n"
+        + "47.61,-122.33,2026-04-20,0830,N,VIIRS,n,12.5,330.1\n"
+      ))
+    );
+
+    const fireResponse = await app.request(
+      "/api/firms/fire?west=-123&south=47&east=-122&north=48&date=2026-04-20",
+      {},
+      { FIRMS_MAP_KEY: "firms-key" }
+    );
+    expect(fireResponse.status).toBe(200);
+    const fires = (await fireResponse.json()) as Array<{ source: string; frpMw: number }>;
+    expect(fires[0]).toMatchObject({ source: "firms", frpMw: 12.5 });
+
+    const hazardResponse = await app.request(
+      "/api/hazards/context?west=-123&south=47&east=-122&north=48&date=2026-04-20",
+      {},
+      { FIRMS_MAP_KEY: "firms-key" }
+    );
+    expect(hazardResponse.status).toBe(200);
+    const hazards = (await hazardResponse.json()) as { fires: unknown[]; smoke: unknown[]; cautions: string[] };
+    expect(hazards.fires).toHaveLength(1);
+    expect(hazards.smoke).toEqual([]);
+    expect(hazards.cautions[0]).toContain("FIRMS");
   });
 });

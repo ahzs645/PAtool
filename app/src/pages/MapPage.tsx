@@ -335,6 +335,66 @@ function getPm25ValueForWindow(record: PasRecord, window: Pm25Window): number | 
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function formatPopupValue(value: unknown, suffix = ""): string {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(1)}${suffix}` : "Unavailable";
+}
+
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\"", "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function popupRow(label: string, value: unknown): string {
+  return `<tr><th style="padding:2px 8px 2px 0;text-align:left;color:#64748b;font-weight:500">${escapeHtml(label)}</th><td style="padding:2px 0;text-align:right">${escapeHtml(value)}</td></tr>`;
+}
+
+function buildSensorPopupHtml(props: maplibregl.GeoJSONFeature["properties"]): string {
+  const bandText = props.aqi === "NA" ? props.bandLabel : `${props.bandLabel} · AQI ${props.aqi}`;
+  const sensorPathId = encodeURIComponent(String(props.id ?? ""));
+  const rows = [
+    popupRow("Selected", props.pm25 === "NA" ? "PM2.5 unavailable" : `${props.pm25} ug/m3`),
+    popupRow("Band", bandText),
+    popupRow("Current", formatPopupValue(props.pm25Current, " ug/m3")),
+    popupRow("1 hr", formatPopupValue(props.pm25_1hr, " ug/m3")),
+    popupRow("1 day", formatPopupValue(props.pm25_1day, " ug/m3")),
+    popupRow("Humidity", formatPopupValue(props.humidity, "%")),
+    popupRow("Temp", formatPopupValue(props.temperature, " F")),
+    popupRow("Pressure", formatPopupValue(props.pressure, " hPa")),
+  ].join("");
+
+  return (
+    `<div style="min-width:220px">`
+    + `<strong>${escapeHtml(props.label)}</strong>`
+    + `<div style="margin:4px 0 6px;color:#475569">${escapeHtml(props.locationType)} · ${escapeHtml(props.stateCode)}</div>`
+    + `<table style="width:100%;border-collapse:collapse;font-size:12px">${rows}</table>`
+    + `<div style="margin-top:8px">`
+    + `<a href="${appPath(`/sensor/${sensorPathId}`)}">Sensor detail</a> | `
+    + `<a href="${appPath(`/diagnostics/${sensorPathId}`)}">Diagnostics</a>`
+    + `</div>`
+    + `</div>`
+  );
+}
+
+function paintInterpolationCanvas(grid: InterpolationGrid, canvas: HTMLCanvasElement): number {
+  canvas.width = grid.width;
+  canvas.height = grid.height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return 0;
+
+  const imageData = ctx.createImageData(grid.width, grid.height);
+  const colorizeStartedAt = performance.now();
+  const colorData = gridToImageData(grid, true);
+  const colorizeMs = performance.now() - colorizeStartedAt;
+  imageData.data.set(colorData);
+  ctx.putImageData(imageData, 0, 0);
+  return colorizeMs;
+}
+
 type OverlayLayer = {
   id: string;
   name: string;
@@ -386,6 +446,19 @@ function buildGeoJson(
           const pm25 = getPm25ValueForWindow(r, pm25Window);
           return pm25 == null ? MISSING_PM_COLOR : pm25ToAqiBand(pm25).color;
         })(),
+        bandLabel: pm25ToAqiBand(getPm25ValueForWindow(r, pm25Window)).label,
+        aqi: pm25ToAqiBand(getPm25ValueForWindow(r, pm25Window)).aqi ?? "NA",
+        pm25Current: r.pm25Current ?? "NA",
+        pm25_10min: r.pm25_10min ?? "NA",
+        pm25_30min: r.pm25_30min ?? "NA",
+        pm25_1hr: r.pm25_1hr ?? "NA",
+        pm25_6hr: r.pm25_6hr ?? "NA",
+        pm25_1day: r.pm25_1day ?? "NA",
+        pm25_1week: r.pm25_1week ?? "NA",
+        humidity: r.humidity ?? "NA",
+        pressure: r.pressure ?? "NA",
+        temperature: r.temperature ?? "NA",
+        locationType: r.locationType,
         stateCode: r.stateCode ?? "NA",
       },
     })),
@@ -763,12 +836,7 @@ export default function MapPage() {
       const props = feature.properties!;
       new maplibregl.Popup({ offset: 10 })
         .setLngLat(e.lngLat)
-        .setHTML(
-          `<strong>${props.label}</strong><br/>`
-          + `${props.pm25 === "NA" ? "PM2.5 unavailable" : `${props.pm25} ug/m3`}<br/>`
-          + `<a href="${appPath(`/sensor/${props.id}`)}">Sensor detail</a> | `
-          + `<a href="${appPath(`/diagnostics/${props.id}`)}">Diagnostics</a>`,
-        )
+        .setHTML(buildSensorPopupHtml(props))
         .addTo(map);
     });
 
@@ -1055,15 +1123,7 @@ export default function MapPage() {
     // Reuse the backing canvas to avoid repeated allocations during pan/zoom.
     const canvas = heatmapCanvasRef.current ?? document.createElement("canvas");
     heatmapCanvasRef.current = canvas;
-    canvas.width = interpolationResult.width;
-    canvas.height = interpolationResult.height;
-    const ctx = canvas.getContext("2d")!;
-    const imageData = ctx.createImageData(interpolationResult.width, interpolationResult.height);
-    const colorizeStartedAt = performance.now();
-    const colorData = gridToImageData(interpolationResult, true);
-    const colorizeMs = performance.now() - colorizeStartedAt;
-    imageData.data.set(colorData);
-    ctx.putImageData(imageData, 0, 0);
+    const colorizeMs = paintInterpolationCanvas(interpolationResult, canvas);
 
     const { west, east, south, north } = interpolationResult.bounds;
     const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
@@ -1228,6 +1288,8 @@ export default function MapPage() {
     : isComputing
       ? "Running…"
       : null;
+  const krigingDiagnostics = interpolationMeta?.krigingDiagnostics ?? null;
+  const exactComparison = krigingDiagnostics?.artifacts.exactSampleComparison;
 
   return (
     <div className={styles.layout}>
@@ -1336,7 +1398,7 @@ export default function MapPage() {
                 )}
                 {interpolationMeta?.krigingDiagnostics && import.meta.env.DEV && (
                   <span className={styles.statusPillMuted}>
-                    seams {(interpolationMeta.krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%
+                    boundary {(interpolationMeta.krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%
                   </span>
                 )}
                 {heatmapRuntimeLabel && (
@@ -1463,6 +1525,27 @@ export default function MapPage() {
                 <span>{interpolationMeta.pointsUsed} sensors in play</span>
                 <span>{interpolationMeta.gridWidth}x{interpolationMeta.gridHeight} grid</span>
                 {interpolationMeta.capped && <span>Viewport-prioritized sampling</span>}
+              </div>
+            )}
+            {krigingDiagnostics && (
+              <div className={styles.diagnosticsPanel}>
+                <div className={styles.diagnosticsTitle}>Variogram / QC</div>
+                <div className={styles.diagnosticsGrid}>
+                  <span>Range</span>
+                  <strong>{krigingDiagnostics.variogram.rangeKm.toFixed(1)} km</strong>
+                  <span>Sill</span>
+                  <strong>{krigingDiagnostics.variogram.sill.toFixed(2)}</strong>
+                  <span>Nugget</span>
+                  <strong>{krigingDiagnostics.variogram.nugget.toFixed(2)}</strong>
+                  <span>Boundary</span>
+                  <strong>{(krigingDiagnostics.artifacts.tileBoundaryOutlierRate * 100).toFixed(0)}%</strong>
+                  {exactComparison && (
+                    <>
+                      <span>Sample CV</span>
+                      <strong>{exactComparison.meanAbs.toFixed(2)} ug/m3</strong>
+                    </>
+                  )}
+                </div>
               </div>
             )}
           </div>
