@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  fitBayesianLinearModel,
+  compareBayesianModels,
+  type BayesianLinearObservation,
+} from "./bayesianOutcomeModel";
+import {
   applyPurpleAirCorrection,
   calculateDailySoh,
   calculateSohIndex,
@@ -11,17 +16,29 @@ import {
   pasFilterArea,
   pasFilterNear,
   pasGetIDs,
+  PAS_MODELING_FIELD_MANIFEST,
   pasPalette,
   patAggregate,
+  buildPatModelingMatrix,
   patExternalFit,
   patFilterDate,
   patRollingMean,
   patScatterMatrix,
+  summarizePasDatasetHealth,
   runHourlyAbQc,
   patDistinct,
   patOutliers,
   patRichAggregate,
   runAdvancedHourlyAbQc,
+  runPaper3Qc,
+  reducedMajorAxisRegression,
+  idwSpatioTemporalEstimate,
+  idwSpatioTemporalInterpolateGrid,
+  computeSpatioTemporalIdwWeight,
+  stIdwLeaveOneOut,
+  stIdwGridSearchTimeWeight,
+  type SpatioTemporalPoint,
+  type PatSeries,
   patInternalFit,
   patCreateAirSensor,
   calculateEnhancedDailySoh,
@@ -29,6 +46,9 @@ import {
   summarizeSensorHealth,
   idwInterpolate,
   ordinaryKrigingInterpolate,
+  idwEstimateAtPoints,
+  krigingEstimateAtPoints,
+  createOrdinaryKrigingModel,
   aqiToColor,
   buildReferenceComparison,
   calculateNowCast,
@@ -57,7 +77,37 @@ import {
   generateSyntheticWindData,
   summarizeWindQc,
 } from "./wind";
-import { computeDailySummaries } from "./summaries";
+import { computeDailySummaries, type DailySummary } from "./summaries";
+import {
+  RUCC_CODE_INFO,
+  isRuccCode,
+  lookupRucc,
+  parseRuccCsv,
+  rollupByRucc,
+  ruccCategoryForFips,
+  ruccTierForFips,
+} from "./rucc";
+import {
+  createSpaceTimeKrigingModel,
+  fitSumMetricSpaceTimeVariogram,
+  haversineKm,
+  spaceTimeKrigingEstimate,
+  sumMetricVariogramValue,
+  type SpaceTimeObservation,
+} from "./spaceTimeKriging";
+import {
+  classifyDayType,
+  filterSpatioTemporalByDayType,
+  isSchoolDayDate,
+  isSummerDate,
+  isTestingDate,
+  isWeekendDate,
+  matchesDayType,
+  rollupDailySummariesByDayType,
+  rollupPatSeriesByDayType,
+  type SchoolCalendar,
+  DEFAULT_DAY_TYPES,
+} from "./dayTypes";
 import {
   applyElevationTrend,
   compareInterpolationMethods,
@@ -66,11 +116,18 @@ import {
   leaveOneOutCrossValidate,
 } from "./interpolationCv";
 import {
+  aggregateModelRuns,
+  assessPearsonCalibrationGate,
+  buildPasSnapshotFeatureTable,
+  evaluateRegressionPredictions,
+} from "./modeling";
+import {
   buildStudyGrid,
   combineWeightedStudyGrids,
   computeObservedStudyGrid,
   createStudyAreaFromSensors,
   deriveStudyBoundsFromSources,
+  rankSensorSitingCandidates,
   rasterizeSourceLayer,
   validateStudyGrid,
   type SourceLayerConfig,
@@ -97,6 +154,26 @@ describe("pas utilities", () => {
     expect(
       pasFilterArea(withIds, { north: 45, south: 44, east: -103.15, west: -103.3 }).records.map((record) => record.id)
     ).toEqual(["26059", "26060", "2506", "2507", "5656", "5657"]);
+  });
+
+  it("summarizes snapshot dataset readiness for modeling", () => {
+    const summary = summarizePasDatasetHealth(samplePasCollection);
+    expect(summary.totalRecords).toBe(samplePasCollection.records.length);
+    expect(summary.validCoordinateRecords).toBeGreaterThan(0);
+    expect(summary.recordsWithPm25).toBeGreaterThan(0);
+    expect(summary.fieldCompleteness).toHaveLength(PAS_MODELING_FIELD_MANIFEST.length);
+    expect(summary.fieldCompleteness.find((field) => field.key === "latitude")?.completeness).toBe(1);
+    expect(summary.bounds).not.toBeNull();
+  });
+
+  it("flags duplicate snapshot IDs in dataset readiness", () => {
+    const duplicated = {
+      ...samplePasCollection,
+      records: [...samplePasCollection.records, samplePasCollection.records[0]],
+    };
+    const summary = summarizePasDatasetHealth(duplicated);
+    expect(summary.duplicateIds).toContain(samplePasCollection.records[0].id);
+    expect(summary.warnings.some((warning) => warning.code === "duplicate-ids")).toBe(true);
   });
 });
 
@@ -224,6 +301,36 @@ describe("pat and analytics utilities", () => {
     expect(daily[0]?.pctReporting).toBeGreaterThan(0);
     expect(index.index).toBeGreaterThan(0);
   });
+
+  it("aligns PAT series into a sensor-time-field modeling matrix", () => {
+    const first = {
+      ...samplePatSeries,
+      meta: { ...samplePatSeries.meta, sensorId: "first" },
+      points: samplePatSeries.points.slice(0, 3),
+    };
+    const second = {
+      ...samplePatSeries,
+      meta: { ...samplePatSeries.meta, sensorId: "second" },
+      points: samplePatSeries.points.slice(1, 4),
+    };
+
+    const union = buildPatModelingMatrix([first, second], { fields: ["pm25A", "humidity"] });
+    expect(union.sensorIds).toEqual(["first", "second"]);
+    expect(union.timestamps).toHaveLength(4);
+    expect(union.fields).toEqual(["pm25A", "humidity"]);
+    expect(union.values).toHaveLength(2);
+    expect(union.values[0]).toHaveLength(4);
+    expect(union.fieldCompleteness[0].field).toBe("pm25A");
+
+    const intersection = buildPatModelingMatrix([first, second], {
+      fields: ["pm25A"],
+      timeIndex: "intersection",
+    });
+    expect(intersection.timestamps).toEqual([
+      samplePatSeries.points[1].timestamp,
+      samplePatSeries.points[2].timestamp,
+    ]);
+  });
 });
 
 describe("new analytics functions", () => {
@@ -290,6 +397,678 @@ describe("new analytics functions", () => {
     expect(result.index).toBeLessThanOrEqual(100);
     expect(result.metrics.length).toBeGreaterThan(0);
     expect(result.metrics[0].abFit).toBeDefined();
+  });
+});
+
+describe("Paper 3 QC pipeline (Carroll et al. 2025)", () => {
+  it("keeps a healthy series and reports a keep verdict", () => {
+    const result = runPaper3Qc(samplePatSeries);
+    expect(result.monitorVerdict).toBe("keep");
+    expect(result.totalPoints).toBe(samplePatSeries.points.length);
+    expect(result.tempRangeF).not.toBeNull();
+    expect(result.missingFraction).toBeGreaterThanOrEqual(0);
+    expect(result.removedPoints).toBe(0);
+  });
+
+  it("short-circuits on indoor metadata flag", () => {
+    const result = runPaper3Qc(samplePatSeries, { locationIsIndoor: true, removeOutOfSpec: true });
+    expect(result.monitorVerdict).toBe("drop-indoor");
+    expect(result.removedPoints).toBe(samplePatSeries.points.length);
+  });
+
+  it("drops monitor when the T range is below the threshold", () => {
+    const result = runPaper3Qc(samplePatSeries, { minTempRangeF: 1_000_000 });
+    expect(result.monitorVerdict).toBe("drop-temp-range-too-small");
+  });
+
+  it("flags out-of-range RH and temperature observations", () => {
+    const polluted = {
+      ...samplePatSeries,
+      points: samplePatSeries.points.map((p, i) =>
+        i === 0 ? { ...p, humidity: 150 } : i === 1 ? { ...p, temperature: 2000 } : p,
+      ),
+    };
+    const result = runPaper3Qc(polluted);
+    const rh = result.issues.find((x) => x.code === "rh-out-of-range");
+    const temp = result.issues.find((x) => x.code === "temp-out-of-range");
+    expect(rh?.count ?? 0).toBeGreaterThanOrEqual(1);
+    expect(temp?.count ?? 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it("flags the A/B low-absolute rule (|A-B|>10 when avg<=100)", () => {
+    const polluted = {
+      ...samplePatSeries,
+      points: samplePatSeries.points.map((p, i) =>
+        i === 0 ? { ...p, pm25A: 5, pm25B: 40 } : p,
+      ),
+    };
+    const result = runPaper3Qc(polluted);
+    const ab = result.issues.find((x) => x.code === "ab-drift-low");
+    expect(ab?.count ?? 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it("flags the A/B high-percent rule (|A-B|/avg>10% when avg>100)", () => {
+    const polluted = {
+      ...samplePatSeries,
+      points: samplePatSeries.points.map((p, i) =>
+        i === 0 ? { ...p, pm25A: 100, pm25B: 200 } : p,
+      ),
+    };
+    const result = runPaper3Qc(polluted);
+    const ab = result.issues.find((x) => x.code === "ab-drift-high");
+    expect(ab?.count ?? 0).toBeGreaterThanOrEqual(1);
+  });
+
+  it("removes out-of-spec observations when removeOutOfSpec is true", () => {
+    const polluted = {
+      ...samplePatSeries,
+      points: samplePatSeries.points.map((p, i) =>
+        i === 0 ? { ...p, humidity: 150 } : p,
+      ),
+    };
+    const dryRun = runPaper3Qc(polluted, { removeOutOfSpec: false });
+    const live = runPaper3Qc(polluted, { removeOutOfSpec: true });
+    expect(dryRun.removedPoints).toBe(0);
+    expect(live.removedPoints).toBeGreaterThanOrEqual(1);
+    expect(live.cleanedSeries.points[0].humidity).toBeNull();
+  });
+});
+
+describe("reduced major axis regression", () => {
+  it("recovers a known slope of 1 on identical inputs", () => {
+    const xs = [1, 2, 3, 4, 5, 6];
+    const ys = [1, 2, 3, 4, 5, 6];
+    const fit = reducedMajorAxisRegression(xs, ys);
+    expect(fit).not.toBeNull();
+    expect(fit!.slope).toBeCloseTo(1, 6);
+    expect(fit!.intercept).toBeCloseTo(0, 6);
+    expect(fit!.pearsonR).toBeCloseTo(1, 6);
+    expect(fit!.n).toBe(6);
+  });
+
+  it("produces a negative slope for anti-correlated inputs", () => {
+    const xs = [1, 2, 3, 4, 5];
+    const ys = [5, 4, 3, 2, 1];
+    const fit = reducedMajorAxisRegression(xs, ys);
+    expect(fit).not.toBeNull();
+    expect(fit!.slope).toBeCloseTo(-1, 6);
+    expect(fit!.pearsonR).toBeCloseTo(-1, 6);
+  });
+
+  it("returns null for insufficient points", () => {
+    expect(reducedMajorAxisRegression([1], [1])).toBeNull();
+  });
+});
+
+describe("spatio-temporal IDW", () => {
+  const baseTime = Date.UTC(2024, 5, 15, 12, 0, 0);
+  const dayMs = 86_400_000;
+
+  it("computes a known weight for the 1/(d^2 + C|dt|) kernel", () => {
+    // d^2 = 4 km^2, dt = 2 days, C = 1  =>  w = 1 / (4 + 1*2) = 1/6
+    const w = computeSpatioTemporalIdwWeight(4, 2, 1);
+    expect(w).toBeCloseTo(1 / 6, 8);
+  });
+
+  it("returns value of a coincident space-time neighbor as an exact match", () => {
+    const points: SpatioTemporalPoint[] = [
+      { x: -122.5, y: 45.5, t: baseTime, value: 12 },
+      { x: -122.0, y: 45.7, t: baseTime - dayMs, value: 18 },
+    ];
+    const [estimate] = idwSpatioTemporalEstimate(points, [
+      { x: -122.5, y: 45.5, t: baseTime },
+    ]);
+    expect(estimate.value).toBeCloseTo(12, 6);
+    expect(estimate.neighborCount).toBe(1);
+  });
+
+  it("weights closer-in-time observations more heavily", () => {
+    // Two sensors, equal distance from the query; one is 1 day old, the other 30 days old.
+    const points: SpatioTemporalPoint[] = [
+      { id: "fresh", x: -122.4, y: 45.5, t: baseTime - 1 * dayMs, value: 10 },
+      { id: "stale", x: -122.6, y: 45.5, t: baseTime - 30 * dayMs, value: 40 },
+    ];
+    const [estimate] = idwSpatioTemporalEstimate(
+      points,
+      [{ x: -122.5, y: 45.5, t: baseTime }],
+      { timeWeightC: 5 },
+    );
+    expect(estimate.value).not.toBeNull();
+    // Result should be pulled toward the fresh sensor's value.
+    expect(estimate.value!).toBeLessThan(25);
+    expect(estimate.value!).toBeGreaterThan(10);
+  });
+
+  it("excludes neighbors beyond maxDistanceKm and maxDaysBack", () => {
+    const points: SpatioTemporalPoint[] = [
+      { id: "near", x: -122.45, y: 45.5, t: baseTime, value: 8 },
+      { id: "too-far-spatial", x: -110.0, y: 45.5, t: baseTime, value: 80 },
+      { id: "too-far-temporal", x: -122.45, y: 45.5, t: baseTime - 365 * dayMs, value: 80 },
+    ];
+    const [estimate] = idwSpatioTemporalEstimate(
+      points,
+      [{ x: -122.5, y: 45.5, t: baseTime }],
+      { maxDistanceKm: 500, maxDaysBack: 90, maxDaysForward: 90, timeWeightC: 1 },
+    );
+    expect(estimate.value).not.toBeNull();
+    expect(estimate.neighborCount).toBe(1);
+    expect(estimate.value!).toBeCloseTo(8, 6);
+  });
+
+  it("returns null value when no neighbors remain after filtering", () => {
+    const points: SpatioTemporalPoint[] = [
+      { id: "far", x: -100.0, y: 40.0, t: baseTime, value: 50 },
+    ];
+    const [estimate] = idwSpatioTemporalEstimate(
+      points,
+      [{ x: -122.5, y: 45.5, t: baseTime }],
+      { maxDistanceKm: 200 },
+    );
+    expect(estimate.value).toBeNull();
+    expect(estimate.neighborCount).toBe(0);
+  });
+
+  it("builds a gridded interpolation of the correct shape", () => {
+    const points: SpatioTemporalPoint[] = [
+      { id: "a", x: -122.5, y: 45.4, t: baseTime, value: 6 },
+      { id: "b", x: -122.3, y: 45.6, t: baseTime, value: 30 },
+    ];
+    const grid = idwSpatioTemporalInterpolateGrid(
+      points,
+      10,
+      10,
+      { west: -122.7, east: -122.1, south: 45.3, north: 45.7 },
+      baseTime,
+      { timeWeightC: 1 },
+    );
+    expect(grid.width).toBe(10);
+    expect(grid.height).toBe(10);
+    expect(grid.values.length).toBe(100);
+    expect(grid.min).toBeGreaterThanOrEqual(6 - 1e-6);
+    expect(grid.max).toBeLessThanOrEqual(30 + 1e-6);
+  });
+
+  it("grid-search picks the lowest-RMSE timeWeightC from candidates", () => {
+    // Construct a strongly time-varying field where small C should outperform huge C.
+    const points: SpatioTemporalPoint[] = [];
+    for (let i = 0; i < 6; i++) {
+      points.push({
+        id: `s${i}`,
+        x: -122.5 + i * 0.05,
+        y: 45.5,
+        t: baseTime + i * dayMs,
+        value: 10 + i * 5,
+      });
+    }
+    const { best, all } = stIdwGridSearchTimeWeight(points, [0.1, 1, 10, 1000], {
+      maxDistanceKm: 500,
+      maxDaysBack: 90,
+      maxDaysForward: 90,
+    });
+    expect(all.length).toBe(4);
+    expect(Number.isFinite(best.rmse)).toBe(true);
+    // rmse of best candidate must not exceed the worst candidate.
+    const worst = all.reduce((a, b) => (a.rmse >= b.rmse ? a : b));
+    expect(best.rmse).toBeLessThanOrEqual(worst.rmse + 1e-9);
+  });
+
+  it("leave-one-out returns NaN RMSE when no usable folds", () => {
+    const points: SpatioTemporalPoint[] = [
+      { id: "solo", x: -122.5, y: 45.5, t: baseTime, value: 10 },
+    ];
+    const r = stIdwLeaveOneOut(points, 1);
+    expect(r.sampleCount).toBe(0);
+    expect(Number.isNaN(r.rmse)).toBe(true);
+  });
+});
+
+describe("USDA RUCC locale tagging", () => {
+  const sampleCsv = [
+    `FIPS,State,County_Name,RUCC_2023,Population_2020`,
+    `"37067","NC","Forsyth County",2,382295`,
+    `37001,NC,Alamance County,3,171415`,
+    `"37011","NC","Avery County",8,17557`,
+    // Duplicate or bad rows should be ignored
+    `99999,ZZ,Not a real place,,`,
+    `37017,NC,Bladen County,9,29606`,
+  ].join("\n");
+
+  const table = parseRuccCsv(sampleCsv);
+
+  it("loads known rows by normalized FIPS", () => {
+    expect(table.rows.length).toBe(4);
+    expect(table.byFips.get("37067")?.code).toBe(2);
+    // Allow lookup with or without leading zeros / extra chars.
+    expect(lookupRucc("37067", table)?.countyName).toBe("Forsyth County");
+    expect(lookupRucc("37-067", table)?.countyName).toBe("Forsyth County");
+  });
+
+  it("maps FIPS to category and tier", () => {
+    expect(ruccCategoryForFips("37067", table)).toBe("metro");
+    expect(ruccCategoryForFips("37011", table)).toBe("nonmetro");
+    expect(ruccTierForFips("37011", table)).toBe("nonmetro-rural");
+    expect(ruccTierForFips("37001", table)).toBe("metro-small");
+    expect(ruccCategoryForFips("99999", table)).toBeNull();
+  });
+
+  it("exposes full code metadata for all 9 codes", () => {
+    for (let code = 1; code <= 9; code++) {
+      expect(isRuccCode(code)).toBe(true);
+      const info = RUCC_CODE_INFO[code as 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9];
+      expect(info.label.length).toBeGreaterThan(0);
+    }
+    expect(isRuccCode(0)).toBe(false);
+    expect(isRuccCode(10)).toBe(false);
+  });
+
+  it("rolls up PM2.5 values by RUCC category", () => {
+    const receptors = [
+      { fips: "37067", pm25: 12 }, // metro
+      { fips: "37001", pm25: 14 }, // metro
+      { fips: "37011", pm25: 22 }, // nonmetro
+      { fips: "37017", pm25: null }, // nonmetro no value
+      { fips: "99999", pm25: 30 }, // unclassified
+    ];
+    const rollups = rollupByRucc(receptors, table, "category");
+    const byKey = new Map(rollups.map((r) => [r.group, r]));
+    expect(byKey.get("metro")!.receptorCount).toBe(2);
+    expect(byKey.get("metro")!.withValueCount).toBe(2);
+    expect(byKey.get("metro")!.meanPm25).toBeCloseTo(13, 6);
+    expect(byKey.get("nonmetro")!.receptorCount).toBe(2);
+    expect(byKey.get("nonmetro")!.withValueCount).toBe(1);
+    expect(byKey.get("__unclassified__")!.receptorCount).toBe(1);
+  });
+
+  it("sorts code-grouped rollups numerically by RUCC code", () => {
+    const receptors = [
+      { fips: "37011", pm25: 22 },
+      { fips: "37067", pm25: 12 },
+      { fips: "37001", pm25: 14 },
+    ];
+    const rollups = rollupByRucc(receptors, table, "code");
+    expect(rollups.map((r) => r.group)).toEqual(["2", "3", "8"]);
+  });
+
+  it("errors on a CSV without required columns", () => {
+    expect(() => parseRuccCsv("state,county\nNC,Wake")).toThrow(/FIPS/);
+  });
+});
+
+describe("day-type classification", () => {
+  const ncCalendar: SchoolCalendar = {
+    schoolYear: [
+      { start: "2022-08-29", end: "2023-06-09" },
+    ],
+    holidays: ["2022-11-24", "2022-12-25"],
+    testingWindows: [
+      { start: "2023-05-22", end: "2023-06-02" },
+    ],
+    // default summer (Jun/Jul/Aug) used since summerWindows omitted
+  };
+
+  it("flags weekends by calendar date (no DST drift)", () => {
+    expect(isWeekendDate("2024-03-08")).toBe(false); // Friday before US DST
+    expect(isWeekendDate("2024-03-09")).toBe(true);  // Saturday before US DST
+    expect(isWeekendDate("2024-03-10")).toBe(true);  // Sunday (US DST starts)
+    expect(isWeekendDate("2024-11-03")).toBe(true);  // Sunday (DST ends)
+    expect(isWeekendDate("2024-07-08")).toBe(false); // Monday
+  });
+
+  it("identifies summer dates using the default Jun/Jul/Aug rule", () => {
+    expect(isSummerDate("2023-06-15")).toBe(true);
+    expect(isSummerDate("2023-08-31")).toBe(true);
+    expect(isSummerDate("2023-05-31")).toBe(false);
+    expect(isSummerDate("2023-09-01")).toBe(false);
+  });
+
+  it("overrides summer with explicit summerWindows when provided", () => {
+    const cal: SchoolCalendar = {
+      summerWindows: [{ start: "2023-06-10", end: "2023-08-24" }],
+    };
+    expect(isSummerDate("2023-06-15", cal)).toBe(true);
+    expect(isSummerDate("2023-06-05", cal)).toBe(false);
+    expect(isSummerDate("2023-08-30", cal)).toBe(false);
+  });
+
+  it("flags testing windows and school days correctly within a NC calendar", () => {
+    expect(isTestingDate("2023-05-25", ncCalendar)).toBe(true);
+    expect(isTestingDate("2023-04-01", ncCalendar)).toBe(false);
+
+    // Weekday in school year, not holiday, not summer → school day
+    expect(isSchoolDayDate("2022-10-03", ncCalendar)).toBe(true);
+    // Thanksgiving listed holiday in school year → not a school day
+    expect(isSchoolDayDate("2022-11-24", ncCalendar)).toBe(false);
+    // Saturday → not a school day
+    expect(isSchoolDayDate("2022-10-08", ncCalendar)).toBe(false);
+    // Summer-defaulted day (July) → not a school day
+    expect(isSchoolDayDate("2022-07-15", ncCalendar)).toBe(false);
+    // Outside configured school year range → not a school day
+    expect(isSchoolDayDate("2023-07-05", ncCalendar)).toBe(false);
+  });
+
+  it("classifyDayType returns all applicable tags for a given date", () => {
+    const tags = classifyDayType("2023-05-25", ncCalendar); // Thursday, testing window
+    expect(tags).toContain("all");
+    expect(tags).toContain("weekday");
+    expect(tags).toContain("testing-day");
+    expect(tags).toContain("school-day");
+    expect(tags).not.toContain("weekend");
+    expect(tags).not.toContain("summer");
+    expect(tags).not.toContain("holiday");
+  });
+
+  it("matchesDayType covers each DayType branch", () => {
+    expect(matchesDayType("2023-05-25", "all", ncCalendar)).toBe(true);
+    expect(matchesDayType("2023-05-25", "school-day", ncCalendar)).toBe(true);
+    expect(matchesDayType("2023-05-25", "testing-day", ncCalendar)).toBe(true);
+    expect(matchesDayType("2023-07-04", "summer", ncCalendar)).toBe(true);
+    expect(matchesDayType("2023-07-04", "school-day", ncCalendar)).toBe(false);
+    expect(matchesDayType("2022-11-24", "holiday", ncCalendar)).toBe(true);
+    expect(matchesDayType("2023-07-08", "weekend", ncCalendar)).toBe(true);
+  });
+
+  it("rejects malformed dates", () => {
+    expect(() => isWeekendDate("2024/03/09")).toThrow(/YYYY-MM-DD/);
+    expect(() => isWeekendDate("2024-13-01")).toThrow(/YYYY-MM-DD/);
+  });
+});
+
+describe("estimateAtPoints (IDW + kriging)", () => {
+  const knownPoints: InterpolationPoint[] = [
+    { id: "n", x: -78.0, y: 35.5, value: 10 },
+    { id: "ne", x: -77.5, y: 35.5, value: 20 },
+    { id: "s", x: -78.0, y: 35.0, value: 30 },
+    { id: "se", x: -77.5, y: 35.0, value: 40 },
+  ];
+
+  it("idwEstimateAtPoints returns the exact value for a coincident receptor", () => {
+    const [estimate] = idwEstimateAtPoints(knownPoints, [
+      { id: "school-A", x: -78.0, y: 35.5 },
+    ]);
+    expect(estimate.source).toBe("exact");
+    expect(estimate.value).toBeCloseTo(10, 6);
+  });
+
+  it("idwEstimateAtPoints interpolates a centroid receptor", () => {
+    const [estimate] = idwEstimateAtPoints(knownPoints, [
+      { id: "centroid", x: -77.75, y: 35.25 },
+    ]);
+    expect(estimate.source).toBe("idw-fallback");
+    expect(estimate.value).not.toBeNull();
+    // Symmetric centroid should pull strongly toward the four-point mean (25),
+    // with small deviation because km-distance per longitude is shorter than per
+    // latitude at 35 degrees.
+    expect(estimate.value!).toBeGreaterThan(24);
+    expect(estimate.value!).toBeLessThan(26);
+  });
+
+  it("idwEstimateAtPoints honors maxDistanceKm", () => {
+    const [near, far] = idwEstimateAtPoints(
+      knownPoints,
+      [
+        { id: "in-bounds", x: -77.75, y: 35.25 },
+        { id: "out-of-bounds", x: -100.0, y: 30.0 },
+      ],
+      { maxDistanceKm: 100 },
+    );
+    expect(near.value).not.toBeNull();
+    expect(far.value).toBeNull();
+    expect(far.source).toBe("none");
+  });
+
+  it("krigingEstimateAtPoints returns finite values for school-like receptors", () => {
+    const model = createOrdinaryKrigingModel(knownPoints);
+    const estimates = krigingEstimateAtPoints(model, [
+      { id: "school-A", x: -78.0, y: 35.5 },
+      { id: "school-B", x: -77.75, y: 35.25 },
+    ]);
+    expect(estimates).toHaveLength(2);
+    expect(estimates[0].source).toBe("exact");
+    expect(estimates[0].value).toBeCloseTo(10, 6);
+    expect(estimates[1].value).not.toBeNull();
+    expect(estimates[1].source === "kriging" || estimates[1].source === "idw-fallback").toBe(true);
+    expect(Number.isFinite(estimates[1].value!)).toBe(true);
+  });
+
+  it("krigingEstimateAtPoints returns 'none' when the model has no points", () => {
+    const model = createOrdinaryKrigingModel([]);
+    const [estimate] = krigingEstimateAtPoints(model, [
+      { id: "anywhere", x: -100, y: 40 },
+    ]);
+    expect(estimate.value).toBeNull();
+    expect(estimate.source).toBe("none");
+  });
+});
+
+describe("sum-metric space-time kriging", () => {
+  const dayMs = 86_400_000;
+  const baseTime = Date.UTC(2024, 5, 15, 12, 0, 0);
+
+  function syntheticObservations(count = 20, seed = 42): SpaceTimeObservation[] {
+    const obs: SpaceTimeObservation[] = [];
+    let s = seed;
+    function rand() {
+      s = (s * 1103515245 + 12345) & 0x7fffffff;
+      return s / 0x7fffffff;
+    }
+    for (let i = 0; i < count; i++) {
+      const lon = -78.5 + rand() * 1.0; // ~80 km wide
+      const lat = 35.2 + rand() * 0.6;
+      const dayOffset = Math.floor(rand() * 14);
+      // A deterministic space-time field: trend + weak noise.
+      const trend = 10 + (lat - 35.2) * 20 + dayOffset * 0.5;
+      const noise = (rand() - 0.5) * 2;
+      obs.push({
+        id: `obs-${i}`,
+        x: lon,
+        y: lat,
+        t: baseTime + dayOffset * dayMs,
+        value: trend + noise,
+      });
+    }
+    return obs;
+  }
+
+  it("haversineKm matches known pair-distance", () => {
+    // Between (lat 0, lon 0) and (lat 0, lon 1) should be ~111 km.
+    const d = haversineKm(0, 0, 1, 0);
+    expect(d).toBeGreaterThan(100);
+    expect(d).toBeLessThan(120);
+  });
+
+  it("fits a sum-metric variogram with finite parameters", () => {
+    const vg = fitSumMetricSpaceTimeVariogram(syntheticObservations());
+    expect(Number.isFinite(vg.spatial.sill)).toBe(true);
+    expect(Number.isFinite(vg.temporal.sill)).toBe(true);
+    expect(Number.isFinite(vg.joint.sill)).toBe(true);
+    expect(vg.spatial.range).toBeGreaterThan(0);
+    expect(vg.temporal.range).toBeGreaterThan(0);
+    expect(vg.kappa).toBeGreaterThan(0);
+  });
+
+  it("sum-metric variogram is monotone-ish in h at fixed u", () => {
+    const vg = fitSumMetricSpaceTimeVariogram(syntheticObservations());
+    const g1 = sumMetricVariogramValue(5, 0, vg);
+    const g2 = sumMetricVariogramValue(50, 0, vg);
+    expect(g2).toBeGreaterThanOrEqual(g1);
+  });
+
+  it("creates a kriging model and estimates finite values at in-support queries", () => {
+    const obs = syntheticObservations(25);
+    const model = createSpaceTimeKrigingModel(obs);
+    const estimates = spaceTimeKrigingEstimate(
+      model,
+      [
+        { id: "q-inside", x: -78.0, y: 35.5, t: baseTime + 3 * dayMs },
+        { id: "q-coincident", x: obs[0].x, y: obs[0].y, t: obs[0].t },
+      ],
+      { maxNeighbors: 8, maxDistanceKm: 200, maxDaysBack: 21, maxDaysForward: 21 },
+    );
+    expect(estimates).toHaveLength(2);
+    const inside = estimates[0];
+    expect(inside.source === "kriging" || inside.source === "nearest").toBe(true);
+    expect(inside.value).not.toBeNull();
+    expect(Number.isFinite(inside.value!)).toBe(true);
+    const exact = estimates[1];
+    expect(exact.source).toBe("exact");
+    expect(exact.value).toBeCloseTo(obs[0].value, 6);
+  });
+
+  it("returns none when no observations fall within the requested window", () => {
+    const obs = syntheticObservations(10);
+    const model = createSpaceTimeKrigingModel(obs);
+    const [estimate] = spaceTimeKrigingEstimate(
+      model,
+      [{ id: "way-out", x: -100.0, y: 40.0, t: baseTime + 365 * dayMs }],
+      { maxNeighbors: 8, maxDistanceKm: 50, maxDaysBack: 30, maxDaysForward: 30 },
+    );
+    expect(estimate.value).toBeNull();
+    expect(estimate.source).toBe("none");
+  });
+
+  it("returns 'none' for every query when the model has no observations", () => {
+    const model = createSpaceTimeKrigingModel([]);
+    const [estimate] = spaceTimeKrigingEstimate(model, [
+      { id: "q", x: 0, y: 0, t: baseTime },
+    ]);
+    expect(estimate.value).toBeNull();
+    expect(estimate.variance).toBeNull();
+    expect(estimate.source).toBe("none");
+  });
+});
+
+describe("day-type rollups", () => {
+  function syntheticSummaries(): DailySummary[] {
+    // Build 21 days: Jan 2..Jan 22 2023 with mean = day-of-month (so weekdays vs weekends differ)
+    const days: DailySummary[] = [];
+    for (let day = 2; day <= 22; day++) {
+      const dateStr = `2023-01-${String(day).padStart(2, "0")}`;
+      const value = day;
+      days.push({
+        date: dateStr,
+        nObservations: 24,
+        humidityMean: null,
+        temperatureMean: null,
+        pressureMean: null,
+        minutesAboveEpaThreshold: value > 12 ? 60 : 0,
+        fullDay: {
+          count: 24,
+          mean: value,
+          min: value - 2,
+          minTime: "00:00:00",
+          max: value + 2,
+          maxTime: "12:00:00",
+          std: 0.5,
+        },
+        morningRush: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        eveningRush: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        daytimeAmbient: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        nighttimeAmbient: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+      });
+    }
+    return days;
+  }
+
+  it("splits daily summaries into weekday vs weekend buckets with correct counts", () => {
+    const rollups = rollupDailySummariesByDayType(syntheticSummaries(), {
+      dayTypes: ["all", "weekday", "weekend"],
+    });
+    const byType = new Map(rollups.map((r) => [r.dayType, r]));
+    // Jan 2..Jan 22 2023: 15 weekdays, 6 weekend days (Jan 7, 8, 14, 15, 21, 22)
+    expect(byType.get("all")!.dayCount).toBe(21);
+    expect(byType.get("weekday")!.dayCount).toBe(15);
+    expect(byType.get("weekend")!.dayCount).toBe(6);
+    // Weekday means: days 2..6, 9..13, 16..20  → mean = 11
+    expect(byType.get("weekday")!.meanPm25).toBeCloseTo(11, 6);
+  });
+
+  it("honors school calendar testing windows", () => {
+    const summaries: DailySummary[] = [];
+    for (let day = 22; day <= 26; day++) {
+      summaries.push({
+        date: `2023-05-${String(day).padStart(2, "0")}`,
+        nObservations: 24,
+        humidityMean: null,
+        temperatureMean: null,
+        pressureMean: null,
+        minutesAboveEpaThreshold: 0,
+        fullDay: {
+          count: 24,
+          mean: day,
+          min: day,
+          minTime: "00:00:00",
+          max: day,
+          maxTime: "12:00:00",
+          std: 0,
+        },
+        morningRush: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        eveningRush: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        daytimeAmbient: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+        nighttimeAmbient: { count: 0, mean: null, min: null, minTime: null, max: null, maxTime: null, std: null },
+      });
+    }
+    const cal: SchoolCalendar = {
+      schoolYear: [{ start: "2022-08-29", end: "2023-06-09" }],
+      testingWindows: [{ start: "2023-05-22", end: "2023-05-26" }],
+    };
+    const rollups = rollupDailySummariesByDayType(summaries, {
+      dayTypes: ["testing-day", "school-day"],
+      calendar: cal,
+    });
+    const byType = new Map(rollups.map((r) => [r.dayType, r]));
+    expect(byType.get("testing-day")!.dayCount).toBe(5);
+    expect(byType.get("school-day")!.dayCount).toBe(5);
+    expect(byType.get("testing-day")!.meanPm25).toBeCloseTo(24, 6);
+  });
+
+  it("rollupPatSeriesByDayType aggregates across a full series", () => {
+    const points = [];
+    const start = Date.UTC(2023, 0, 2, 18, 0, 0); // Jan 2 18:00 UTC → 10:00 Pacific
+    for (let d = 0; d < 7; d++) {
+      points.push({
+        timestamp: new Date(start + d * 86_400_000).toISOString(),
+        pm25A: 10 + d,
+        pm25B: 10 + d,
+        humidity: 40,
+        temperature: 65,
+        pressure: 1012,
+      });
+    }
+    const series: PatSeries = {
+      meta: {
+        sensorId: "syn-1",
+        label: "Synthetic",
+        timezone: "America/Los_Angeles",
+      },
+      points,
+    };
+    const rollups = rollupPatSeriesByDayType(series, {
+      dayTypes: ["all", "weekday", "weekend"],
+    });
+    const all = rollups.find((r) => r.dayType === "all")!;
+    expect(all.dayCount).toBe(7);
+    expect(all.meanPm25).toBeCloseTo(13, 6);
+  });
+
+  it("filters spatio-temporal points by day type", () => {
+    const tz = "America/New_York";
+    const points = [
+      { t: Date.UTC(2023, 0, 3, 15, 0, 0), value: 1 }, // Tue 10am ET → weekday
+      { t: Date.UTC(2023, 0, 7, 15, 0, 0), value: 2 }, // Sat 10am ET → weekend
+      { t: Date.UTC(2023, 0, 8, 15, 0, 0), value: 3 }, // Sun 10am ET → weekend
+    ];
+    const weekdayOnly = filterSpatioTemporalByDayType(points, "weekday", tz);
+    const weekendOnly = filterSpatioTemporalByDayType(points, "weekend", tz);
+    expect(weekdayOnly.map((p) => p.value)).toEqual([1]);
+    expect(weekendOnly.map((p) => p.value)).toEqual([2, 3]);
+  });
+
+  it("DEFAULT_DAY_TYPES enumerates the paper's required buckets", () => {
+    expect(DEFAULT_DAY_TYPES).toContain("all");
+    expect(DEFAULT_DAY_TYPES).toContain("school-day");
+    expect(DEFAULT_DAY_TYPES).toContain("weekend");
+    expect(DEFAULT_DAY_TYPES).toContain("summer");
+    expect(DEFAULT_DAY_TYPES).toContain("testing-day");
   });
 });
 
@@ -939,5 +1718,215 @@ describe("config-driven study areas", () => {
     const validation = validateStudyGrid(hazard!, hazard!);
     expect(validation.n).toBe(hazard!.values.length);
     expect(validation.rmse).toBe(0);
+  });
+
+  it("ranks sensor-siting candidates from an existing study grid", () => {
+    const study = createStudyAreaFromSensors(samplePasCollection, {
+      resolutionMeters: 1_000,
+      sensorFilters: { isOutside: true },
+      sensorValueField: "pm25_1hr",
+    });
+    const observed = computeObservedStudyGrid(samplePasCollection, study, { maxCells: 900 });
+    const candidates = rankSensorSitingCandidates(observed, samplePasCollection.records, {
+      candidateCount: 5,
+      minSpacingKm: 0.25,
+    });
+
+    expect(candidates).toHaveLength(5);
+    expect(candidates[0].rank).toBe(1);
+    expect(candidates.every((candidate) => candidate.score >= 0 && candidate.score <= 1)).toBe(true);
+    expect(candidates.every((candidate) => candidate.latitude >= observed.bounds.south && candidate.latitude <= observed.bounds.north)).toBe(true);
+    expect(candidates.every((candidate) => candidate.longitude >= observed.bounds.west && candidate.longitude <= observed.bounds.east)).toBe(true);
+  });
+});
+
+describe("modeling feature and benchmark helpers", () => {
+  it("builds snapshot feature rows from PAS records", () => {
+    const table = buildPasSnapshotFeatureTable(samplePasCollection, { pm25Field: "pm25_1hr" });
+    expect(table.rows.length).toBeGreaterThan(0);
+    expect(table.featureNames).toContain("hourSin");
+    expect(table.rows.every((row) => Number.isFinite(row.latitude) && Number.isFinite(row.longitude))).toBe(true);
+    expect(table.rows.every((row) => row.pm25Field === "pm25_1hr")).toBe(true);
+  });
+
+  it("evaluates regression predictions and Pearson calibration gates", () => {
+    const predictions = [
+      { observed: 10, predicted: 11 },
+      { observed: 20, predicted: 19 },
+      { observed: 30, predicted: 31 },
+      { observed: null, predicted: 31 },
+    ];
+    const metrics = evaluateRegressionPredictions(predictions);
+    const gate = assessPearsonCalibrationGate(predictions, 0.7);
+
+    expect(metrics.n).toBe(3);
+    expect(metrics.rmse).toBeGreaterThan(0);
+    expect(gate.n).toBe(3);
+    expect(gate.passes).toBe(true);
+  });
+
+  it("aggregates model runs by RMSE for comparison tables", () => {
+    const firstMetrics = evaluateRegressionPredictions([
+      { observed: 1, predicted: 1.1 },
+      { observed: 2, predicted: 2.1 },
+      { observed: 3, predicted: 3.1 },
+    ]);
+    const secondMetrics = evaluateRegressionPredictions([
+      { observed: 1, predicted: 1.5 },
+      { observed: 2, predicted: 2.5 },
+      { observed: 3, predicted: 3.5 },
+    ]);
+    const aggregate = aggregateModelRuns([
+      { modelId: "rf", modelLabel: "Random Forest", splitId: "sensor-holdout-a", metrics: secondMetrics, durationMs: 100 },
+      { modelId: "xgb", modelLabel: "XGBoost", splitId: "sensor-holdout-a", metrics: firstMetrics, durationMs: 80 },
+      { modelId: "xgb", modelLabel: "XGBoost", splitId: "sensor-holdout-b", metrics: firstMetrics, durationMs: 120 },
+    ]);
+
+    expect(aggregate[0].modelId).toBe("xgb");
+    expect(aggregate[0].runs).toBe(2);
+    expect(aggregate[0].durationMsMean).toBe(100);
+    expect(aggregate[0].rmseStdDev).toBe(0);
+  });
+});
+
+describe("Bayesian outcome-linkage model", () => {
+  function makeLinearData(
+    n: number,
+    intercept: number,
+    slope: number,
+    noiseSd: number,
+    seed: number,
+  ): BayesianLinearObservation[] {
+    // Deterministic mulberry32 + Box-Muller so tests stay reproducible.
+    let a = seed >>> 0;
+    const rand = () => {
+      a = (a + 0x6d2b79f5) >>> 0;
+      let t = a;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const noise = () => {
+      let u = 0;
+      let v = 0;
+      while (u === 0) u = rand();
+      while (v === 0) v = rand();
+      return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+    };
+    const out: BayesianLinearObservation[] = [];
+    for (let i = 0; i < n; i++) {
+      const x = (i / (n - 1)) * 10 - 5;
+      const y = intercept + slope * x + noiseSd * noise();
+      out.push({ id: `obs-${i}`, y, x: [x] });
+    }
+    return out;
+  }
+
+  it("recovers known coefficients with 95% credible intervals", () => {
+    const data = makeLinearData(120, /* intercept */ 2, /* slope */ 1.5, /* noise */ 0.5, 7);
+    const fit = fitBayesianLinearModel(data, {
+      label: "linear",
+      seed: 11,
+      posteriorSamples: 600,
+      covariateNames: ["x"],
+    });
+
+    expect(fit.n).toBe(120);
+    expect(fit.k).toBe(2);
+    expect(fit.covariateNames).toEqual(["(Intercept)", "x"]);
+    const intercept = fit.coefficients[0];
+    const slope = fit.coefficients[1];
+    expect(Math.abs(intercept.mean - 2)).toBeLessThan(0.2);
+    expect(Math.abs(slope.mean - 1.5)).toBeLessThan(0.05);
+    expect(intercept.p025).toBeLessThan(intercept.mean);
+    expect(intercept.p975).toBeGreaterThan(intercept.mean);
+    expect(slope.p025).toBeLessThan(1.5);
+    expect(slope.p975).toBeGreaterThan(1.5);
+    expect(fit.sigmaMean).toBeGreaterThan(0.3);
+    expect(fit.sigmaMean).toBeLessThan(0.8);
+    expect(fit.rSquared).not.toBeNull();
+    expect(fit.rSquared!).toBeGreaterThan(0.95);
+    expect(fit.rmse).toBeGreaterThan(0);
+    expect(Number.isFinite(fit.waic)).toBe(true);
+    expect(Number.isFinite(fit.lppd)).toBe(true);
+    expect(fit.pWaic).toBeGreaterThan(0);
+    expect(fit.waicSe).toBeGreaterThanOrEqual(0);
+    expect(fit.fitted).toHaveLength(120);
+    expect(fit.residuals).toHaveLength(120);
+  });
+
+  it("prefers covariate model over intercept-only via lower WAIC", () => {
+    const data = makeLinearData(80, /* intercept */ 0, /* slope */ 2, /* noise */ 0.5, 17);
+    const interceptOnly = fitBayesianLinearModel(
+      data.map((d) => ({ ...d, x: [] })),
+      { label: "intercept-only", seed: 3, posteriorSamples: 500 },
+    );
+    const linear = fitBayesianLinearModel(data, {
+      label: "linear",
+      seed: 3,
+      posteriorSamples: 500,
+      covariateNames: ["x"],
+    });
+
+    expect(linear.waic).toBeLessThan(interceptOnly.waic);
+    const comparison = compareBayesianModels([interceptOnly, linear]);
+    expect(comparison[0].label).toBe("linear");
+    expect(comparison[0].deltaWaic).toBe(0);
+    expect(comparison[1].label).toBe("intercept-only");
+    expect(comparison[1].deltaWaic).toBeGreaterThan(0);
+    expect(comparison[0].weight).toBeGreaterThan(comparison[1].weight);
+    expect(Math.abs(comparison[0].weight + comparison[1].weight - 1)).toBeLessThan(1e-6);
+  });
+
+  it("supports county fixed-effect dummies via groupColumns='fixed-effects'", () => {
+    // Two counties with different baselines but the same slope.
+    const baseA = makeLinearData(40, 0, 1, 0.4, 21).map<BayesianLinearObservation>((d) => ({
+      ...d,
+      groupId: "county-A",
+    }));
+    const baseB = makeLinearData(40, 5, 1, 0.4, 23).map<BayesianLinearObservation>((d) => ({
+      ...d,
+      groupId: "county-B",
+    }));
+    const data = [...baseA, ...baseB];
+
+    const pooled = fitBayesianLinearModel(data, {
+      label: "pooled",
+      seed: 5,
+      posteriorSamples: 400,
+      covariateNames: ["x"],
+    });
+    const fixedEffects = fitBayesianLinearModel(data, {
+      label: "county-fixed",
+      seed: 5,
+      posteriorSamples: 400,
+      groupColumns: "fixed-effects",
+      covariateNames: ["x"],
+    });
+
+    expect(fixedEffects.k).toBe(pooled.k + 1);
+    expect(fixedEffects.covariateNames).toContain("group=county-B");
+    // The county dummy should pick up roughly the +5 baseline shift.
+    const countyB = fixedEffects.coefficients.find((c) => c.name === "group=county-B");
+    expect(countyB).toBeDefined();
+    expect(Math.abs(countyB!.mean - 5)).toBeLessThan(0.4);
+    expect(fixedEffects.waic).toBeLessThan(pooled.waic);
+
+    const comparison = compareBayesianModels([pooled, fixedEffects]);
+    expect(comparison[0].label).toBe("county-fixed");
+    expect(comparison[0].weight).toBeGreaterThan(0.95);
+  });
+
+  it("throws on empty observation set", () => {
+    expect(() => fitBayesianLinearModel([])).toThrow(/no usable observations/i);
+  });
+
+  it("returns sorted comparison with single-model edge case", () => {
+    const data = makeLinearData(30, 1, 0.5, 0.3, 99);
+    const fit = fitBayesianLinearModel(data, { label: "single", seed: 1, posteriorSamples: 200 });
+    const cmp = compareBayesianModels([fit]);
+    expect(cmp).toHaveLength(1);
+    expect(cmp[0].deltaWaic).toBe(0);
+    expect(cmp[0].weight).toBeCloseTo(1, 6);
   });
 });

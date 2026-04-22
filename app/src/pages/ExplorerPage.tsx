@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import {
   pasFilter,
   pm25ToAqiBand,
+  summarizePasDatasetHealth,
   type EnhancedSohIndexResult,
   type OutlierResult,
   type PasCollection,
@@ -18,6 +19,10 @@ import { buildColumns, getPm25ForWindow } from "./explorer/sensorTable";
 import { pm25WindowOptions, type Pm25Window, type SidePanelTab } from "./explorer/types";
 import { useResizablePanel } from "./explorer/useResizablePanel";
 import styles from "./ExplorerPage.module.css";
+
+function formatPercent(value: number): string {
+  return `${(value * 100).toFixed(1)}%`;
+}
 
 export default function ExplorerPage() {
   const [query, setQuery] = useState("");
@@ -71,6 +76,22 @@ export default function ExplorerPage() {
       isOutside: outsideOnly ? true : undefined
     });
   }, [data, deferredQuery, outsideOnly]);
+
+  const datasetHealth = useMemo(() => {
+    if (!data) return null;
+    return summarizePasDatasetHealth(data);
+  }, [data]);
+
+  const readinessFields = useMemo(() => {
+    if (!datasetHealth) return [];
+    return datasetHealth.fieldCompleteness
+      .filter((field) =>
+        field.requiredFor.includes("calibration") ||
+        field.requiredFor.includes("virtual-sensing") ||
+        field.requiredFor.includes("sensor-siting")
+      )
+      .slice(0, 10);
+  }, [datasetHealth]);
 
   const columns = useMemo(() => buildColumns(pm25Window), [pm25Window]);
 
@@ -152,7 +173,61 @@ export default function ExplorerPage() {
               tone={meanBand.label === "Good" ? "good" : "warn"}
             />
             <StatCard label="AQI band" value={meanBand.label} />
+            <StatCard
+              label="Model-ready"
+              value={datasetHealth ? formatPercent(datasetHealth.modelReadyFraction) : "..."}
+              tone={datasetHealth && datasetHealth.modelReadyFraction >= 0.8 ? "good" : "warn"}
+            />
+            <StatCard
+              label="Missing coords"
+              value={`${datasetHealth?.missingCoordinateRecords ?? "..."}`}
+              tone={datasetHealth && datasetHealth.missingCoordinateRecords > 0 ? "warn" : "good"}
+            />
           </div>
+
+          {datasetHealth && (
+            <Card title="Dataset Readiness" className={styles.readinessCard}>
+              <div className={styles.readinessSummary}>
+                <div>
+                  <span className={styles.readinessLabel}>Outdoor</span>
+                  <strong>{datasetHealth.outsideRecords}</strong>
+                </div>
+                <div>
+                  <span className={styles.readinessLabel}>PM-ready</span>
+                  <strong>{datasetHealth.recordsWithPm25}</strong>
+                </div>
+                <div>
+                  <span className={styles.readinessLabel}>Generated</span>
+                  <strong>{new Date(datasetHealth.generatedAt).toLocaleDateString()}</strong>
+                </div>
+                <div>
+                  <span className={styles.readinessLabel}>Source</span>
+                  <strong>{datasetHealth.source}</strong>
+                </div>
+              </div>
+
+              <div className={styles.fieldHealthGrid}>
+                {readinessFields.map((field) => (
+                  <div key={field.key} className={styles.fieldHealthItem}>
+                    <span>{field.label}</span>
+                    <strong>{formatPercent(field.completeness)}</strong>
+                  </div>
+                ))}
+              </div>
+
+              <div className={styles.warningList}>
+                {datasetHealth.warnings.length ? (
+                  datasetHealth.warnings.map((warning) => (
+                    <span key={warning.code} data-severity={warning.severity}>
+                      {warning.message}
+                    </span>
+                  ))
+                ) : (
+                  <span data-severity="info">No dataset readiness warnings.</span>
+                )}
+              </div>
+            </Card>
+          )}
         </div>
 
         <Card padded={false} className={styles.listCard}>

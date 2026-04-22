@@ -94,6 +94,29 @@ export type StudyValidationMetrics = {
   maxResidual: number;
 };
 
+export type SensorSitingCandidate = {
+  rank: number;
+  row: number;
+  col: number;
+  latitude: number;
+  longitude: number;
+  predictedValue: number;
+  normalizedValue: number;
+  nearestSensorKm: number | null;
+  coverageGapScore: number;
+  score: number;
+};
+
+export type SensorSitingOptions = {
+  candidateCount?: number;
+  minSpacingKm?: number;
+  pollutionWeight?: number;
+  coverageWeight?: number;
+  coverageRadiusKm?: number;
+  excludeExistingWithinKm?: number;
+  maxCandidatePool?: number;
+};
+
 type Position = [number, number, ...number[]];
 
 type WeightedSample = {
@@ -458,9 +481,131 @@ export function validateStudyGrid(
   };
 }
 
+export function rankSensorSitingCandidates(
+  grid: StudyRasterGrid,
+  existingSensors: readonly PasRecord[],
+  options: SensorSitingOptions = {},
+): SensorSitingCandidate[] {
+  const candidateCount = options.candidateCount ?? 10;
+  const minSpacingKm = options.minSpacingKm ?? Math.max(grid.resolutionMeters / 1_000, 1);
+  const pollutionWeight = options.pollutionWeight ?? 0.65;
+  const coverageWeight = options.coverageWeight ?? 0.35;
+  const coverageRadiusKm = options.coverageRadiusKm ?? Math.max(minSpacingKm * 4, 5);
+  const excludeExistingWithinKm = options.excludeExistingWithinKm ?? Math.max(minSpacingKm * 0.5, 0.25);
+  const maxCandidatePool = options.maxCandidatePool ?? 1_000;
+  const weightTotal = Math.max(pollutionWeight + coverageWeight, Number.EPSILON);
+  const validSensors = existingSensors.filter(
+    (sensor) => Number.isFinite(sensor.latitude) && Number.isFinite(sensor.longitude),
+  );
+  const valueSpan = grid.max - grid.min;
+  const pool: SensorSitingCandidate[] = [];
+
+  for (let index = 0; index < grid.values.length; index += 1) {
+    const predictedValue = grid.values[index];
+    if (!Number.isFinite(predictedValue)) continue;
+
+    const row = Math.floor(index / grid.width);
+    const col = index % grid.width;
+    const { longitude, latitude } = studyGridCellCoordinate(grid, row, col);
+    const nearestSensorKm = nearestSensorDistanceKm(longitude, latitude, validSensors);
+    if (nearestSensorKm !== null && nearestSensorKm < excludeExistingWithinKm) continue;
+
+    const normalizedValue = valueSpan > 0
+      ? Math.min(1, Math.max(0, (predictedValue - grid.min) / valueSpan))
+      : 0;
+    const coverageGapScore = nearestSensorKm === null
+      ? 1
+      : Math.min(1, Math.max(0, nearestSensorKm / coverageRadiusKm));
+    const score = (normalizedValue * pollutionWeight + coverageGapScore * coverageWeight) / weightTotal;
+
+    pool.push({
+      rank: 0,
+      row,
+      col,
+      latitude,
+      longitude,
+      predictedValue,
+      normalizedValue,
+      nearestSensorKm,
+      coverageGapScore,
+      score,
+    });
+  }
+
+  pool.sort((left, right) => right.score - left.score || right.predictedValue - left.predictedValue);
+  const selected: SensorSitingCandidate[] = [];
+  const selectedKeys = new Set<string>();
+  let activeSpacingKm = minSpacingKm;
+
+  while (selected.length < candidateCount && activeSpacingKm >= 0.05) {
+    for (const candidate of pool.slice(0, maxCandidatePool)) {
+      const key = `${candidate.row}:${candidate.col}`;
+      if (selectedKeys.has(key)) continue;
+      const farEnough = selected.every((other) =>
+        distanceMeters(candidate.longitude, candidate.latitude, other.longitude, other.latitude) / 1_000 >= activeSpacingKm,
+      );
+      if (!farEnough) continue;
+      selected.push(candidate);
+      selectedKeys.add(key);
+      if (selected.length >= candidateCount) break;
+    }
+    if (selected.length >= candidateCount) break;
+    activeSpacingKm *= 0.5;
+  }
+
+  if (selected.length < candidateCount) {
+    for (const candidate of pool) {
+      const key = `${candidate.row}:${candidate.col}`;
+      if (selectedKeys.has(key)) continue;
+      selected.push(candidate);
+      selectedKeys.add(key);
+      if (selected.length >= candidateCount) break;
+    }
+  }
+
+  return selected.slice(0, candidateCount).map((candidate, index) => ({
+    ...candidate,
+    rank: index + 1,
+    score: Number(candidate.score.toFixed(4)),
+    normalizedValue: Number(candidate.normalizedValue.toFixed(4)),
+    coverageGapScore: Number(candidate.coverageGapScore.toFixed(4)),
+    nearestSensorKm: candidate.nearestSensorKm === null ? null : Number(candidate.nearestSensorKm.toFixed(3)),
+    predictedValue: Number(candidate.predictedValue.toFixed(3)),
+    latitude: Number(candidate.latitude.toFixed(6)),
+    longitude: Number(candidate.longitude.toFixed(6)),
+  }));
+}
+
 function sensorValue(record: PasRecord, field: StudySensorValueField): number | null {
   const value = record[field] ?? record.pm25Current;
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function studyGridCellCoordinate(
+  grid: StudyRasterGrid,
+  row: number,
+  col: number,
+): { longitude: number; latitude: number } {
+  const lonStep = grid.width > 1 ? (grid.bounds.east - grid.bounds.west) / (grid.width - 1) : 0;
+  const latStep = grid.height > 1 ? (grid.bounds.north - grid.bounds.south) / (grid.height - 1) : 0;
+  return {
+    longitude: grid.bounds.west + col * lonStep,
+    latitude: grid.bounds.south + row * latStep,
+  };
+}
+
+function nearestSensorDistanceKm(
+  longitude: number,
+  latitude: number,
+  sensors: readonly PasRecord[],
+): number | null {
+  if (!sensors.length) return null;
+  let nearestMeters = Infinity;
+  for (const sensor of sensors) {
+    const distance = distanceMeters(longitude, latitude, sensor.longitude, sensor.latitude);
+    if (distance < nearestMeters) nearestMeters = distance;
+  }
+  return Number.isFinite(nearestMeters) ? nearestMeters / 1_000 : null;
 }
 
 function withStudyGridMeta(grid: InterpolationGrid, spec: StudyRasterGrid): StudyRasterGrid {

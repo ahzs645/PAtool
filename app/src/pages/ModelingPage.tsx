@@ -9,9 +9,11 @@ import {
   normalizeStudyGrid,
   pasFilter,
   pasFilterArea,
+  rankSensorSitingCandidates,
   rasterizeSourceLayer,
   validateStudyGrid,
   type PasCollection,
+  type SensorSitingCandidate,
   type SourceDispersionConfig,
   type SourceLayerConfig,
   type StudyGeometryKind,
@@ -115,6 +117,14 @@ export default function ModelingPage() {
     if (!hazardGrid || !observedGrid) return null;
     return validateStudyGrid(hazardGrid, normalizeStudyGrid(observedGrid));
   }, [hazardGrid, observedGrid]);
+
+  const sitingCandidates = useMemo(() => {
+    if (!observedGrid || !filtered) return [];
+    return rankSensorSitingCandidates(observedGrid, filtered.records, {
+      candidateCount: 8,
+      minSpacingKm: Math.max(resolutionMeters / 1_000, 0.5),
+    });
+  }, [filtered, observedGrid, resolutionMeters]);
 
   if (!data || !study || !filtered || !observedGrid) {
     return <Loader message="Loading modeling data..." />;
@@ -234,6 +244,18 @@ export default function ModelingPage() {
           )}
         </Card>
       </div>
+
+      <Card title="Sensor siting candidates">
+        {sitingCandidates.length ? (
+          <div className={styles.sitingList}>
+            {sitingCandidates.map((candidate) => (
+              <SitingCandidateRow key={`${candidate.row}:${candidate.col}`} candidate={candidate} />
+            ))}
+          </div>
+        ) : (
+          <p className={styles.emptyText}>No candidate cells available.</p>
+        )}
+      </Card>
 
       <section className={styles.referenceSection} aria-labelledby="reference-diagrams-heading">
         <div className={styles.referenceHeader}>
@@ -390,6 +412,19 @@ export default function ModelingPage() {
         </div>
       )}
     </div>
+  );
+}
+
+function SitingCandidateRow({ candidate }: { candidate: SensorSitingCandidate }) {
+  return (
+    <article className={styles.sitingRow}>
+      <strong>#{candidate.rank}</strong>
+      <span>PM2.5 {candidate.predictedValue.toFixed(1)}</span>
+      <span>gap {(candidate.coverageGapScore * 100).toFixed(0)}%</span>
+      <span>{candidate.nearestSensorKm === null ? "no sensors" : `${candidate.nearestSensorKm.toFixed(2)} km`}</span>
+      <span>{candidate.latitude.toFixed(4)}, {candidate.longitude.toFixed(4)}</span>
+      <span>score {candidate.score.toFixed(3)}</span>
+    </article>
   );
 }
 

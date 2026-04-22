@@ -15,6 +15,8 @@ const MapPage = lazy(() => import("./pages/MapPage"));
 const DiagnosticsPage = lazy(() => import("./pages/DiagnosticsPage"));
 const HealthPage = lazy(() => import("./pages/HealthPage"));
 const AirFusePage = lazy(() => import("./pages/AirFusePage"));
+const PoiExposurePage = lazy(() => import("./pages/PoiExposurePage"));
+const OutcomeModelPage = lazy(() => import("./pages/OutcomeModelPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -35,6 +37,8 @@ function RoutesView() {
             <Route path="/diagnostics/:id" element={<DiagnosticsPage />} />
             <Route path="/health" element={<HealthPage />} />
             <Route path="/health/:id" element={<HealthPage />} />
+            <Route path="/poi" element={<PoiExposurePage />} />
+            <Route path="/outcome-model" element={<OutcomeModelPage />} />
           </Routes>
         </Suspense>
       </Shell>

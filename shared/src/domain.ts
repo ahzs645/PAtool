@@ -182,6 +182,149 @@ export type AreaBounds = {
   west: number;
 };
 
+export type PasModelingUse =
+  | "snapshot"
+  | "calibration"
+  | "virtual-sensing"
+  | "sensor-siting";
+
+export type PasModelingFieldRole =
+  | "identity"
+  | "location"
+  | "pm"
+  | "meteorology"
+  | "quality"
+  | "hardware"
+  | "reference"
+  | "metadata";
+
+export type PasModelingField = {
+  key: keyof PasRecord;
+  label: string;
+  role: PasModelingFieldRole;
+  unit?: string;
+  requiredFor: readonly PasModelingUse[];
+};
+
+export const PAS_MODELING_FIELD_MANIFEST = [
+  { key: "id", label: "Sensor ID", role: "identity", requiredFor: ["snapshot", "calibration", "virtual-sensing", "sensor-siting"] },
+  { key: "label", label: "Label", role: "identity", requiredFor: ["snapshot"] },
+  { key: "latitude", label: "Latitude", role: "location", unit: "degrees", requiredFor: ["snapshot", "calibration", "virtual-sensing", "sensor-siting"] },
+  { key: "longitude", label: "Longitude", role: "location", unit: "degrees", requiredFor: ["snapshot", "calibration", "virtual-sensing", "sensor-siting"] },
+  { key: "locationType", label: "Location type", role: "metadata", requiredFor: ["snapshot", "virtual-sensing", "sensor-siting"] },
+  { key: "pm25Current", label: "PM2.5 current", role: "pm", unit: "ug/m3", requiredFor: ["snapshot", "sensor-siting"] },
+  { key: "pm25_1hr", label: "PM2.5 1h", role: "pm", unit: "ug/m3", requiredFor: ["snapshot", "calibration", "virtual-sensing", "sensor-siting"] },
+  { key: "pm25Cf1", label: "PM2.5 CF=1", role: "pm", unit: "ug/m3", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "pm25Atm", label: "PM2.5 ATM", role: "pm", unit: "ug/m3", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "pm25Alt", label: "PM2.5 ALT", role: "pm", unit: "ug/m3", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "particleCount03um", label: "0.3um count", role: "pm", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "humidity", label: "Humidity", role: "meteorology", unit: "%", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "temperature", label: "Temperature", role: "meteorology", unit: "F", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "pressure", label: "Pressure", role: "meteorology", unit: "hPa", requiredFor: ["virtual-sensing"] },
+  { key: "confidence", label: "Confidence", role: "quality", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "channelFlags", label: "Channel flags", role: "quality", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "elevationMeters", label: "Elevation", role: "location", unit: "m", requiredFor: ["virtual-sensing", "sensor-siting"] },
+  { key: "distanceToClosestMonitorKm", label: "Nearest reference distance", role: "reference", unit: "km", requiredFor: ["calibration", "virtual-sensing"] },
+  { key: "hardwareVersion", label: "Hardware", role: "hardware", requiredFor: ["calibration"] },
+  { key: "firmwareVersion", label: "Firmware", role: "hardware", requiredFor: ["calibration"] },
+] as const satisfies readonly PasModelingField[];
+
+export type PasFieldCompleteness = {
+  key: keyof PasRecord;
+  label: string;
+  role: PasModelingFieldRole;
+  present: number;
+  missing: number;
+  completeness: number;
+  requiredFor: readonly PasModelingUse[];
+};
+
+export type PasDatasetHealthWarning = {
+  code: string;
+  message: string;
+  severity: "info" | "warning" | "critical";
+};
+
+export type PasDatasetHealthSummary = {
+  generatedAt: string;
+  source: PasCollection["source"];
+  totalRecords: number;
+  outsideRecords: number;
+  insideRecords: number;
+  unknownLocationRecords: number;
+  validCoordinateRecords: number;
+  missingCoordinateRecords: number;
+  recordsWithPm25: number;
+  modelReadyRecords: number;
+  modelReadyFraction: number;
+  duplicateIds: string[];
+  bounds: AreaBounds | null;
+  fieldCompleteness: PasFieldCompleteness[];
+  warnings: PasDatasetHealthWarning[];
+};
+
+export type PatModelingFieldKey =
+  | "pm25A"
+  | "pm25B"
+  | "pm25Cf1A"
+  | "pm25Cf1B"
+  | "pm25AtmA"
+  | "pm25AtmB"
+  | "pm25AltA"
+  | "pm25AltB"
+  | "particleCount03umA"
+  | "particleCount03umB"
+  | "confidence"
+  | "channelFlags"
+  | "humidity"
+  | "temperature"
+  | "adjustedHumidity"
+  | "adjustedTemperature"
+  | "dewpoint"
+  | "pressure";
+
+export type PatModelingField = {
+  key: PatModelingFieldKey;
+  label: string;
+  role: "pm" | "particle-count" | "meteorology" | "quality";
+  unit?: string;
+};
+
+export const PAT_MODELING_FIELD_MANIFEST = [
+  { key: "pm25A", label: "PM2.5 A", role: "pm", unit: "ug/m3" },
+  { key: "pm25B", label: "PM2.5 B", role: "pm", unit: "ug/m3" },
+  { key: "pm25Cf1A", label: "PM2.5 CF=1 A", role: "pm", unit: "ug/m3" },
+  { key: "pm25Cf1B", label: "PM2.5 CF=1 B", role: "pm", unit: "ug/m3" },
+  { key: "pm25AtmA", label: "PM2.5 ATM A", role: "pm", unit: "ug/m3" },
+  { key: "pm25AtmB", label: "PM2.5 ATM B", role: "pm", unit: "ug/m3" },
+  { key: "pm25AltA", label: "PM2.5 ALT A", role: "pm", unit: "ug/m3" },
+  { key: "pm25AltB", label: "PM2.5 ALT B", role: "pm", unit: "ug/m3" },
+  { key: "particleCount03umA", label: "0.3um A", role: "particle-count" },
+  { key: "particleCount03umB", label: "0.3um B", role: "particle-count" },
+  { key: "humidity", label: "Humidity", role: "meteorology", unit: "%" },
+  { key: "temperature", label: "Temperature", role: "meteorology", unit: "F" },
+  { key: "adjustedHumidity", label: "Adjusted humidity", role: "meteorology", unit: "%" },
+  { key: "adjustedTemperature", label: "Adjusted temperature", role: "meteorology", unit: "F" },
+  { key: "dewpoint", label: "Dewpoint", role: "meteorology", unit: "F" },
+  { key: "pressure", label: "Pressure", role: "meteorology", unit: "hPa" },
+  { key: "confidence", label: "Confidence", role: "quality" },
+  { key: "channelFlags", label: "Channel flags", role: "quality" },
+] as const satisfies readonly PatModelingField[];
+
+export type PatModelingMatrixOptions = {
+  fields?: readonly PatModelingFieldKey[];
+  timeIndex?: "union" | "intersection";
+};
+
+export type PatModelingMatrix = {
+  sensorIds: string[];
+  timestamps: string[];
+  fields: PatModelingFieldKey[];
+  values: Array<Array<Array<number | null>>>;
+  sensorCompleteness: Array<{ sensorId: string; present: number; missing: number; completeness: number }>;
+  fieldCompleteness: Array<{ field: PatModelingFieldKey; present: number; missing: number; completeness: number }>;
+};
+
 // Rich aggregation bucket
 export type AggregationStats = {
   mean: number | null;
@@ -845,6 +988,214 @@ export function pasFilterArea(collection: PasCollection, bounds: AreaBounds): Pa
         record.longitude <= bounds.east &&
         record.longitude >= bounds.west
     )
+  };
+}
+
+function isPresentValue(value: unknown): boolean {
+  if (value === null || value === undefined) return false;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value === "string") return value.trim().length > 0;
+  return true;
+}
+
+function hasValidCoordinates(record: PasRecord): boolean {
+  return Number.isFinite(record.latitude) &&
+    Number.isFinite(record.longitude) &&
+    record.latitude >= -90 &&
+    record.latitude <= 90 &&
+    record.longitude >= -180 &&
+    record.longitude <= 180;
+}
+
+function hasUsablePm25(record: PasRecord): boolean {
+  return [
+    record.pm25_1hr,
+    record.pm25Current,
+    record.pm25Cf1,
+    record.pm25Atm,
+    record.pm25Alt,
+  ].some(isPresentValue);
+}
+
+export function summarizePasDatasetHealth(collection: PasCollection): PasDatasetHealthSummary {
+  const idCounts = new Map<string, number>();
+  for (const record of collection.records) {
+    idCounts.set(record.id, (idCounts.get(record.id) ?? 0) + 1);
+  }
+
+  const coordinateRecords = collection.records.filter(hasValidCoordinates);
+  const outsideRecords = collection.records.filter((record) => record.locationType === "outside").length;
+  const insideRecords = collection.records.filter((record) => record.locationType === "inside").length;
+  const unknownLocationRecords = collection.records.filter((record) => record.locationType === "unknown").length;
+  const recordsWithPm25 = collection.records.filter(hasUsablePm25).length;
+  const modelReadyRecords = collection.records.filter(
+    (record) => record.locationType === "outside" && hasValidCoordinates(record) && hasUsablePm25(record),
+  ).length;
+
+  const bounds = coordinateRecords.length
+    ? coordinateRecords.reduce<AreaBounds>((acc, record) => ({
+        north: Math.max(acc.north, record.latitude),
+        south: Math.min(acc.south, record.latitude),
+        east: Math.max(acc.east, record.longitude),
+        west: Math.min(acc.west, record.longitude),
+      }), {
+        north: coordinateRecords[0].latitude,
+        south: coordinateRecords[0].latitude,
+        east: coordinateRecords[0].longitude,
+        west: coordinateRecords[0].longitude,
+      })
+    : null;
+
+  const fieldCompleteness = PAS_MODELING_FIELD_MANIFEST.map((field) => {
+    const present = collection.records.filter((record) => isPresentValue(record[field.key])).length;
+    const missing = collection.records.length - present;
+    return {
+      key: field.key,
+      label: field.label,
+      role: field.role,
+      present,
+      missing,
+      completeness: collection.records.length ? present / collection.records.length : 0,
+      requiredFor: field.requiredFor,
+    };
+  });
+
+  const duplicateIds = [...idCounts.entries()]
+    .filter(([, count]) => count > 1)
+    .map(([id]) => id)
+    .sort();
+
+  const warnings: PasDatasetHealthWarning[] = [];
+  if (collection.records.length === 0) {
+    warnings.push({ code: "empty-dataset", severity: "critical", message: "No sensor records are available." });
+  }
+  if (duplicateIds.length > 0) {
+    warnings.push({
+      code: "duplicate-ids",
+      severity: "warning",
+      message: `${duplicateIds.length} sensor IDs appear more than once.`,
+    });
+  }
+  if (coordinateRecords.length < collection.records.length) {
+    warnings.push({
+      code: "missing-coordinates",
+      severity: "warning",
+      message: `${collection.records.length - coordinateRecords.length} records have invalid coordinates.`,
+    });
+  }
+  if (recordsWithPm25 < collection.records.length) {
+    warnings.push({
+      code: "missing-pm25",
+      severity: "warning",
+      message: `${collection.records.length - recordsWithPm25} records do not expose a usable PM2.5 field.`,
+    });
+  }
+  if (unknownLocationRecords > 0) {
+    warnings.push({
+      code: "unknown-location-type",
+      severity: "info",
+      message: `${unknownLocationRecords} records have unknown indoor/outdoor metadata.`,
+    });
+  }
+  if (outsideRecords === 0 && collection.records.length > 0) {
+    warnings.push({
+      code: "no-outdoor-sensors",
+      severity: "critical",
+      message: "No outdoor sensors are available for surface modeling.",
+    });
+  }
+
+  const modelReadyFraction = collection.records.length ? modelReadyRecords / collection.records.length : 0;
+  if (collection.records.length > 0 && modelReadyFraction < 0.5) {
+    warnings.push({
+      code: "low-model-readiness",
+      severity: "warning",
+      message: `Only ${(modelReadyFraction * 100).toFixed(1)}% of records are outdoor, geolocated, and PM-ready.`,
+    });
+  }
+
+  return {
+    generatedAt: collection.generatedAt,
+    source: collection.source,
+    totalRecords: collection.records.length,
+    outsideRecords,
+    insideRecords,
+    unknownLocationRecords,
+    validCoordinateRecords: coordinateRecords.length,
+    missingCoordinateRecords: collection.records.length - coordinateRecords.length,
+    recordsWithPm25,
+    modelReadyRecords,
+    modelReadyFraction,
+    duplicateIds,
+    bounds,
+    fieldCompleteness,
+    warnings,
+  };
+}
+
+function patNumericValue(point: PatPoint | undefined, field: PatModelingFieldKey): number | null {
+  if (!point) return null;
+  const value = point[field];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+export function buildPatModelingMatrix(
+  seriesList: readonly PatSeries[],
+  options: PatModelingMatrixOptions = {},
+): PatModelingMatrix {
+  const fields = [...(options.fields ?? ["pm25A", "pm25B", "humidity", "temperature", "pressure"])] as PatModelingFieldKey[];
+  const timeIndex = options.timeIndex ?? "union";
+  const sensorIds = seriesList.map((series) => series.meta.sensorId);
+  const pointMaps = seriesList.map((series) => new Map(series.points.map((point) => [point.timestamp, point])));
+
+  let timestamps: string[];
+  if (timeIndex === "intersection" && pointMaps.length > 0) {
+    timestamps = [...pointMaps[0].keys()].filter((timestamp) =>
+      pointMaps.every((pointMap) => pointMap.has(timestamp)),
+    );
+  } else {
+    timestamps = [...new Set(pointMaps.flatMap((pointMap) => [...pointMap.keys()]))];
+  }
+  timestamps.sort();
+
+  const values = pointMaps.map((pointMap) =>
+    timestamps.map((timestamp) => {
+      const point = pointMap.get(timestamp);
+      return fields.map((field) => patNumericValue(point, field));
+    }),
+  );
+
+  const sensorCompleteness = values.map((sensorValues, index) => {
+    const flat = sensorValues.flat();
+    const present = flat.filter((value) => value !== null).length;
+    const missing = flat.length - present;
+    return {
+      sensorId: sensorIds[index],
+      present,
+      missing,
+      completeness: flat.length ? present / flat.length : 0,
+    };
+  });
+
+  const fieldCompleteness = fields.map((field, fieldIndex) => {
+    const fieldValues = values.flatMap((sensorValues) => sensorValues.map((timestampValues) => timestampValues[fieldIndex]));
+    const present = fieldValues.filter((value) => value !== null).length;
+    const missing = fieldValues.length - present;
+    return {
+      field,
+      present,
+      missing,
+      completeness: fieldValues.length ? present / fieldValues.length : 0,
+    };
+  });
+
+  return {
+    sensorIds,
+    timestamps,
+    fields,
+    values,
+    sensorCompleteness,
+    fieldCompleteness,
   };
 }
 
@@ -1523,6 +1874,254 @@ export function runAdvancedHourlyAbQc(series: PatSeries, options: AdvancedQcOpti
   });
 }
 
+// --- Paper 3 (Carroll et al. 2025, Sci. Reports) QC pipeline ------------------------------------
+// Implements the nine-rule PurpleAir cleaning recipe described in the Methods / Data sources
+// section. The rules are split into monitor-level short-circuits (drop the whole sensor) and
+// observation-level gates (null out specific PM2.5 / T / RH points).
+// Reference: "Estimating PM2.5 concentrations at public schools in North Carolina using multiple
+// data sources and interpolation methods", Sci. Reports 15:42600 (2025).
+
+export type Paper3QcOptions = {
+  /** Relative % disagreement between A/B channels considered a drop when avg > abHighCutoff. */
+  abHighPercentThreshold?: number; // default 0.10 (i.e. 10%)
+  /** µg/m³ cutoff above which we switch from absolute to percent A/B rule. */
+  abHighCutoff?: number;           // default 100
+  /** Absolute µg/m³ A-B disagreement considered a drop when avg <= abHighCutoff. */
+  abLowAbsoluteThreshold?: number; // default 10
+  /** RH drops outside (rhMin, rhMax) exclusive per the paper. */
+  rhMin?: number;                  // default 0
+  rhMax?: number;                  // default 100
+  /** °F. Drops outside (tempMinF, tempMaxF) exclusive. */
+  tempMinF?: number;               // default -200
+  tempMaxF?: number;               // default 1000
+  /** Minimum full-series temperature range in °F to consider a monitor outdoor. */
+  minTempRangeF?: number;          // default 10 (paper tested 10 and 20)
+  /** IQR multiplier for the median ± m*IQR observation-level outlier gate. */
+  iqrMultiplier?: number;          // default 1.5
+  /** Max fraction of null PM2.5 observations before the monitor is dropped. */
+  maxMissingFraction?: number;     // default 0.10
+  /** If true, observations that fail a gate are nulled out in cleanedSeries. */
+  removeOutOfSpec?: boolean;       // default false
+  /** If true, caller is asserting that the upstream metadata flagged this sensor indoor. */
+  locationIsIndoor?: boolean;      // default false
+};
+
+export type Paper3MonitorVerdict =
+  | "keep"
+  | "drop-indoor"
+  | "drop-temp-all-missing"
+  | "drop-temp-range-too-small"
+  | "drop-missing-data-exceeded";
+
+export type Paper3QcResult = {
+  sensorId: string;
+  monitorVerdict: Paper3MonitorVerdict;
+  totalPoints: number;
+  flaggedPoints: number;
+  removedPoints: number;
+  missingFraction: number;
+  tempRangeF: number | null;
+  iqr: { median: number; q1: number; q3: number; lowFence: number; highFence: number } | null;
+  issues: { code: string; message: string; count: number }[];
+  cleanedSeries: PatSeries;
+};
+
+function computeIqrStats(values: number[], multiplier: number):
+  { median: number; q1: number; q3: number; lowFence: number; highFence: number } | null {
+  const finite = values.filter((v) => Number.isFinite(v)).sort((a, b) => a - b);
+  if (finite.length < 4) return null;
+  const q = (p: number) => {
+    const idx = (finite.length - 1) * p;
+    const lo = Math.floor(idx);
+    const hi = Math.ceil(idx);
+    if (lo === hi) return finite[lo];
+    return finite[lo] + (finite[hi] - finite[lo]) * (idx - lo);
+  };
+  const q1 = q(0.25);
+  const q3 = q(0.75);
+  const med = q(0.5);
+  const iqr = q3 - q1;
+  return {
+    median: med,
+    q1,
+    q3,
+    lowFence: med - multiplier * iqr,
+    highFence: med + multiplier * iqr,
+  };
+}
+
+export function runPaper3Qc(series: PatSeries, options: Paper3QcOptions = {}): Paper3QcResult {
+  const {
+    abHighPercentThreshold = 0.10,
+    abHighCutoff = 100,
+    abLowAbsoluteThreshold = 10,
+    rhMin = 0,
+    rhMax = 100,
+    tempMinF = -200,
+    tempMaxF = 1000,
+    minTempRangeF = 10,
+    iqrMultiplier = 1.5,
+    maxMissingFraction = 0.10,
+    removeOutOfSpec = false,
+    locationIsIndoor = false,
+  } = options;
+
+  const sensorId = series.meta.sensorId;
+  const totalPoints = series.points.length;
+  const pmNullCount = series.points.filter((p) => p.pm25A === null && p.pm25B === null).length;
+  const missingFraction = totalPoints === 0 ? 1 : pmNullCount / totalPoints;
+
+  const tempValues = series.points
+    .map((p) => p.temperature)
+    .filter((t): t is number => t !== null && Number.isFinite(t));
+  const tempRangeF = tempValues.length ? Math.max(...tempValues) - Math.min(...tempValues) : null;
+
+  // --- Monitor-level short-circuits -----------------------------------------------------------
+  const emptyResult = (verdict: Paper3MonitorVerdict, reason: string): Paper3QcResult => ({
+    sensorId,
+    monitorVerdict: verdict,
+    totalPoints,
+    flaggedPoints: totalPoints,
+    removedPoints: removeOutOfSpec ? totalPoints : 0,
+    missingFraction,
+    tempRangeF,
+    iqr: null,
+    issues: [{ code: verdict, message: reason, count: totalPoints }],
+    cleanedSeries: removeOutOfSpec
+      ? { ...series, points: series.points.map((p) => ({ ...p, pm25A: null, pm25B: null })) }
+      : series,
+  });
+
+  if (locationIsIndoor) {
+    return emptyResult("drop-indoor", "Monitor metadata flagged as indoor.");
+  }
+  if (tempValues.length === 0) {
+    return emptyResult("drop-temp-all-missing", "All temperature observations are missing.");
+  }
+  if (tempRangeF !== null && tempRangeF < minTempRangeF) {
+    return emptyResult(
+      "drop-temp-range-too-small",
+      `Temperature range ${tempRangeF.toFixed(1)}°F < ${minTempRangeF}°F suggests indoor monitor.`,
+    );
+  }
+  if (missingFraction > maxMissingFraction) {
+    return emptyResult(
+      "drop-missing-data-exceeded",
+      `Missing-data fraction ${(missingFraction * 100).toFixed(1)}% exceeds ${(maxMissingFraction * 100).toFixed(1)}%.`,
+    );
+  }
+
+  // --- Observation-level gates ----------------------------------------------------------------
+  const avgValues = series.points.map((p) =>
+    p.pm25A !== null && p.pm25B !== null ? (p.pm25A + p.pm25B) / 2 : null,
+  );
+  const iqr = computeIqrStats(
+    avgValues.filter((v): v is number => v !== null),
+    iqrMultiplier,
+  );
+
+  const abHighIdx = new Set<number>();
+  const abLowIdx = new Set<number>();
+  const rhIdx = new Set<number>();
+  const tempIdx = new Set<number>();
+  const iqrIdx = new Set<number>();
+
+  series.points.forEach((point, i) => {
+    const a = point.pm25A;
+    const b = point.pm25B;
+    if (a !== null && b !== null) {
+      const avg = (a + b) / 2;
+      const diff = Math.abs(a - b);
+      if (avg > abHighCutoff && avg > 0 && diff / avg > abHighPercentThreshold) {
+        abHighIdx.add(i);
+      } else if (avg <= abHighCutoff && diff > abLowAbsoluteThreshold) {
+        abLowIdx.add(i);
+      }
+    }
+    if (point.humidity != null && (point.humidity <= rhMin || point.humidity >= rhMax)) {
+      rhIdx.add(i);
+    }
+    if (point.temperature != null && (point.temperature <= tempMinF || point.temperature >= tempMaxF)) {
+      tempIdx.add(i);
+    }
+    const avg = avgValues[i];
+    if (iqr && avg !== null && (avg < iqr.lowFence || avg > iqr.highFence)) {
+      iqrIdx.add(i);
+    }
+  });
+
+  const allFlagged = new Set<number>([...abHighIdx, ...abLowIdx, ...rhIdx, ...tempIdx, ...iqrIdx]);
+  let removedPoints = 0;
+
+  const cleanedPoints = series.points.map((point, i) => {
+    if (!allFlagged.has(i)) return point;
+    if (!removeOutOfSpec) return point;
+    removedPoints++;
+    return {
+      ...point,
+      pm25A: abHighIdx.has(i) || abLowIdx.has(i) || iqrIdx.has(i) ? null : point.pm25A,
+      pm25B: abHighIdx.has(i) || abLowIdx.has(i) || iqrIdx.has(i) ? null : point.pm25B,
+      humidity: rhIdx.has(i) ? null : point.humidity,
+      temperature: tempIdx.has(i) ? null : point.temperature,
+    };
+  });
+
+  return {
+    sensorId,
+    monitorVerdict: "keep",
+    totalPoints,
+    flaggedPoints: allFlagged.size,
+    removedPoints,
+    missingFraction,
+    tempRangeF,
+    iqr,
+    issues: [
+      { code: "ab-drift-high", message: `|A-B|/avg > ${abHighPercentThreshold * 100}% when avg > ${abHighCutoff}.`, count: abHighIdx.size },
+      { code: "ab-drift-low", message: `|A-B| > ${abLowAbsoluteThreshold} µg/m³ when avg ≤ ${abHighCutoff}.`, count: abLowIdx.size },
+      { code: "rh-out-of-range", message: `Relative humidity outside (${rhMin}, ${rhMax}).`, count: rhIdx.size },
+      { code: "temp-out-of-range", message: `Temperature outside (${tempMinF}, ${tempMaxF}) °F.`, count: tempIdx.size },
+      { code: "iqr-outlier", message: `PM2.5 average outside median ± ${iqrMultiplier}·IQR.`, count: iqrIdx.size },
+    ].filter((issue) => issue.count > 0),
+    cleanedSeries: { ...series, points: cleanedPoints },
+  };
+}
+
+/**
+ * Reduced Major Axis (RMA) / geometric-mean regression. Unlike OLS this minimizes the product
+ * of x- and y-residuals, which is appropriate for inter-unit comparisons where both axes have
+ * measurement error (Paper 1 Supplementary §1 uses this for PurpleAir A/B agreement).
+ */
+export function reducedMajorAxisRegression(
+  xs: number[],
+  ys: number[],
+): { slope: number; intercept: number; pearsonR: number; n: number } | null {
+  if (xs.length !== ys.length || xs.length < 3) return null;
+  const pairs: Array<[number, number]> = [];
+  for (let i = 0; i < xs.length; i++) {
+    if (Number.isFinite(xs[i]) && Number.isFinite(ys[i])) pairs.push([xs[i], ys[i]]);
+  }
+  if (pairs.length < 3) return null;
+  const n = pairs.length;
+  const meanX = pairs.reduce((s, p) => s + p[0], 0) / n;
+  const meanY = pairs.reduce((s, p) => s + p[1], 0) / n;
+  let sxx = 0;
+  let syy = 0;
+  let sxy = 0;
+  for (const [x, y] of pairs) {
+    const dx = x - meanX;
+    const dy = y - meanY;
+    sxx += dx * dx;
+    syy += dy * dy;
+    sxy += dx * dy;
+  }
+  if (sxx === 0 || syy === 0) return null;
+  const slopeSign = sxy >= 0 ? 1 : -1;
+  const slope = slopeSign * Math.sqrt(syy / sxx);
+  const intercept = meanY - slope * meanX;
+  const pearsonR = sxy / Math.sqrt(sxx * syy);
+  return { slope, intercept, pearsonR, n };
+}
+
 export function patInternalFit(series: PatSeries): LinearFitResult | null {
   const pairs = series.points
     .filter((p) => p.pm25A !== null && p.pm25B !== null)
@@ -2189,6 +2788,288 @@ export function idwInterpolate(
   }
 
   return { width: gridWidth, height: gridHeight, bounds, values, min, max };
+}
+
+// ---------------------------------------------------------------------------
+// Spatio-temporal IDW (Carroll et al. 2025 / Li-Heap style)
+//
+// Weight: w = 1 / (d^2 + C * |dt|)
+//   - d is great-circle distance in km between query and sensor
+//   - dt is time offset in days between query timestamp and sensor timestamp
+//   - C is a tunable parameter (km^2 / day); grid-searched by LOOCV RMSE
+//
+// Defaults follow the NC schools PM2.5 study: 500 km spatial radius,
+// +/- 90 day time window. The helper also supports arbitrary query
+// locations (schools, POIs) so exposure can be interpolated to points
+// rather than a raster grid.
+// ---------------------------------------------------------------------------
+
+export type SpatioTemporalPoint = {
+  id?: string;
+  x: number; // longitude
+  y: number; // latitude
+  t: number; // timestamp in milliseconds since epoch
+  value: number;
+};
+
+export type SpatioTemporalIdwOptions = {
+  power?: number;            // default 2 (applied to spatial distance)
+  timeWeightC?: number;      // default 1 (units: km^2 / day)
+  maxDistanceKm?: number;    // default 500
+  maxDaysBack?: number;      // default 90 (how far in past to consider)
+  maxDaysForward?: number;   // default 90 (how far in future to consider)
+  maxNeighbors?: number;     // default -1 (use all within window)
+  minNeighbors?: number;     // default 1
+};
+
+export type SpatioTemporalQuery = {
+  id?: string;
+  x: number;
+  y: number;
+  t: number;
+};
+
+export type SpatioTemporalEstimate = {
+  id?: string;
+  x: number;
+  y: number;
+  t: number;
+  value: number | null; // null when no valid neighbors in window
+  neighborCount: number;
+  weightSum: number;
+};
+
+const MS_PER_DAY = 86_400_000;
+const SPATIOTEMPORAL_EPS = 1e-12;
+
+export function computeSpatioTemporalIdwWeight(
+  spatialDistSqKm2: number,
+  timeDeltaDays: number,
+  timeWeightC: number,
+  power: number = 2,
+): number {
+  const spatialTerm = power === 2
+    ? spatialDistSqKm2
+    : Math.pow(Math.max(spatialDistSqKm2, 0), power / 2);
+  const denom = spatialTerm + timeWeightC * Math.abs(timeDeltaDays);
+  if (denom <= 0) return Number.POSITIVE_INFINITY;
+  return 1 / denom;
+}
+
+function normalizeStOptions(options: SpatioTemporalIdwOptions): {
+  power: number;
+  timeWeightC: number;
+  maxDistanceKm: number;
+  maxDaysBack: number;
+  maxDaysForward: number;
+  maxNeighbors: number;
+  minNeighbors: number;
+  powerScale: number;
+} {
+  const power = options.power ?? 2;
+  return {
+    power,
+    timeWeightC: options.timeWeightC ?? 1,
+    maxDistanceKm: options.maxDistanceKm ?? 500,
+    maxDaysBack: options.maxDaysBack ?? 90,
+    maxDaysForward: options.maxDaysForward ?? 90,
+    maxNeighbors: options.maxNeighbors ?? -1,
+    minNeighbors: options.minNeighbors ?? 1,
+    powerScale: power / 2,
+  };
+}
+
+export function idwSpatioTemporalEstimate(
+  points: SpatioTemporalPoint[],
+  queries: SpatioTemporalQuery[],
+  options: SpatioTemporalIdwOptions = {},
+): SpatioTemporalEstimate[] {
+  const cfg = normalizeStOptions(options);
+  const maxDistSq = cfg.maxDistanceKm * cfg.maxDistanceKm;
+  const results: SpatioTemporalEstimate[] = [];
+
+  for (const q of queries) {
+    let exactValue: number | null = null;
+    const candidates: { w: number; value: number }[] = [];
+
+    for (const p of points) {
+      if (!Number.isFinite(p.value)) continue;
+      const dtDays = (q.t - p.t) / MS_PER_DAY;
+      if (dtDays > cfg.maxDaysBack) continue;
+      if (-dtDays > cfg.maxDaysForward) continue;
+      const distSq = approximateDistanceSquaredKm(q.x, q.y, p.x, p.y);
+      if (distSq > maxDistSq) continue;
+
+      const absDt = Math.abs(dtDays);
+      if (distSq < SPATIOTEMPORAL_EPS && absDt < SPATIOTEMPORAL_EPS) {
+        exactValue = p.value;
+        break;
+      }
+
+      const spatialTerm = cfg.power === 2 ? distSq : Math.pow(Math.max(distSq, 0), cfg.powerScale);
+      const denom = spatialTerm + cfg.timeWeightC * absDt;
+      if (denom <= 0) continue;
+      candidates.push({ w: 1 / denom, value: p.value });
+    }
+
+    if (exactValue !== null) {
+      results.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        t: q.t,
+        value: exactValue,
+        neighborCount: 1,
+        weightSum: Number.POSITIVE_INFINITY,
+      });
+      continue;
+    }
+
+    let selected = candidates;
+    if (cfg.maxNeighbors > 0 && candidates.length > cfg.maxNeighbors) {
+      candidates.sort((a, b) => b.w - a.w);
+      selected = candidates.slice(0, cfg.maxNeighbors);
+    }
+
+    if (selected.length < cfg.minNeighbors) {
+      results.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        t: q.t,
+        value: null,
+        neighborCount: selected.length,
+        weightSum: 0,
+      });
+      continue;
+    }
+
+    let weightSum = 0;
+    let valueSum = 0;
+    for (const s of selected) {
+      weightSum += s.w;
+      valueSum += s.w * s.value;
+    }
+
+    results.push({
+      id: q.id,
+      x: q.x,
+      y: q.y,
+      t: q.t,
+      value: weightSum > 0 ? valueSum / weightSum : null,
+      neighborCount: selected.length,
+      weightSum,
+    });
+  }
+
+  return results;
+}
+
+export function idwSpatioTemporalInterpolateGrid(
+  points: SpatioTemporalPoint[],
+  gridWidth: number,
+  gridHeight: number,
+  bounds: { west: number; east: number; south: number; north: number },
+  targetTime: number,
+  options: SpatioTemporalIdwOptions = {},
+): InterpolationGrid {
+  if (gridWidth < 1 || gridHeight < 1) {
+    return { width: gridWidth, height: gridHeight, bounds, values: new Float64Array(0), min: 0, max: 0 };
+  }
+
+  const values = new Float64Array(gridWidth * gridHeight);
+  const lonStep = gridWidth > 1 ? (bounds.east - bounds.west) / (gridWidth - 1) : 0;
+  const latStep = gridHeight > 1 ? (bounds.north - bounds.south) / (gridHeight - 1) : 0;
+
+  const queries: SpatioTemporalQuery[] = [];
+  queries.length = gridWidth * gridHeight;
+  for (let row = 0; row < gridHeight; row++) {
+    for (let col = 0; col < gridWidth; col++) {
+      queries[row * gridWidth + col] = {
+        x: bounds.west + col * lonStep,
+        y: bounds.south + row * latStep,
+        t: targetTime,
+      };
+    }
+  }
+
+  const estimates = idwSpatioTemporalEstimate(points, queries, options);
+
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 0; i < estimates.length; i++) {
+    const v = estimates[i].value ?? 0;
+    values[i] = v;
+    if (v < min) min = v;
+    if (v > max) max = v;
+  }
+
+  if (!Number.isFinite(min)) min = 0;
+  if (!Number.isFinite(max)) max = 0;
+
+  return { width: gridWidth, height: gridHeight, bounds, values, min, max };
+}
+
+export type StIdwLoocvResult = {
+  timeWeightC: number;
+  rmse: number;
+  mae: number;
+  bias: number;
+  sampleCount: number;
+};
+
+export function stIdwLeaveOneOut(
+  points: SpatioTemporalPoint[],
+  timeWeightC: number,
+  options: Omit<SpatioTemporalIdwOptions, "timeWeightC"> = {},
+): StIdwLoocvResult {
+  let sumSq = 0;
+  let sumAbs = 0;
+  let sumSigned = 0;
+  let n = 0;
+
+  for (let i = 0; i < points.length; i++) {
+    const target = points[i];
+    const others: SpatioTemporalPoint[] = [];
+    for (let j = 0; j < points.length; j++) {
+      if (j !== i) others.push(points[j]);
+    }
+    const est = idwSpatioTemporalEstimate(
+      others,
+      [{ x: target.x, y: target.y, t: target.t, id: target.id }],
+      { ...options, timeWeightC },
+    );
+    if (!est[0] || est[0].value == null) continue;
+    const err = est[0].value - target.value;
+    sumSq += err * err;
+    sumAbs += Math.abs(err);
+    sumSigned += err;
+    n++;
+  }
+
+  return {
+    timeWeightC,
+    rmse: n > 0 ? Math.sqrt(sumSq / n) : Number.NaN,
+    mae: n > 0 ? sumAbs / n : Number.NaN,
+    bias: n > 0 ? sumSigned / n : Number.NaN,
+    sampleCount: n,
+  };
+}
+
+export function stIdwGridSearchTimeWeight(
+  points: SpatioTemporalPoint[],
+  candidates: number[],
+  options: Omit<SpatioTemporalIdwOptions, "timeWeightC"> = {},
+): { best: StIdwLoocvResult; all: StIdwLoocvResult[] } {
+  if (candidates.length === 0) {
+    throw new Error("stIdwGridSearchTimeWeight requires at least one candidate timeWeightC");
+  }
+  const all = candidates.map((c) => stIdwLeaveOneOut(points, c, options));
+  const valid = all.filter((r) => Number.isFinite(r.rmse));
+  const best = valid.length > 0
+    ? valid.reduce((a, b) => (a.rmse <= b.rmse ? a : b))
+    : all[0];
+  return { best, all };
 }
 
 function computeExperimentalVariogramFromDistanceMatrix(
@@ -3106,6 +3987,291 @@ export function interpolateOrdinaryKrigingModel(
     "exact",
     fallbackReason,
   );
+}
+
+// ---------------------------------------------------------------------------
+// Point-based estimators
+//
+// estimateAtPoints lets us interpolate to arbitrary lat/lon receptors
+// (schools, POIs, monitoring sites) without raster grids. Both IDW and
+// kriging variants produce a per-point value plus the source it was derived
+// from ("exact" sample, kriging system, IDW fallback, nearest, or none).
+// ---------------------------------------------------------------------------
+
+export type PointEstimateQuery = {
+  id?: string;
+  x: number; // longitude
+  y: number; // latitude
+};
+
+export type PointEstimateSource =
+  | "exact"
+  | "kriging"
+  | "idw-fallback"
+  | "nearest"
+  | "none";
+
+export type PointEstimate = {
+  id?: string;
+  x: number;
+  y: number;
+  value: number | null;
+  neighborCount: number;
+  source: PointEstimateSource;
+};
+
+export type IdwEstimateOptions = {
+  power?: number;          // default 2
+  maxNeighbors?: number;   // default -1 (all)
+  maxDistanceKm?: number;  // default -1 (no limit)
+};
+
+export function idwEstimateAtPoints(
+  knownPoints: InterpolationPoint[],
+  queries: PointEstimateQuery[],
+  options: IdwEstimateOptions = {},
+): PointEstimate[] {
+  const power = options.power ?? 2;
+  const maxNeighbors = options.maxNeighbors ?? -1;
+  const maxDistanceKm = options.maxDistanceKm ?? -1;
+  const powerScale = power / 2;
+  const normalizedPoints = mergeCoincidentPoints(knownPoints);
+  const maxDistSq = maxDistanceKm > 0 ? maxDistanceKm * maxDistanceKm : Number.POSITIVE_INFINITY;
+  const results: PointEstimate[] = [];
+
+  for (const q of queries) {
+    if (normalizedPoints.length === 0) {
+      results.push({ id: q.id, x: q.x, y: q.y, value: null, neighborCount: 0, source: "none" });
+      continue;
+    }
+
+    let exactValue: number | null = null;
+    const candidates: { distSq: number; value: number }[] = [];
+
+    for (const p of normalizedPoints) {
+      const distSq = approximateDistanceSquaredKm(q.x, q.y, p.x, p.y);
+      if (distSq < 1e-20) {
+        exactValue = p.value;
+        break;
+      }
+      if (distSq > maxDistSq) continue;
+      candidates.push({ distSq, value: p.value });
+    }
+
+    if (exactValue !== null) {
+      results.push({ id: q.id, x: q.x, y: q.y, value: exactValue, neighborCount: 1, source: "exact" });
+      continue;
+    }
+
+    let selected = candidates;
+    if (maxNeighbors > 0 && candidates.length > maxNeighbors) {
+      candidates.sort((a, b) => a.distSq - b.distSq);
+      selected = candidates.slice(0, maxNeighbors);
+    }
+
+    if (selected.length === 0) {
+      results.push({ id: q.id, x: q.x, y: q.y, value: null, neighborCount: 0, source: "none" });
+      continue;
+    }
+
+    let weightSum = 0;
+    let valueSum = 0;
+    for (const c of selected) {
+      const w = power === 2 ? 1 / c.distSq : Math.pow(c.distSq, -powerScale);
+      weightSum += w;
+      valueSum += w * c.value;
+    }
+
+    results.push({
+      id: q.id,
+      x: q.x,
+      y: q.y,
+      value: weightSum > 0 ? valueSum / weightSum : null,
+      neighborCount: selected.length,
+      source: "idw-fallback",
+    });
+  }
+
+  return results;
+}
+
+export type KrigingEstimateOptions = {
+  maxNeighbors?: number; // default 12
+};
+
+export function krigingEstimateAtPoints(
+  model: OrdinaryKrigingModel,
+  queries: PointEstimateQuery[],
+  options: KrigingEstimateOptions = {},
+): PointEstimate[] {
+  const maxNeighbors = options.maxNeighbors ?? 12;
+  const pointCount = model.pointValues.length;
+  if (pointCount === 0) {
+    return queries.map((q) => ({
+      id: q.id,
+      x: q.x,
+      y: q.y,
+      value: null,
+      neighborCount: 0,
+      source: "none" as PointEstimateSource,
+    }));
+  }
+
+  const { pointXs, pointYs, pointValues, pairwiseSemivariance, nugget, sill, range } = model;
+
+  // Use the centroid of the queries to pick a single projection latitude — keeps
+  // local Euclidean ranking stable. Falls back to the model centroid if queries
+  // are empty.
+  let centroidLat = 0;
+  if (queries.length > 0) {
+    for (const q of queries) centroidLat += q.y;
+    centroidLat /= queries.length;
+  } else {
+    let sumY = 0;
+    for (let i = 0; i < pointCount; i++) sumY += pointYs[i];
+    centroidLat = sumY / pointCount;
+  }
+  const projectionCosLat = Math.cos(toRadians(centroidLat));
+  const pointProjectedXs = new Float64Array(pointCount);
+  const pointProjectedYs = new Float64Array(pointCount);
+  for (let i = 0; i < pointCount; i++) {
+    pointProjectedXs[i] = projectLongitudeKm(pointXs[i], projectionCosLat);
+    pointProjectedYs[i] = projectLatitudeKm(pointYs[i]);
+  }
+
+  const neighborLimit = Math.max(1, Math.min(maxNeighbors > 0 ? maxNeighbors : pointCount, pointCount));
+  const neighborIndexes = new Int32Array(neighborLimit);
+  const neighborDistances = new Float64Array(neighborLimit);
+  const maxSystemSize = neighborLimit + 1;
+  const aug = new Float64Array(maxSystemSize * (maxSystemSize + 1));
+  const weights = new Float64Array(maxSystemSize);
+
+  const out: PointEstimate[] = [];
+  for (const q of queries) {
+    const projectedX = projectLongitudeKm(q.x, projectionCosLat);
+    const projectedY = projectLatitudeKm(q.y);
+
+    let neighborCount = 0;
+    let worstNeighborSlot = 0;
+    let worstNeighborDistanceSq = -Infinity;
+    let exactMatchIndex = -1;
+
+    for (let i = 0; i < pointCount; i++) {
+      const distSq = projectedDistanceSquaredKm(projectedX, projectedY, pointProjectedXs[i], pointProjectedYs[i]);
+      if (distSq < 1e-20) {
+        exactMatchIndex = i;
+        break;
+      }
+      if (neighborCount < neighborLimit) {
+        neighborIndexes[neighborCount] = i;
+        neighborDistances[neighborCount] = distSq;
+        if (distSq > worstNeighborDistanceSq) {
+          worstNeighborDistanceSq = distSq;
+          worstNeighborSlot = neighborCount;
+        }
+        neighborCount++;
+        continue;
+      }
+      if (distSq < worstNeighborDistanceSq) {
+        neighborIndexes[worstNeighborSlot] = i;
+        neighborDistances[worstNeighborSlot] = distSq;
+        worstNeighborDistanceSq = neighborDistances[0];
+        worstNeighborSlot = 0;
+        for (let slot = 1; slot < neighborCount; slot++) {
+          if (neighborDistances[slot] > worstNeighborDistanceSq) {
+            worstNeighborDistanceSq = neighborDistances[slot];
+            worstNeighborSlot = slot;
+          }
+        }
+      }
+    }
+
+    if (exactMatchIndex >= 0) {
+      out.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        value: pointValues[exactMatchIndex],
+        neighborCount: 1,
+        source: "exact",
+      });
+      continue;
+    }
+
+    if (neighborCount === 0) {
+      out.push({ id: q.id, x: q.x, y: q.y, value: null, neighborCount: 0, source: "none" });
+      continue;
+    }
+
+    if (neighborCount < 2) {
+      out.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        value: pointValues[neighborIndexes[0]],
+        neighborCount,
+        source: "nearest",
+      });
+      continue;
+    }
+
+    const nn = neighborCount;
+    const size = nn + 1;
+    const stride = size + 1;
+    const diagonalJitter = Math.max((nugget + sill) * 1e-6, 1e-8);
+    for (let i = 0; i < nn; i++) {
+      const pointIndex = neighborIndexes[i];
+      neighborDistances[i] = approximateDistanceKm(q.x, q.y, pointXs[pointIndex], pointYs[pointIndex]);
+    }
+    for (let i = 0; i < nn; i++) {
+      const rowOffset = i * stride;
+      const leftIdx = neighborIndexes[i];
+      for (let j = 0; j < nn; j++) {
+        aug[rowOffset + j] = i === j
+          ? diagonalJitter
+          : pairwiseSemivariance[leftIdx * pointCount + neighborIndexes[j]];
+      }
+      aug[rowOffset + nn] = 1;
+      aug[rowOffset + size] = sphericalVariogram(neighborDistances[i], nugget, sill, range);
+    }
+    const lagrangeRowOffset = nn * stride;
+    for (let j = 0; j < nn; j++) aug[lagrangeRowOffset + j] = 1;
+    aug[lagrangeRowOffset + nn] = 0;
+    aug[lagrangeRowOffset + size] = 1;
+
+    const solved = solveAugmentedLinearSystem(aug, size, stride, weights);
+
+    if (!solved) {
+      let wSum = 0, vSum = 0;
+      for (let i = 0; i < nn; i++) {
+        const w = 1 / (neighborDistances[i] * neighborDistances[i]);
+        wSum += w;
+        vSum += w * pointValues[neighborIndexes[i]];
+      }
+      out.push({
+        id: q.id,
+        x: q.x,
+        y: q.y,
+        value: wSum > 0 ? vSum / wSum : null,
+        neighborCount: nn,
+        source: "idw-fallback",
+      });
+      continue;
+    }
+
+    let v = 0;
+    for (let i = 0; i < nn; i++) v += weights[i] * pointValues[neighborIndexes[i]];
+    out.push({
+      id: q.id,
+      x: q.x,
+      y: q.y,
+      value: Number.isFinite(v) ? v : pointValues[neighborIndexes[0]] ?? null,
+      neighborCount: nn,
+      source: "kriging",
+    });
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------

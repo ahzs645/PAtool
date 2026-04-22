@@ -57,7 +57,7 @@ export function DataTable<T>({
   }, [data, currentPage, pageSize]);
 
   return (
-    <div>
+    <div className={styles.table}>
       {/* Header */}
       <div className={styles.headerRow}>
         {columns.map((col) => (

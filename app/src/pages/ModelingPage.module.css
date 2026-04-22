@@ -126,6 +126,34 @@
   text-align: center;
 }
 
+.sitingList {
+  display: grid;
+  gap: var(--spacing-2);
+}
+
+.sitingRow {
+  display: grid;
+  grid-template-columns: 56px minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(96px, 0.8fr) minmax(170px, 1.4fr) minmax(90px, 0.8fr);
+  gap: var(--spacing-2);
+  align-items: center;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.sitingRow strong {
+  color: var(--text-primary);
+}
+
+.sitingRow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .referenceSection {
   display: flex;
   flex-direction: column;
@@ -316,7 +344,8 @@
   .controls,
   .sourceForm,
   .surfaceGrid,
-  .diagramGrid {
+  .diagramGrid,
+  .sitingRow {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -330,6 +359,7 @@
   .sourceForm,
   .surfaceGrid,
   .diagramGrid,
+  .sitingRow,
   .layerRow {
     grid-template-columns: 1fr;
   }

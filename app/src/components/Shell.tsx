@@ -14,6 +14,8 @@ const navItems = [
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
+  { to: "/poi", label: "Schools / POIs", icon: PinIcon },
+  { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -185,6 +187,23 @@ function TableIcon() {
       <line x1="3" y1="9" x2="21" y2="9" />
       <line x1="3" y1="15" x2="21" y2="15" />
       <line x1="9" y1="3" x2="9" y2="21" />
+    </svg>
+  );
+}
+
+function PinIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 1 1 18 0z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+
+function SigmaIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="18 4 6 4 12 12 6 20 18 20" />
     </svg>
   );
 }

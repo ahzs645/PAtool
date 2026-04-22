@@ -1,6 +1,9 @@
 .table {
   width: 100%;
-  border-collapse: collapse;
+  min-height: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
 }
 
 /* ── Header ── */
@@ -12,6 +15,7 @@
 
 .headerRow {
   display: flex;
+  flex: 0 0 var(--table-row-height);
   height: var(--table-row-height);
   background: var(--bg-primary);
 }
@@ -111,7 +115,10 @@
 /* ── Body ── */
 .tbody {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .row {
@@ -262,6 +269,7 @@
 /* ── Pagination ── */
 .pagination {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-2) var(--spacing-3);
@@ -301,6 +309,7 @@
 /* ── Footer / pagination ── */
 .footer {
   display: flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-2) var(--spacing-2);

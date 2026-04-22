@@ -1,4 +1,4 @@
-import { gridToImageData, type InterpolationGrid, type InterpolationMethod, type InterpolationPoint } from "@patool/shared";
+import { aqiToColor, pm25ToAqi, type InterpolationGrid, type InterpolationMethod, type InterpolationPoint } from "@patool/shared";
 import type maplibregl from "maplibre-gl";
 
 import type { InterpolationBounds } from "../../lib/interpolationProtocol";
@@ -17,6 +17,10 @@ import {
   VIEW_ZOOM_QUANTIZATION_STEP,
 } from "./config";
 import type { HeatmapDebugState, MapSize } from "./types";
+
+const HEATMAP_RENDER_MAX_SCALE = 3;
+const HEATMAP_RENDER_MAX_PIXELS = 1_000_000;
+const HEATMAP_RENDER_SMOOTHING_PASSES = 1;
 
 function toRadians(value: number): number {
   return (value * Math.PI) / 180;
@@ -241,6 +245,113 @@ export function selectInterpolationPoints(
   };
 }
 
+export function deriveHeatmapRenderDimensions(grid: Pick<InterpolationGrid, "width" | "height">): {
+  width: number;
+  height: number;
+  scale: number;
+} {
+  const sourceWidth = Math.max(0, grid.width);
+  const sourceHeight = Math.max(0, grid.height);
+  const sourcePixels = sourceWidth * sourceHeight;
+  if (sourcePixels <= 0) return { width: sourceWidth, height: sourceHeight, scale: 1 };
+
+  const pixelLimitedScale = Math.max(1, Math.floor(Math.sqrt(HEATMAP_RENDER_MAX_PIXELS / sourcePixels)));
+  const scale = Math.min(HEATMAP_RENDER_MAX_SCALE, pixelLimitedScale);
+  return {
+    width: sourceWidth * scale,
+    height: sourceHeight * scale,
+    scale,
+  };
+}
+
+function smoothGridValues(grid: InterpolationGrid, passes: number): Float64Array {
+  if (passes <= 0 || grid.width < 3 || grid.height < 3) return grid.values;
+
+  let source = grid.values;
+  for (let pass = 0; pass < passes; pass++) {
+    const target = new Float64Array(source.length);
+
+    for (let row = 0; row < grid.height; row++) {
+      for (let col = 0; col < grid.width; col++) {
+        let weightedSum = 0;
+        let weightTotal = 0;
+
+        for (let rowOffset = -1; rowOffset <= 1; rowOffset++) {
+          const sampleRow = row + rowOffset;
+          if (sampleRow < 0 || sampleRow >= grid.height) continue;
+
+          for (let colOffset = -1; colOffset <= 1; colOffset++) {
+            const sampleCol = col + colOffset;
+            if (sampleCol < 0 || sampleCol >= grid.width) continue;
+
+            const weight = rowOffset === 0 && colOffset === 0
+              ? 4
+              : rowOffset === 0 || colOffset === 0
+                ? 2
+                : 1;
+            weightedSum += source[sampleRow * grid.width + sampleCol] * weight;
+            weightTotal += weight;
+          }
+        }
+
+        target[row * grid.width + col] = weightTotal > 0 ? weightedSum / weightTotal : source[row * grid.width + col];
+      }
+    }
+
+    source = target;
+  }
+
+  return source;
+}
+
+function sampleGridValue(values: Float64Array, width: number, height: number, x: number, y: number): number {
+  const x0 = Math.max(0, Math.min(width - 1, Math.floor(x)));
+  const y0 = Math.max(0, Math.min(height - 1, Math.floor(y)));
+  const x1 = Math.min(width - 1, x0 + 1);
+  const y1 = Math.min(height - 1, y0 + 1);
+  const tx = x - x0;
+  const ty = y - y0;
+
+  const topLeft = values[y0 * width + x0];
+  const topRight = values[y0 * width + x1];
+  const bottomLeft = values[y1 * width + x0];
+  const bottomRight = values[y1 * width + x1];
+  const top = topLeft + (topRight - topLeft) * tx;
+  const bottom = bottomLeft + (bottomRight - bottomLeft) * tx;
+  return top + (bottom - top) * ty;
+}
+
+function gridToSmoothedImageData(
+  grid: InterpolationGrid,
+  targetWidth: number,
+  targetHeight: number,
+): Uint8ClampedArray {
+  const data = new Uint8ClampedArray(targetWidth * targetHeight * 4);
+  const values = smoothGridValues(grid, HEATMAP_RENDER_SMOOTHING_PASSES);
+
+  for (let imgRow = 0; imgRow < targetHeight; imgRow++) {
+    const sourceY = grid.height === 1 || targetHeight === 1
+      ? 0
+      : ((targetHeight - 1 - imgRow) / (targetHeight - 1)) * (grid.height - 1);
+
+    for (let imgCol = 0; imgCol < targetWidth; imgCol++) {
+      const sourceX = grid.width === 1 || targetWidth === 1
+        ? 0
+        : (imgCol / (targetWidth - 1)) * (grid.width - 1);
+      const v = sampleGridValue(values, grid.width, grid.height, sourceX, sourceY);
+      const color = aqiToColor(pm25ToAqi(v));
+      const imgIdx = (imgRow * targetWidth + imgCol) * 4;
+
+      data[imgIdx] = color[0];
+      data[imgIdx + 1] = color[1];
+      data[imgIdx + 2] = color[2];
+      data[imgIdx + 3] = color[3];
+    }
+  }
+
+  return data;
+}
+
 export function canStabilizeKrigingSelection(overlapPct: number | null, previousCount: number, nextCount: number): boolean {
   return overlapPct != null
     && overlapPct >= KRIGING_SELECTION_STABILITY_THRESHOLD
@@ -248,14 +359,17 @@ export function canStabilizeKrigingSelection(overlapPct: number | null, previous
 }
 
 export function paintInterpolationCanvas(grid: InterpolationGrid, canvas: HTMLCanvasElement): number {
-  canvas.width = grid.width;
-  canvas.height = grid.height;
+  const renderDimensions = deriveHeatmapRenderDimensions(grid);
+  canvas.width = renderDimensions.width;
+  canvas.height = renderDimensions.height;
+  if (renderDimensions.width < 1 || renderDimensions.height < 1 || grid.values.length === 0) return 0;
+
   const ctx = canvas.getContext("2d");
   if (!ctx) return 0;
 
-  const imageData = ctx.createImageData(grid.width, grid.height);
+  const imageData = ctx.createImageData(renderDimensions.width, renderDimensions.height);
   const colorizeStartedAt = performance.now();
-  const colorData = gridToImageData(grid, true);
+  const colorData = gridToSmoothedImageData(grid, renderDimensions.width, renderDimensions.height);
   const colorizeMs = performance.now() - colorizeStartedAt;
   imageData.data.set(colorData);
   ctx.putImageData(imageData, 0, 0);

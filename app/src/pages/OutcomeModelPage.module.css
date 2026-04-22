@@ -1,0 +1,129 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: var(--spacing-2);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-3);
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.field span {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 34px;
+  padding: var(--spacing-1-5) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.field input:focus,
+.field select:focus {
+  border-color: var(--accent);
+}
+
+.cardHint {
+  margin: 0 0 var(--spacing-2);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-sm);
+}
+
+.csvInput {
+  width: 100%;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: var(--font-size-sm);
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  resize: vertical;
+  min-height: 160px;
+}
+
+.warnings {
+  margin-top: var(--spacing-2);
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.warningRow + .warningRow {
+  margin-top: var(--spacing-1);
+}
+
+.csvActions {
+  display: flex;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.extraRow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-2);
+  margin-top: var(--spacing-2);
+  flex-wrap: wrap;
+}
+
+.extraLabel {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.chipRow {
+  display: flex;
+  gap: var(--spacing-1);
+  flex-wrap: wrap;
+}
+
+.chipToggle {
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-pill, 999px);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.chipToggle:hover {
+  border-color: var(--accent);
+}
+
+.chipActive {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}

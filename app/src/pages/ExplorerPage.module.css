@@ -88,8 +88,105 @@
   gap: var(--spacing-2);
 }
 
+.readinessCard {
+  overflow: hidden;
+}
+
+.readinessSummary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+}
+
+.readinessSummary > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  min-width: 0;
+}
+
+.readinessLabel {
+  font-size: var(--font-size-xs);
+  color: var(--text-tertiary);
+}
+
+.readinessSummary strong {
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+}
+
+.fieldHealthGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-2);
+  margin-bottom: var(--spacing-3);
+}
+
+.fieldHealthItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--spacing-2);
+  padding: var(--spacing-1-5) var(--spacing-2);
+  border-bottom: 1px solid var(--border-light);
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+}
+
+.fieldHealthItem strong {
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+
+.warningList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-1);
+}
+
+.warningList span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 var(--spacing-2);
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-xs);
+  border: 1px solid var(--border-light);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.warningList span[data-severity="warning"] {
+  border-color: rgba(215, 132, 36, 0.35);
+  background: rgba(215, 132, 36, 0.1);
+  color: var(--text-primary);
+}
+
+.warningList span[data-severity="critical"] {
+  border-color: rgba(190, 68, 68, 0.45);
+  background: rgba(190, 68, 68, 0.1);
+  color: var(--text-primary);
+}
+
 .listCard {
-  /* full width */
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+}
+
+@media (max-width: 1080px), (max-height: 720px) {
+  .listCard {
+    flex: 0 0 auto;
+    height: 360px;
+    min-height: 360px;
+  }
 }
 
 /* ── Resize Handle ── */
