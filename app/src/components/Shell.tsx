@@ -11,11 +11,16 @@ const navItems = [
   { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
   { to: "/analytics", label: "Analytics", icon: ChartIcon },
   { to: "/modeling", label: "Modeling", icon: LayersIcon },
+  { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
+  { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
+  { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
+  { to: "/reliability", label: "Reliability", icon: ShieldIcon },
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
   { to: "/poi", label: "Schools / POIs", icon: PinIcon },
   { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
+  { to: "/reports", label: "Reports", icon: ReportIcon },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -137,6 +142,51 @@ function CompareIcon() {
   );
 }
 
+function ModelZooIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 7h18" />
+      <path d="M6 7v13" />
+      <path d="M18 7v13" />
+      <path d="M9 7v13" />
+      <path d="M15 7v13" />
+      <path d="M5 4h14" />
+      <circle cx="6" cy="20" r="1" />
+      <circle cx="12" cy="20" r="1" />
+      <circle cx="18" cy="20" r="1" />
+    </svg>
+  );
+}
+
+function ValidationIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20 6L9 17l-5-5" />
+      <path d="M14 4h6v6" />
+      <path d="M4 20h16" />
+    </svg>
+  );
+}
+
+function DatabaseIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <ellipse cx="12" cy="5" rx="8" ry="3" />
+      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
+      <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+      <path d="M9 12l2 2 4-4" />
+    </svg>
+  );
+}
+
 function MoonIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -204,6 +254,18 @@ function SigmaIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="18 4 6 4 12 12 6 20 18 20" />
+    </svg>
+  );
+}
+
+function ReportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <path d="M14 2v6h6" />
+      <path d="M8 13h8" />
+      <path d="M8 17h5" />
+      <path d="M8 9h2" />
     </svg>
   );
 }

@@ -410,4 +410,23 @@ describe("app", () => {
     expect(referenceUrl.searchParams.get("end")).toBe(samplePatSeries.points.at(-1)?.timestamp);
     expect(referenceUrl.searchParams.get("source")).toBe("airnow");
   });
+
+  it("renders the PurpleAir report builder", async () => {
+    window.history.pushState({}, "", "/reports");
+
+    render(<App />);
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("PurpleAir summary report maker")).toBeInTheDocument();
+        expect(screen.getByText("Report configuration")).toBeInTheDocument();
+        expect(screen.getByText("Consistent add-ons")).toBeInTheDocument();
+        expect(screen.getByText("Sensor set")).toBeInTheDocument();
+        expect(screen.getByText("Figure readiness")).toBeInTheDocument();
+        expect(screen.getByText("Hotspot and coldspot ranking")).toBeInTheDocument();
+        expect(screen.getByText("Recommendation blocks")).toBeInTheDocument();
+      },
+      { timeout: 5000 }
+    );
+  });
 });

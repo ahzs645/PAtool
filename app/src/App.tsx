@@ -10,6 +10,10 @@ const ExplorerPage = lazy(() => import("./pages/ExplorerPage"));
 const SensorDetailPage = lazy(() => import("./pages/SensorDetailPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const ModelingPage = lazy(() => import("./pages/ModelingPage"));
+const ModelZooPage = lazy(() => import("./pages/ModelZooPage"));
+const ValidationLabPage = lazy(() => import("./pages/ValidationLabPage"));
+const CovariateLayersPage = lazy(() => import("./pages/CovariateLayersPage"));
+const ReliabilityReportsPage = lazy(() => import("./pages/ReliabilityReportsPage"));
 const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
 const MapPage = lazy(() => import("./pages/MapPage"));
 const DiagnosticsPage = lazy(() => import("./pages/DiagnosticsPage"));
@@ -17,6 +21,7 @@ const HealthPage = lazy(() => import("./pages/HealthPage"));
 const AirFusePage = lazy(() => import("./pages/AirFusePage"));
 const PoiExposurePage = lazy(() => import("./pages/PoiExposurePage"));
 const OutcomeModelPage = lazy(() => import("./pages/OutcomeModelPage"));
+const ReportBuilderPage = lazy(() => import("./pages/ReportBuilderPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -32,6 +37,10 @@ function RoutesView() {
             <Route path="/sensor/:id" element={<SensorDetailPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/modeling" element={<ModelingPage />} />
+            <Route path="/model-zoo" element={<ModelZooPage />} />
+            <Route path="/validation-lab" element={<ValidationLabPage />} />
+            <Route path="/covariates" element={<CovariateLayersPage />} />
+            <Route path="/reliability" element={<ReliabilityReportsPage />} />
             <Route path="/comparison" element={<ComparisonPage />} />
             <Route path="/diagnostics" element={<DiagnosticsPage />} />
             <Route path="/diagnostics/:id" element={<DiagnosticsPage />} />
@@ -39,6 +48,7 @@ function RoutesView() {
             <Route path="/health/:id" element={<HealthPage />} />
             <Route path="/poi" element={<PoiExposurePage />} />
             <Route path="/outcome-model" element={<OutcomeModelPage />} />
+            <Route path="/reports" element={<ReportBuilderPage />} />
           </Routes>
         </Suspense>
       </Shell>

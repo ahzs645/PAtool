@@ -1,9 +1,11 @@
 .table {
   width: 100%;
+  max-width: 100%;
   min-height: 0;
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
+  overflow-x: auto;
 }
 
 /* ── Header ── */
@@ -17,6 +19,8 @@
   display: flex;
   flex: 0 0 var(--table-row-height);
   height: var(--table-row-height);
+  width: max-content;
+  min-width: 100%;
   background: var(--bg-primary);
 }
 
@@ -124,6 +128,8 @@
 .row {
   display: flex;
   height: var(--table-row-height);
+  width: max-content;
+  min-width: 100%;
   background: var(--bg-primary);
   transition: background var(--duration-instant);
   text-decoration: none;

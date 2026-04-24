@@ -182,7 +182,11 @@
 
   .navSection {
     flex-direction: row;
+    flex-wrap: wrap;
+    flex: 1 1 100%;
     gap: var(--spacing-1);
+    min-width: 0;
+    max-width: 100%;
   }
 
   .navLabel {
