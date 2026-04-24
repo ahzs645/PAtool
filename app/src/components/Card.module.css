@@ -3,10 +3,17 @@
   border: 1px solid var(--border-medium);
   border-radius: var(--border-radius-md);
   overflow: hidden;
+  min-width: 0;
 }
 
 .padded {
   padding: var(--spacing-4);
+}
+
+@media (max-width: 720px) {
+  .padded {
+    padding: var(--spacing-3);
+  }
 }
 
 .cardTitle {

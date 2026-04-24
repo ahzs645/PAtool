@@ -25,3 +25,13 @@
   color: var(--text-tertiary);
   line-height: var(--line-height-md);
 }
+
+@media (max-width: 720px) {
+  .title {
+    font-size: var(--font-size-lg);
+  }
+
+  .subtitle {
+    max-width: none;
+  }
+}

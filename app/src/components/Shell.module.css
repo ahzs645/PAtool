@@ -127,6 +127,7 @@
   padding: var(--spacing-4) var(--spacing-5);
   background: var(--bg-secondary);
   min-width: 0;
+  min-height: 100vh;
 }
 
 .statusBanner {
@@ -163,6 +164,7 @@
 @media (max-width: 1080px) {
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
 
   .sidebar {
@@ -171,9 +173,11 @@
     flex-direction: row;
     flex-wrap: wrap;
     align-items: center;
+    align-content: flex-start;
     border-right: 0;
     border-bottom: 1px solid var(--border-medium);
     padding: var(--spacing-2) var(--spacing-4);
+    row-gap: var(--spacing-2);
   }
 
   .brand {
@@ -199,9 +203,48 @@
 
   .main {
     padding: var(--spacing-4);
+    min-height: 0;
   }
 
   .statusBanner {
     align-items: flex-start;
+  }
+}
+
+@media (max-width: 720px) {
+  .sidebar {
+    display: grid;
+    grid-template-columns: 1fr;
+    padding: var(--spacing-2);
+  }
+
+  .brand {
+    width: fit-content;
+    padding: var(--spacing-1-5) var(--spacing-2);
+  }
+
+  .navSection {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: var(--spacing-1);
+    scrollbar-width: thin;
+  }
+
+  .navLink {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  .main {
+    padding: var(--spacing-3);
+  }
+
+  .statusBanner {
+    flex-wrap: wrap;
+  }
+
+  .statusSource {
+    margin-left: 0;
   }
 }

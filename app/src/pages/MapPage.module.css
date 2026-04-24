@@ -92,6 +92,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   transition: all var(--duration-fast);
+  white-space: nowrap;
 }
 
 .modeButton:hover {
@@ -291,4 +292,58 @@
   justify-self: end;
   font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
+}
+
+@media (max-width: 900px) {
+  .layout {
+    height: auto;
+    min-height: calc(100dvh - 96px);
+    overflow: visible;
+  }
+
+  .toolbar,
+  .interpControls,
+  .overlayControls {
+    align-items: stretch;
+  }
+
+  .search,
+  .select,
+  .toggle,
+  .modeToggle,
+  .overlayControls .modeButton,
+  .overlayControls .search {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .modeButton {
+    flex: 1 1 0;
+  }
+
+  .stats {
+    grid-template-columns: 1fr;
+  }
+
+  .mapWrap {
+    min-height: 440px;
+  }
+
+  .heatmapStatus {
+    flex: 1 1 100%;
+    flex-wrap: wrap;
+  }
+
+  .heatmapStatus > .statusPill,
+  .heatmapStatus > .statusPillMuted,
+  .heatmapStatus > .statusPillError {
+    max-width: 100%;
+  }
+
+  .legend {
+    right: var(--spacing-3);
+    bottom: var(--spacing-3);
+    left: var(--spacing-3);
+    min-width: 0;
+  }
 }

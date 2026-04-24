@@ -27,7 +27,7 @@
   width: fit-content;
   max-width: 100%;
   padding: 4px;
-  border: 1px solid var(--border-primary);
+  border: 1px solid var(--border-medium);
   border-radius: var(--border-radius-sm);
   background: var(--bg-secondary);
 }
@@ -203,6 +203,19 @@
 }
 
 @media (max-width: 780px) {
+  .disclosure {
+    padding: var(--spacing-3);
+  }
+
+  .sourceSelector {
+    width: 100%;
+  }
+
+  .sourceOption {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
   .summaryGrid {
     grid-template-columns: 1fr;
   }

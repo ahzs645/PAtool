@@ -44,7 +44,8 @@
 
 .field input:focus,
 .field select:focus {
-  border-color: var(--accent);
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 .cardHint {
@@ -119,11 +120,23 @@
 }
 
 .chipToggle:hover {
-  border-color: var(--accent);
+  border-color: var(--accent-primary);
 }
 
 .chipActive {
-  background: var(--accent);
+  background: var(--accent-primary);
   color: var(--bg-primary);
-  border-color: var(--accent);
+  border-color: var(--accent-primary);
+}
+
+@media (max-width: 900px) {
+  .controls {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 640px) {
+  .controls {
+    grid-template-columns: 1fr;
+  }
 }

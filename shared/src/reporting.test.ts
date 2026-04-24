@@ -3,9 +3,12 @@ import { describe, expect, it } from "vitest";
 import { samplePasCollection, samplePatSeries } from "./fixtures";
 import {
   buildPurpleAirReportSummary,
+  buildPurpleAirReportDocument,
   createPurpleAirReportBlueprint,
   computeReportSensorMetrics,
   createPurpleAirReportPlan,
+  renderReportDocumentDocx,
+  renderReportDocumentHtml,
   selectReportSensors,
   type PatSeries,
 } from "./index";
@@ -24,6 +27,34 @@ function scaledSeries(sensorId: string, label: string, scale: number): PatSeries
       pm25B: point.pm25B === null ? null : Number((point.pm25B * scale).toFixed(3)),
     })),
   };
+}
+
+function readStoredZipEntry(zip: Uint8Array, entryPath: string): string {
+  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
+  const decoder = new TextDecoder();
+  let offset = 0;
+
+  while (offset < zip.byteLength - 4) {
+    const signature = view.getUint32(offset, true);
+    if (signature !== 0x04034b50) break;
+
+    const method = view.getUint16(offset + 8, true);
+    const compressedSize = view.getUint32(offset + 18, true);
+    const fileNameLength = view.getUint16(offset + 26, true);
+    const extraLength = view.getUint16(offset + 28, true);
+    const nameStart = offset + 30;
+    const dataStart = nameStart + fileNameLength + extraLength;
+    const name = decoder.decode(zip.slice(nameStart, nameStart + fileNameLength));
+
+    if (name === entryPath) {
+      expect(method).toBe(0);
+      return decoder.decode(zip.slice(dataStart, dataStart + compressedSize));
+    }
+
+    offset = dataStart + compressedSize;
+  }
+
+  throw new Error(`Missing ZIP entry: ${entryPath}`);
 }
 
 describe("reporting", () => {
@@ -127,5 +158,57 @@ describe("reporting", () => {
     expect(summary.figureReadiness.find((figure) => figure.figureId === "diurnal-wildfire-comparison")?.ready).toBe(true);
     expect(blueprint.missingOptionalInputs).not.toContain("Meteorology");
     expect(blueprint.missingOptionalInputs).not.toContain("Wildfire periods");
+  });
+
+  it("renders the generated report document as HTML and DOCX bytes", () => {
+    const firstThree = samplePasCollection.records.slice(0, 3);
+    const plan = createPurpleAirReportPlan(samplePasCollection, {
+      communityName: "Export Community",
+      period: {},
+      selectedSensorIds: firstThree.map((sensor) => sensor.id),
+      options: {
+        managementZone: "orange",
+        localBylaw: { enabled: true, name: "test bylaw" },
+      },
+    });
+    const summary = buildPurpleAirReportSummary(plan, firstThree.map((sensor, index) => (
+      scaledSeries(sensor.id, sensor.label, index + 1)
+    )));
+    const blueprint = createPurpleAirReportBlueprint(plan, summary);
+    const document = buildPurpleAirReportDocument(plan, summary, blueprint);
+    const html = renderReportDocumentHtml(document);
+    const docx = renderReportDocumentDocx(document);
+
+    expect(html).toContain("Environmental Quality Series");
+    expect(html).toContain("Executive Summary");
+    expect(html).toContain("3 Temporal Variability");
+    expect(html).toContain("4 Spatial Variability");
+    expect(docx.length).toBeGreaterThan(1000);
+    expect(new TextDecoder().decode(docx.slice(0, 2))).toBe("PK");
+
+    expect(readStoredZipEntry(docx, "[Content_Types].xml")).toContain("word/document.xml");
+    expect(readStoredZipEntry(docx, "word/styles.xml")).toContain("TableGrid");
+
+    const documentXml = readStoredZipEntry(docx, "word/document.xml");
+    expect(documentXml).toMatch(/<w:document[^>]*><w:body>/);
+    expect(documentXml).toContain("3 Temporal Variability");
+    expect(documentXml).toContain("4 Spatial Variability");
+
+    const dirtyDocx = renderReportDocumentDocx({
+      ...document,
+      title: `${document.title}\u0000`,
+      sections: [
+        ...document.sections,
+        {
+          id: "dirty-input",
+          title: "Dirty input",
+          blocks: [{ kind: "paragraph", text: "bad\u001Fvalue" }],
+        },
+      ],
+    });
+    const dirtyDocumentXml = readStoredZipEntry(dirtyDocx, "word/document.xml");
+    expect(dirtyDocumentXml).not.toContain("\u0000");
+    expect(dirtyDocumentXml).not.toContain("\u001F");
+    expect(dirtyDocumentXml).toContain("bad value");
   });
 });

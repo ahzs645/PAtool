@@ -1,3 +1,4 @@
+export * from "./document";
 export * from "./metrics";
 export * from "./plan";
 export * from "./template";

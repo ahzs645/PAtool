@@ -2,11 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import {
   buildPurpleAirReportSummary,
+  buildPurpleAirReportDocument,
   createPurpleAirReportBlueprint,
   createPurpleAirReportPlan,
+  renderReportDocumentDocx,
+  renderReportDocumentHtml,
   type PasCollection,
   type PasRecord,
   type PatSeries,
+  type ReportDocument,
   type ReportFigureReadiness,
   type ReportManagementZone,
   type ReportMonitoringCandidate,
@@ -45,17 +49,68 @@ function defaultSensorIds(collection: PasCollection): string[] {
 
 function exportReportPackage(
   plan: ReturnType<typeof createPurpleAirReportPlan>,
-  summary: ReportNetworkSummary | null,
+  summary: ReportNetworkSummary,
   blueprint: ReturnType<typeof createPurpleAirReportBlueprint>,
 ) {
   const payload = JSON.stringify({ plan, summary, blueprint }, null, 2);
   const blob = new Blob([payload], { type: "application/json" });
+  downloadBlob(blob, `${reportFileBase(plan.communityName)}-report-package.json`);
+}
+
+function reportFileBase(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "purpleair-report";
+}
+
+function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;
-  link.download = `${plan.communityName.toLowerCase().replace(/[^a-z0-9]+/g, "-") || "purpleair"}-report-package.json`;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(url);
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 1000);
+}
+
+function exportDocx(document: ReportDocument) {
+  const bytes = renderReportDocumentDocx(document);
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  downloadBlob(
+    new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }),
+    `${reportFileBase(document.communityName)}.docx`,
+  );
+}
+
+function openPdfPrintView(document: ReportDocument): "print" | "html-fallback" {
+  const html = renderReportDocumentHtml(document);
+  const printWindow = window.open("", "_blank");
+  if (!printWindow) {
+    downloadBlob(new Blob([html], { type: "text/html" }), `${reportFileBase(document.communityName)}-print.html`);
+    return "html-fallback";
+  }
+  let printStarted = false;
+  const printWhenReady = () => {
+    if (printStarted) return;
+    printStarted = true;
+    printWindow.requestAnimationFrame(() => {
+      printWindow.setTimeout(() => {
+        printWindow.focus();
+        printWindow.print();
+      }, 0);
+    });
+  };
+  printWindow.addEventListener("load", printWhenReady, { once: true });
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+  if (printWindow.document.readyState === "complete") {
+    printWhenReady();
+  }
+  return "print";
 }
 
 export default function ReportBuilderPage() {
@@ -79,6 +134,7 @@ export default function ReportBuilderPage() {
   const [wildfireComparison, setWildfireComparison] = useState(false);
   const [wildfireRegion, setWildfireRegion] = useState("");
   const [interventionMonitoring, setInterventionMonitoring] = useState(true);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
 
   const { data: collection } = useQuery({
     queryKey: ["report-builder-pas"],
@@ -176,6 +232,10 @@ export default function ReportBuilderPage() {
     windSourceLabel,
   ]);
 
+  useEffect(() => {
+    setExportStatus(null);
+  }, [plan]);
+
   const seriesQueries = useQueries({
     queries: (plan?.seriesRequests ?? []).map((request) => ({
       queryKey: ["report-builder-series", request.sensorId, request.path],
@@ -189,10 +249,27 @@ export default function ReportBuilderPage() {
     .map((query) => query.data)
     .filter((series): series is PatSeries => Boolean(series));
   const loadingSeries = seriesQueries.some((query) => query.isLoading || query.isFetching);
-  const summary = plan && loadedSeries.length
+  const seriesError = seriesQueries.some((query) => query.isError);
+  const seriesComplete = Boolean(
+    plan &&
+    plan.seriesRequests.length > 0 &&
+    loadedSeries.length === plan.seriesRequests.length &&
+    !loadingSeries &&
+    !seriesError,
+  );
+  const summary = plan && seriesComplete
     ? buildPurpleAirReportSummary(plan, loadedSeries)
     : null;
   const blueprint = plan ? createPurpleAirReportBlueprint(plan, summary) : null;
+  const reportDocument = plan && summary && blueprint
+    ? buildPurpleAirReportDocument(plan, summary, blueprint)
+    : null;
+  const exportReady = Boolean(reportDocument && summary && blueprint && seriesComplete);
+  const exportMessage = seriesError
+    ? "Resolve selected sensor series load errors before export."
+    : !seriesComplete
+      ? "Load all selected sensor series before export."
+      : exportStatus;
   const readyFigureCount = summary?.figureReadiness.filter((figure) => figure.ready).length ?? 0;
 
   const toggleSensor = (sensorId: string) => {
@@ -395,10 +472,45 @@ export default function ReportBuilderPage() {
           <Button size="small" variant="tertiary" onClick={() => setSelectedIds([])}>
             Clear
           </Button>
-          <Button size="small" disabled={!blueprint} onClick={() => blueprint && exportReportPackage(plan, summary, blueprint)}>
+          <Button
+            size="small"
+            disabled={!exportReady}
+            onClick={() => {
+              if (!summary || !blueprint || !exportReady) return;
+              exportReportPackage(plan, summary, blueprint);
+              setExportStatus("Report package downloaded.");
+            }}
+          >
             Export package
           </Button>
+          <Button
+            size="small"
+            disabled={!exportReady}
+            onClick={() => {
+              if (!reportDocument || !exportReady) return;
+              const result = openPdfPrintView(reportDocument);
+              setExportStatus(
+                result === "print"
+                  ? "PDF print view opened."
+                  : "Popup blocked; downloaded print-ready HTML.",
+              );
+            }}
+          >
+            Open PDF print view
+          </Button>
+          <Button
+            size="small"
+            disabled={!exportReady}
+            onClick={() => {
+              if (!reportDocument || !exportReady) return;
+              exportDocx(reportDocument);
+              setExportStatus("DOCX downloaded.");
+            }}
+          >
+            Export DOCX
+          </Button>
         </div>
+        {exportMessage ? <p className={styles.exportStatus}>{exportMessage}</p> : null}
       </Card>
 
       <Card title="Consistent add-ons">
@@ -477,93 +589,95 @@ export default function ReportBuilderPage() {
         </div>
       </Card>
 
-      <div className={styles.splitGrid}>
-        <Card title="Sensor set" className={styles.sensorCard}>
-          <DataTable
-            columns={sensorColumns}
-            data={outdoorSensors}
-            rowKey={(record) => record.id}
-            emptyMessage="No outdoor sensors available."
-            pageSize={12}
-            footer={<span>{activeSelectedIds.length} selected</span>}
-          />
-        </Card>
+      <div className={styles.reportColumns}>
+        <div className={styles.reportColumn}>
+          <Card title="Sensor set" className={styles.sensorCard}>
+            <DataTable
+              columns={sensorColumns}
+              data={outdoorSensors}
+              rowKey={(record) => record.id}
+              emptyMessage="No outdoor sensors available."
+              pageSize={12}
+              footer={<span>{activeSelectedIds.length} selected</span>}
+            />
+          </Card>
 
-        <Card title="Report sections">
-          <div className={styles.sectionList}>
-            {plan.sections.map((section) => (
-              <div className={styles.sectionItem} key={section.id}>
-                <strong>{section.title}</strong>
-                <span>{section.purpose}</span>
-              </div>
-            ))}
-          </div>
-        </Card>
-      </div>
-
-      <div className={styles.splitGrid}>
-        <Card title="Findings preview">
-          {loadingSeries ? (
-            <Loader message="Computing selected sensor summaries..." />
-          ) : summary ? (
-            <ul className={styles.findingList}>
-              {summary.findings.map((finding) => (
-                <li key={finding}>{finding}</li>
-              ))}
-            </ul>
-          ) : (
-            <p className={styles.empty}>Select sensors to generate findings.</p>
-          )}
-        </Card>
-
-        <Card title="Figure readiness">
-          <DataTable
-            columns={figureColumns}
-            data={summary?.figureReadiness ?? []}
-            rowKey={(row) => row.figureId}
-            emptyMessage="Load selected sensor series to evaluate figure readiness."
-          />
-        </Card>
-      </div>
-
-      <div className={styles.splitGrid}>
-        <Card title="Generation workflow">
-          <DataTable
-            columns={stepColumns}
-            data={blueprint?.steps ?? []}
-            rowKey={(row) => row.id}
-            emptyMessage="No report workflow available."
-          />
-        </Card>
-
-        <Card title="Inputs to complete">
-          <div className={styles.inputAlerts}>
-            {blueprint?.missingRequiredInputs.length ? (
-              <div className={styles.alertBlock}>
-                <strong>Required</strong>
-                <span>{blueprint.missingRequiredInputs.join(", ")}</span>
-              </div>
+          <Card title="Findings preview">
+            {seriesError ? (
+              <p className={styles.empty}>Could not load every selected sensor series.</p>
+            ) : loadingSeries ? (
+              <Loader message="Computing selected sensor summaries..." />
+            ) : summary ? (
+              <ul className={styles.findingList}>
+                {summary.findings.map((finding) => (
+                  <li key={finding}>{finding}</li>
+                ))}
+              </ul>
             ) : (
-              <div className={styles.alertBlock}>
-                <strong>Required</strong>
-                <span>Core selected-sensor inputs are present.</span>
-              </div>
+              <p className={styles.empty}>Select sensors to generate findings.</p>
             )}
-            {blueprint?.missingOptionalInputs.length ? (
-              <div className={styles.alertBlock}>
-                <strong>Optional</strong>
-                <span>{blueprint.missingOptionalInputs.join(", ")}</span>
-              </div>
-            ) : null}
-          </div>
-          <DataTable
-            columns={inputColumns}
-            data={[...(blueprint?.requiredInputs ?? []), ...(blueprint?.optionalInputs ?? [])]}
-            rowKey={(row) => row.id}
-            emptyMessage="No inputs registered."
-            pageSize={8}
-          />
-        </Card>
+          </Card>
+
+          <Card title="Generation workflow">
+            <DataTable
+              columns={stepColumns}
+              data={blueprint?.steps ?? []}
+              rowKey={(row) => row.id}
+              emptyMessage="No report workflow available."
+            />
+          </Card>
+        </div>
+
+        <div className={styles.reportColumn}>
+          <Card title="Report sections">
+            <div className={styles.sectionList}>
+              {plan.sections.map((section) => (
+                <div className={styles.sectionItem} key={section.id}>
+                  <strong>{section.title}</strong>
+                  <span>{section.purpose}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Figure readiness">
+            <DataTable
+              columns={figureColumns}
+              data={summary?.figureReadiness ?? []}
+              rowKey={(row) => row.figureId}
+              emptyMessage="Load selected sensor series to evaluate figure readiness."
+            />
+          </Card>
+
+          <Card title="Inputs to complete">
+            <div className={styles.inputAlerts}>
+              {blueprint?.missingRequiredInputs.length ? (
+                <div className={styles.alertBlock}>
+                  <strong>Required</strong>
+                  <span>{blueprint.missingRequiredInputs.join(", ")}</span>
+                </div>
+              ) : (
+                <div className={styles.alertBlock}>
+                  <strong>Required</strong>
+                  <span>Core selected-sensor inputs are present.</span>
+                </div>
+              )}
+              {blueprint?.missingOptionalInputs.length ? (
+                <div className={styles.alertBlock}>
+                  <strong>Optional</strong>
+                  <span>{blueprint.missingOptionalInputs.join(", ")}</span>
+                </div>
+              ) : null}
+            </div>
+            <DataTable
+              columns={inputColumns}
+              data={[...(blueprint?.requiredInputs ?? []), ...(blueprint?.optionalInputs ?? [])]}
+              rowKey={(row) => row.id}
+              emptyMessage="No inputs registered."
+              pageSize={8}
+            />
+          </Card>
+        </div>
       </div>
 
       <Card title="Hotspot and coldspot ranking">
