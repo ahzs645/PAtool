@@ -23,6 +23,7 @@ import {
 
 import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
 import { getJson } from "../lib/api";
+import { rasterizeReportDocumentFigures } from "../lib/reportFigureRaster";
 import styles from "./ReportBuilderPage.module.css";
 
 const DEFAULT_COMMUNITY = "Selected community";
@@ -75,8 +76,9 @@ function downloadBlob(blob: Blob, filename: string) {
   }, 1000);
 }
 
-function exportDocx(document: ReportDocument) {
-  const bytes = renderReportDocumentDocx(document);
+async function exportDocx(document: ReportDocument) {
+  const figureAssets = await rasterizeReportDocumentFigures(document);
+  const bytes = renderReportDocumentDocx(document, { figureAssets });
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   downloadBlob(
@@ -501,10 +503,16 @@ export default function ReportBuilderPage() {
           <Button
             size="small"
             disabled={!exportReady}
-            onClick={() => {
+            onClick={async () => {
               if (!reportDocument || !exportReady) return;
-              exportDocx(reportDocument);
-              setExportStatus("DOCX downloaded.");
+              try {
+                setExportStatus("Preparing DOCX figures...");
+                await exportDocx(reportDocument);
+                setExportStatus("DOCX downloaded.");
+              } catch (error) {
+                console.error(error);
+                setExportStatus("DOCX export failed while preparing figures.");
+              }
             }}
           >
             Export DOCX

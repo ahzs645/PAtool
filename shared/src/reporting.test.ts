@@ -183,16 +183,35 @@ describe("reporting", () => {
     expect(html).toContain("Executive Summary");
     expect(html).toContain("3 Temporal Variability");
     expect(html).toContain("4 Spatial Variability");
+    expect(html).toContain("<svg");
+    expect(html).toContain("Sensor location map");
     expect(docx.length).toBeGreaterThan(1000);
     expect(new TextDecoder().decode(docx.slice(0, 2))).toBe("PK");
 
-    expect(readStoredZipEntry(docx, "[Content_Types].xml")).toContain("word/document.xml");
+    const contentTypesXml = readStoredZipEntry(docx, "[Content_Types].xml");
+    expect(contentTypesXml).toContain("word/document.xml");
+    expect(contentTypesXml).toContain("image/svg+xml");
     expect(readStoredZipEntry(docx, "word/styles.xml")).toContain("TableGrid");
+    expect(readStoredZipEntry(docx, "word/_rels/document.xml.rels")).toContain("media/figure-1.svg");
+    expect(readStoredZipEntry(docx, "word/media/figure-1.svg")).toContain("<svg");
 
     const documentXml = readStoredZipEntry(docx, "word/document.xml");
     expect(documentXml).toMatch(/<w:document[^>]*><w:body>/);
+    expect(documentXml).toContain("<w:drawing>");
     expect(documentXml).toContain("3 Temporal Variability");
     expect(documentXml).toContain("4 Spatial Variability");
+
+    const pngDocx = renderReportDocumentDocx(document, {
+      figureAssets: [
+        {
+          data: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]),
+          extension: "png",
+          contentType: "image/png",
+        },
+      ],
+    });
+    expect(readStoredZipEntry(pngDocx, "[Content_Types].xml")).toContain("image/png");
+    expect(readStoredZipEntry(pngDocx, "word/_rels/document.xml.rels")).toContain("media/figure-1.png");
 
     const dirtyDocx = renderReportDocumentDocx({
       ...document,

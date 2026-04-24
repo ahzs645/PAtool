@@ -9,12 +9,22 @@ import type {
   ReportSectionId,
 } from "./types";
 import type { ReportTemplateBlueprint } from "./template";
+import { buildReportFigure } from "./figures";
 
 export type ReportDocumentBlock =
   | { kind: "paragraph"; text: string }
   | { kind: "list"; items: string[] }
   | { kind: "table"; columns: string[]; rows: string[][] }
-  | { kind: "figure"; label: string; caption: string; status: "ready" | "placeholder" };
+  | {
+    kind: "figure";
+    label: string;
+    caption: string;
+    status: "ready" | "placeholder";
+    svg: string;
+    altText: string;
+    width: number;
+    height: number;
+  };
 
 export type ReportDocumentSection = {
   id: string;
@@ -28,6 +38,16 @@ export type ReportDocument = {
   communityName: string;
   generatedAt: string;
   sections: ReportDocumentSection[];
+};
+
+export type ReportDocumentDocxFigureAsset = {
+  data: string | Uint8Array;
+  extension: "svg" | "png";
+  contentType: "image/svg+xml" | "image/png";
+};
+
+export type ReportDocumentDocxOptions = {
+  figureAssets?: readonly ReportDocumentDocxFigureAsset[];
 };
 
 function fmtPm25(value: number | null | undefined): string {
@@ -179,15 +199,19 @@ function figureBlocks(
   sectionId: ReportSectionId,
 ): ReportDocumentBlock[] {
   return plan.figures.filter((figure) => figure.sectionId === sectionId).map((figure) => {
-    const readiness = summary.figureReadiness.find((item) => item.figureId === figure.id);
-    const ready = readiness?.ready ?? false;
+    const generated = buildReportFigure(plan, summary, figure);
+    const caption = generated.caption.startsWith(figure.label)
+      ? generated.caption
+      : `${figure.label}. ${generated.caption}`;
     return {
       kind: "figure",
       label: figure.label,
-      caption: ready
-        ? `${figure.label}. Data requirements are satisfied; this export reserves the source-report figure slot until chart rendering is connected.`
-        : `${figure.label}. Placeholder: ${readiness?.reason ?? "additional input required"}`,
-      status: "placeholder",
+      caption,
+      status: generated.status,
+      svg: generated.svg,
+      altText: generated.altText,
+      width: generated.width,
+      height: generated.height,
     };
   });
 }
@@ -365,7 +389,7 @@ function renderHtmlBlock(block: ReportDocumentBlock): string {
     return `<ul>${block.items.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`;
   }
   if (block.kind === "figure") {
-    return `<figure class="${block.status === "ready" ? "figure-ready" : "figure-placeholder"}"><div>${escapeHtml(block.label)}</div><figcaption>${escapeHtml(block.caption)}</figcaption></figure>`;
+    return `<figure class="${block.status === "ready" ? "figure-ready" : "figure-placeholder"}"><div class="figure-art" aria-label="${escapeHtml(block.altText)}">${block.svg}</div><figcaption>${escapeHtml(block.caption)}</figcaption></figure>`;
   }
   return [
     "<table>",
@@ -396,10 +420,11 @@ export function renderReportDocumentHtml(document: ReportDocument): string {
 	    tr { break-inside: avoid; page-break-inside: avoid; }
 	    th, td { border: 1px solid #cbd5e1; overflow-wrap: anywhere; padding: 0.06in; text-align: left; vertical-align: top; }
     th { background: #e5e7eb; font-weight: 700; }
-    figure { border: 1px solid #cbd5e1; margin: 0.14in 0 0.22in; padding: 0.16in; page-break-inside: avoid; }
-    figure > div { align-items: center; background: #f3f4f6; color: #374151; display: flex; font-weight: 700; justify-content: center; min-height: 1.1in; text-align: center; }
+    figure { border: 1px solid #cbd5e1; margin: 0.14in 0 0.22in; padding: 0.12in; page-break-inside: avoid; }
+    .figure-art { background: #ffffff; overflow: hidden; }
+    .figure-art svg { display: block; height: auto; max-width: 100%; width: 100%; }
     figcaption { color: #4b5563; font-size: 9pt; margin-top: 0.08in; }
-    .figure-placeholder > div { background: repeating-linear-gradient(45deg, #f8fafc, #f8fafc 8px, #eef2f7 8px, #eef2f7 16px); }
+    .figure-placeholder { border-style: dashed; }
     section { page-break-inside: auto; }
     @media print { .cover { page-break-after: always; } }
   </style>
@@ -449,6 +474,16 @@ function sanitizeXmlText(value: string): string {
 }
 
 type WordParagraphStyle = "Title" | "Subtitle" | "Heading1";
+type DocxMediaFile = ReportDocumentDocxFigureAsset & {
+  relationshipId: string;
+  target: string;
+  path: string;
+};
+type DocxRenderContext = {
+  figureAssets: readonly ReportDocumentDocxFigureAsset[];
+  mediaFiles: DocxMediaFile[];
+  nextFigureId: number;
+};
 
 function wordRun(text: string, size = 20, bold = false): string {
   return `<w:r><w:rPr>${bold ? "<w:b/>" : "<w:b w:val=\"false\"/>"}<w:sz w:val="${size}"/><w:szCs w:val="${size}"/></w:rPr><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r>`;
@@ -494,10 +529,58 @@ function wordTable(columns: readonly string[], rows: readonly string[][]): strin
   ].join("");
 }
 
-function wordBlock(block: ReportDocumentBlock): string {
+function wordFigure(block: Extract<ReportDocumentBlock, { kind: "figure" }>, context: DocxRenderContext): string {
+  const figureId = context.nextFigureId;
+  context.nextFigureId += 1;
+  const asset = context.figureAssets[figureId - 1] ?? {
+    data: block.svg,
+    extension: "svg",
+    contentType: "image/svg+xml",
+  };
+  const relationshipId = `rIdFigure${figureId}`;
+  const fileName = `figure-${figureId}.${asset.extension}`;
+  const target = `media/${fileName}`;
+  const widthEmu = 6080760;
+  const heightEmu = Math.round(widthEmu * (block.height / Math.max(1, block.width)));
+
+  context.mediaFiles.push({
+    relationshipId,
+    target,
+    path: `word/${target}`,
+    data: asset.data,
+    extension: asset.extension,
+    contentType: asset.contentType,
+  });
+
+  return [
+    "<w:p><w:pPr><w:spacing w:after=\"100\"/></w:pPr><w:r><w:drawing>",
+    "<wp:inline distT=\"0\" distB=\"0\" distL=\"0\" distR=\"0\">",
+    `<wp:extent cx="${widthEmu}" cy="${heightEmu}"/>`,
+    "<wp:effectExtent l=\"0\" t=\"0\" r=\"0\" b=\"0\"/>",
+    `<wp:docPr id="${figureId}" name="${escapeXml(block.label)}" descr="${escapeXml(block.altText)}"/>`,
+    "<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect=\"1\"/></wp:cNvGraphicFramePr>",
+    "<a:graphic><a:graphicData uri=\"http://schemas.openxmlformats.org/drawingml/2006/picture\">",
+    "<pic:pic><pic:nvPicPr>",
+    `<pic:cNvPr id="${figureId}" name="${escapeXml(block.label)}"/>`,
+    "<pic:cNvPicPr/>",
+    "</pic:nvPicPr><pic:blipFill>",
+    `<a:blip r:embed="${relationshipId}"/>`,
+    "<a:stretch><a:fillRect/></a:stretch>",
+    "</pic:blipFill><pic:spPr>",
+    `<a:xfrm><a:off x="0" y="0"/><a:ext cx="${widthEmu}" cy="${heightEmu}"/></a:xfrm>`,
+    "<a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom>",
+    "</pic:spPr></pic:pic>",
+    "</a:graphicData></a:graphic>",
+    "</wp:inline>",
+    "</w:drawing></w:r></w:p>",
+    wordParagraph(block.caption),
+  ].join("");
+}
+
+function wordBlock(block: ReportDocumentBlock, context: DocxRenderContext): string {
   if (block.kind === "paragraph") return wordParagraph(block.text);
   if (block.kind === "list") return block.items.map((item) => wordParagraph(`- ${item}`)).join("");
-  if (block.kind === "figure") return `${wordParagraph(`[${block.status === "ready" ? "Figure" : "Figure placeholder"}] ${block.label}`)}${wordParagraph(block.caption)}`;
+  if (block.kind === "figure") return wordFigure(block, context);
   return wordTable(block.columns, block.rows);
 }
 
@@ -520,7 +603,7 @@ function writeUint32(out: number[], value: number): void {
   out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
 }
 
-function createZip(files: Array<{ path: string; data: string }>): Uint8Array {
+function createZip(files: Array<{ path: string; data: string | Uint8Array }>): Uint8Array {
   const encoder = new TextEncoder();
   const out: number[] = [];
   const central: number[] = [];
@@ -528,7 +611,7 @@ function createZip(files: Array<{ path: string; data: string }>): Uint8Array {
 
   for (const file of files) {
     const name = encoder.encode(file.path);
-    const data = encoder.encode(file.data);
+    const data = typeof file.data === "string" ? encoder.encode(file.data) : file.data;
     const crc = crc32(data);
     const localOffset = offset;
 
@@ -579,7 +662,12 @@ function createZip(files: Array<{ path: string; data: string }>): Uint8Array {
   return new Uint8Array(out);
 }
 
-export function renderReportDocumentDocx(document: ReportDocument): Uint8Array {
+export function renderReportDocumentDocx(document: ReportDocument, options: ReportDocumentDocxOptions = {}): Uint8Array {
+  const context: DocxRenderContext = {
+    figureAssets: options.figureAssets ?? [],
+    mediaFiles: [],
+    nextFigureId: 1,
+  };
   const body = [
     wordParagraph("ENVIRONMENTAL QUALITY SERIES", "Subtitle"),
     wordParagraph(document.title, "Title"),
@@ -588,13 +676,13 @@ export function renderReportDocumentDocx(document: ReportDocument): Uint8Array {
     wordPageBreak(),
     ...document.sections.flatMap((section) => [
       wordParagraph(section.title, "Heading1"),
-      ...section.blocks.map(wordBlock),
+      ...section.blocks.map((block) => wordBlock(block, context)),
     ]),
     "<w:sectPr><w:pgSz w:w=\"12240\" w:h=\"15840\"/><w:pgMar w:top=\"936\" w:right=\"936\" w:bottom=\"936\" w:left=\"936\"/></w:sectPr>",
   ].join("");
 
   const documentXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${body}</w:body></w:document>`;
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>${body}</w:body></w:document>`;
   const stylesXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
   <w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="100" w:line="276" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>
@@ -605,10 +693,17 @@ export function renderReportDocumentDocx(document: ReportDocument): Uint8Array {
   <w:style w:type="table" w:styleId="TableGrid"><w:name w:val="Table Grid"/><w:tblPr><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:left w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:right w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="CBD5E1"/></w:tblBorders></w:tblPr></w:style>
 </w:styles>`;
 
+  const imageRelationships = context.mediaFiles
+    .map((file) => `<Relationship Id="${file.relationshipId}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="${file.target}"/>`)
+    .join("");
+  const imageContentTypes = [...new Map(context.mediaFiles.map((file) => [file.extension, file.contentType])).entries()]
+    .map(([extension, contentType]) => `<Default Extension="${extension}" ContentType="${contentType}"/>`)
+    .join("");
+
   return createZip([
     {
       path: "[Content_Types].xml",
-      data: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
+      data: `<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>${imageContentTypes}<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/><Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/></Types>`,
     },
     {
       path: "_rels/.rels",
@@ -616,8 +711,9 @@ export function renderReportDocumentDocx(document: ReportDocument): Uint8Array {
     },
     {
       path: "word/_rels/document.xml.rels",
-      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>`,
+      data: `<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdStyles" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>${imageRelationships}</Relationships>`,
     },
+    ...context.mediaFiles.map((file) => ({ path: file.path, data: file.data })),
     { path: "word/document.xml", data: documentXml },
     { path: "word/styles.xml", data: stylesXml },
     {
