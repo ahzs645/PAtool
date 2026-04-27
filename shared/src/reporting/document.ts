@@ -603,6 +603,12 @@ function writeUint32(out: number[], value: number): void {
   out.push(value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff);
 }
 
+function appendBytes(out: number[], bytes: Uint8Array): void {
+  for (const byte of bytes) {
+    out.push(byte);
+  }
+}
+
 function createZip(files: Array<{ path: string; data: string | Uint8Array }>): Uint8Array {
   const encoder = new TextEncoder();
   const out: number[] = [];
@@ -626,7 +632,8 @@ function createZip(files: Array<{ path: string; data: string | Uint8Array }>): U
     writeUint32(out, data.length);
     writeUint16(out, name.length);
     writeUint16(out, 0);
-    out.push(...name, ...data);
+    appendBytes(out, name);
+    appendBytes(out, data);
     offset = out.length;
 
     writeUint32(central, 0x02014b50);
@@ -646,7 +653,7 @@ function createZip(files: Array<{ path: string; data: string | Uint8Array }>): U
     writeUint16(central, 0);
     writeUint32(central, 0);
     writeUint32(central, localOffset);
-    central.push(...name);
+    appendBytes(central, name);
   }
 
   const centralOffset = out.length;

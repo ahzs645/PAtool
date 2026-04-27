@@ -19,11 +19,12 @@ import {
   type ReportSensorPercentDifference,
   type ReportTemplateInput,
   type ReportTemplateStep,
+  type ReportGenerationPlan,
 } from "@patool/shared";
 
 import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
 import { getJson } from "../lib/api";
-import { rasterizeReportDocumentFigures } from "../lib/reportFigureRaster";
+import { prepareReportDocumentFigures, rasterizeReportDocumentFigures } from "../lib/reportFigureRaster";
 import styles from "./ReportBuilderPage.module.css";
 
 const DEFAULT_COMMUNITY = "Selected community";
@@ -76,9 +77,10 @@ function downloadBlob(blob: Blob, filename: string) {
   }, 1000);
 }
 
-async function exportDocx(document: ReportDocument) {
-  const figureAssets = await rasterizeReportDocumentFigures(document);
-  const bytes = renderReportDocumentDocx(document, { figureAssets });
+async function exportDocx(document: ReportDocument, plan: ReportGenerationPlan, summary: ReportNetworkSummary) {
+  const preparedDocument = await prepareReportDocumentFigures(document, plan, summary);
+  const figureAssets = await rasterizeReportDocumentFigures(preparedDocument);
+  const bytes = renderReportDocumentDocx(preparedDocument, { figureAssets });
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
   downloadBlob(
@@ -87,9 +89,10 @@ async function exportDocx(document: ReportDocument) {
   );
 }
 
-function openPdfPrintView(document: ReportDocument): "print" | "html-fallback" {
-  const html = renderReportDocumentHtml(document);
+async function openPdfPrintView(document: ReportDocument, plan: ReportGenerationPlan, summary: ReportNetworkSummary): Promise<"print" | "html-fallback"> {
   const printWindow = window.open("", "_blank");
+  const preparedDocument = await prepareReportDocumentFigures(document, plan, summary);
+  const html = renderReportDocumentHtml(preparedDocument);
   if (!printWindow) {
     downloadBlob(new Blob([html], { type: "text/html" }), `${reportFileBase(document.communityName)}-print.html`);
     return "html-fallback";
@@ -488,14 +491,20 @@ export default function ReportBuilderPage() {
           <Button
             size="small"
             disabled={!exportReady}
-            onClick={() => {
-              if (!reportDocument || !exportReady) return;
-              const result = openPdfPrintView(reportDocument);
-              setExportStatus(
-                result === "print"
-                  ? "PDF print view opened."
-                  : "Popup blocked; downloaded print-ready HTML.",
-              );
+            onClick={async () => {
+              if (!reportDocument || !summary || !exportReady) return;
+              try {
+                setExportStatus("Preparing map basemap...");
+                const result = await openPdfPrintView(reportDocument, plan, summary);
+                setExportStatus(
+                  result === "print"
+                    ? "PDF print view opened."
+                    : "Popup blocked; downloaded print-ready HTML.",
+                );
+              } catch (error) {
+                console.error(error);
+                setExportStatus("PDF print view failed while preparing the basemap.");
+              }
             }}
           >
             Open PDF print view
@@ -504,10 +513,10 @@ export default function ReportBuilderPage() {
             size="small"
             disabled={!exportReady}
             onClick={async () => {
-              if (!reportDocument || !exportReady) return;
+              if (!reportDocument || !summary || !exportReady) return;
               try {
-                setExportStatus("Preparing DOCX figures...");
-                await exportDocx(reportDocument);
+                setExportStatus("Preparing map and DOCX figures...");
+                await exportDocx(reportDocument, plan, summary);
                 setExportStatus("DOCX downloaded.");
               } catch (error) {
                 console.error(error);
