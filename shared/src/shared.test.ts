@@ -69,6 +69,17 @@ import {
 } from "./purpleairLocal";
 import { attributePm25Event, parseFirmsCsv, parseHmsSmokeGeoJson } from "./hazards";
 import {
+  classifyPm25Regime,
+  estimateRegimeSeparatedExposure,
+  summarizeRegimeClassifications,
+} from "./regimeSeparation";
+import {
+  evaluateCorrectionBenchmarks,
+  fitLocalCorrectionModel,
+  predictLocalCorrection,
+  type CorrectionBenchmarkObservation,
+} from "./correctionBenchmark";
+import {
   classifyWindDirection,
   classifyWindIntensity,
   computePolarPlot,
@@ -1524,6 +1535,92 @@ describe("reference comparison and hazard helpers", () => {
     expect(smoke[0]).toMatchObject({ source: "hms", density: "heavy", timestamp: "2026-04-20T08:00:00.000Z" });
     expect(attributePm25Event({ nearbySmoke: true, nearbyFire: true }).label).toBe("likely smoke event");
     expect(attributePm25Event({ channelDisagreement: true }).label).toBe("likely sensor fault");
+  });
+});
+
+describe("regime separation", () => {
+  it("classifies wildfire smoke when smoke, fire, wind, and elevated PM2.5 agree", () => {
+    const classification = classifyPm25Regime({
+      timestamp: "2024-08-10T12:00:00Z",
+      pm25: 88,
+      smokeDensity: "heavy",
+      nearbyFire: true,
+      nearestFireKm: 42,
+      windAlignedWithFire: true,
+      channelAgreementValid: true,
+    });
+    expect(classification.regime).toBe("wildfire");
+    expect(classification.confidence).toBe("high");
+    expect(classification.scores.wildfire).toBeGreaterThan(classification.scores.local);
+  });
+
+  it("classifies mixed events when wildfire and winter or local signals overlap", () => {
+    const classification = classifyPm25Regime({
+      timestamp: "2024-12-15T08:00:00Z",
+      pm25: 42,
+      temperatureF: 25,
+      relativeHumidity: 92,
+      smokeDensity: "medium",
+      lowWindOrInversionSignal: true,
+      localSourceSignal: true,
+      channelAgreementValid: true,
+    });
+    expect(classification.regime).toBe("mixed");
+  });
+
+  it("splits wildfire increment from local/background PM2.5", () => {
+    const classification = classifyPm25Regime({
+      timestamp: "2024-08-10T12:00:00Z",
+      pm25: 40,
+      smokeDensity: "medium",
+      nearbyFire: true,
+    });
+    const exposure = estimateRegimeSeparatedExposure({
+      totalPm25: 40,
+      backgroundPm25: 7,
+      classification,
+    });
+    expect(exposure.wildfireIncrementPm25).toBeCloseTo(33);
+    expect(exposure.localPm25).toBeCloseTo(7);
+  });
+
+  it("summarizes classified regimes", () => {
+    const rows = [
+      { pm25: 5, classification: classifyPm25Regime({ pm25: 5 }) },
+      { pm25: 25, classification: classifyPm25Regime({ pm25: 25, localSourceSignal: true }) },
+    ];
+    const summary = summarizeRegimeClassifications(rows);
+    expect(summary.find((row) => row.regime === "background")?.count).toBe(1);
+    expect(summary.find((row) => row.regime === "local")?.count).toBe(1);
+  });
+});
+
+describe("correction benchmark", () => {
+  const benchmarkRows: CorrectionBenchmarkObservation[] = [
+    { id: "a", pm25: 20, humidity: 40, inputBasis: "cf_1", referencePm25: 12.8, regime: "background" },
+    { id: "b", pm25: 30, humidity: 50, inputBasis: "cf_1", referencePm25: 18.5, regime: "local" },
+    { id: "c", pm25: 80, humidity: 35, inputBasis: "cf_1", referencePm25: 44.7, regime: "wildfire" },
+    { id: "d", pm25: 120, humidity: 30, inputBasis: "cf_1", referencePm25: 67.4, regime: "wildfire" },
+    { id: "e", pm25: 40, humidity: 60, inputBasis: "cf_1", referencePm25: 22.2, regime: "winter-inversion" },
+  ];
+
+  it("evaluates correction profiles overall and by regime", () => {
+    const rows = evaluateCorrectionBenchmarks(benchmarkRows, {
+      profileIds: ["epa-barkjohn-2021-cf1"],
+      groupByRegime: true,
+    });
+    expect(rows.find((row) => row.regime === "all")?.n).toBe(5);
+    expect(rows.find((row) => row.regime === "wildfire")?.n).toBe(2);
+    expect(rows.every((row) => row.profileId === "epa-barkjohn-2021-cf1")).toBe(true);
+  });
+
+  it("fits and predicts a local linear correction model", () => {
+    const model = fitLocalCorrectionModel(benchmarkRows, "cf_1");
+    expect(model).not.toBeNull();
+    expect(model!.n).toBe(5);
+    const predicted = predictLocalCorrection(model!, { pm25: 50, humidity: 40, regime: "local" });
+    expect(Number.isFinite(predicted)).toBe(true);
+    expect(model!.metrics.rmse).not.toBeNull();
   });
 });
 

@@ -5,8 +5,6 @@ import {
   buildPurpleAirReportDocument,
   createPurpleAirReportBlueprint,
   createPurpleAirReportPlan,
-  renderReportDocumentDocx,
-  renderReportDocumentHtml,
   type PasCollection,
   type PasRecord,
   type PatSeries,
@@ -24,7 +22,6 @@ import {
 
 import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
 import { getJson } from "../lib/api";
-import { prepareReportDocumentFigures, rasterizeReportDocumentFigures } from "../lib/reportFigureRaster";
 import styles from "./ReportBuilderPage.module.css";
 
 const DEFAULT_COMMUNITY = "Selected community";
@@ -78,6 +75,13 @@ function downloadBlob(blob: Blob, filename: string) {
 }
 
 async function exportDocx(document: ReportDocument, plan: ReportGenerationPlan, summary: ReportNetworkSummary) {
+  const [
+    { renderReportDocumentDocx },
+    { prepareReportDocumentFigures, rasterizeReportDocumentFigures },
+  ] = await Promise.all([
+    import("@patool/shared"),
+    import("../lib/reportFigureRaster"),
+  ]);
   const preparedDocument = await prepareReportDocumentFigures(document, plan, summary);
   const figureAssets = await rasterizeReportDocumentFigures(preparedDocument);
   const bytes = renderReportDocumentDocx(preparedDocument, { figureAssets });
@@ -91,6 +95,13 @@ async function exportDocx(document: ReportDocument, plan: ReportGenerationPlan, 
 
 async function openPdfPrintView(document: ReportDocument, plan: ReportGenerationPlan, summary: ReportNetworkSummary): Promise<"print" | "html-fallback"> {
   const printWindow = window.open("", "_blank");
+  const [
+    { renderReportDocumentHtml },
+    { prepareReportDocumentFigures },
+  ] = await Promise.all([
+    import("@patool/shared"),
+    import("../lib/reportFigureRaster"),
+  ]);
   const preparedDocument = await prepareReportDocumentFigures(document, plan, summary);
   const html = renderReportDocumentHtml(preparedDocument);
   if (!printWindow) {
@@ -140,6 +151,7 @@ export default function ReportBuilderPage() {
   const [wildfireRegion, setWildfireRegion] = useState("");
   const [interventionMonitoring, setInterventionMonitoring] = useState(true);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
+  const [builderReady, setBuilderReady] = useState(false);
 
   const { data: collection } = useQuery({
     queryKey: ["report-builder-pas"],
@@ -156,6 +168,28 @@ export default function ReportBuilderPage() {
       setSelectedIds(defaultSensorIds(collection));
     }
   }, [collection, selectedIds]);
+
+  useEffect(() => {
+    if (!collection) return;
+    setBuilderReady(false);
+    let idleId: number | null = null;
+    let timeoutId: number | null = null;
+
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(() => setBuilderReady(true), { timeout: 500 });
+    } else {
+      timeoutId = globalThis.setTimeout(() => setBuilderReady(true), 50);
+    }
+
+    return () => {
+      if (idleId !== null && typeof window.cancelIdleCallback === "function") {
+        window.cancelIdleCallback(idleId);
+      }
+      if (timeoutId !== null) {
+        globalThis.clearTimeout(timeoutId);
+      }
+    };
+  }, [collection]);
 
   const activeSelectedIds = selectedIds ?? (collection ? defaultSensorIds(collection) : []);
   const activeAttributionSensorId = attributionSensorId || activeSelectedIds[0] || "";
@@ -245,7 +279,7 @@ export default function ReportBuilderPage() {
     queries: (plan?.seriesRequests ?? []).map((request) => ({
       queryKey: ["report-builder-series", request.sensorId, request.path],
       queryFn: () => getJson<PatSeries>(request.path),
-      enabled: Boolean(plan),
+      enabled: Boolean(plan) && builderReady,
       staleTime: 60_000,
     })),
   });
@@ -430,6 +464,10 @@ export default function ReportBuilderPage() {
 
   if (!collection || !plan) {
     return <Loader message="Preparing report builder..." />;
+  }
+
+  if (!builderReady) {
+    return <Loader message="Initializing report workspace..." />;
   }
 
   return (

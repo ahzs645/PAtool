@@ -580,6 +580,15 @@
   background: var(--bg-transparent-light);
 }
 
+.viewBarButtonActive {
+  background: var(--accent-bg);
+  color: var(--accent-text);
+}
+
+.viewBarButtonActive:hover {
+  background: var(--accent-bg-hover);
+}
+
 /* ── Loading state in side panel tabs ── */
 .tabLoading {
   display: flex;

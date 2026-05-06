@@ -371,12 +371,14 @@ describe("app", () => {
       expect(screen.getByText("Validation CSV")).toBeInTheDocument();
     });
 
-    const map = mockMaps.at(-1);
-    expect(map?.addSource).toHaveBeenCalledWith(
-      "airfuse-surface",
-      expect.objectContaining({ type: "geojson" }),
-    );
-    expect(map?.fitBounds).toHaveBeenCalled();
+    await waitFor(() => {
+      const map = mockMaps.at(-1);
+      expect(map?.addSource).toHaveBeenCalledWith(
+        "airfuse-surface",
+        expect.objectContaining({ type: "geojson" }),
+      );
+      expect(map?.fitBounds).toHaveBeenCalled();
+    });
   });
 
   it("renders the AirNow reference comparison page", async () => {

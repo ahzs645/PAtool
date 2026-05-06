@@ -315,7 +315,7 @@ export default function DiagnosticsPage() {
         <Card title="QC Validation">
           <div className={styles.actions}>
             <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setQcLoading(true); try { setQcResult(await postJson<QcResult>("/api/qc/advanced", { series, removeOutOfSpec: true })); } finally { setQcLoading(false); } }}>
-              {qcLoading ? "..." : "Run QC"}
+              {qcLoading ? "Running QC..." : "Run QC"}
             </Button>
           </div>
           {qcResult ? (
@@ -328,7 +328,7 @@ export default function DiagnosticsPage() {
         <Card title="Wind Analysis">
           <div className={styles.actions}>
             <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setWindLoading(true); try { const [r, p] = await Promise.all([postJson<WindRoseData>("/api/wind-rose", { series }), postJson<PolarPlotData>("/api/polar-plot", { series })]); setWindRose(r); setPolarPlot(p); } finally { setWindLoading(false); } }}>
-              {windLoading ? "..." : "Generate"}
+              {windLoading ? "Generating wind..." : "Generate wind"}
             </Button>
           </div>
           {(windRoseOption || polarPlotOption) ? (
@@ -345,7 +345,7 @@ export default function DiagnosticsPage() {
       <Card title="Scatter Matrix">
         <div className={styles.actions}>
           <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setScatterLoading(true); try { setScatterMatrix(await postJson<ScatterMatrixData>("/api/scatter-matrix", { series, sampleSize: 500 })); } finally { setScatterLoading(false); } }}>
-            {scatterLoading ? "..." : "Generate"}
+            {scatterLoading ? "Generating scatter..." : "Generate scatter matrix"}
           </Button>
         </div>
         {scatterMatrixOpts ? (

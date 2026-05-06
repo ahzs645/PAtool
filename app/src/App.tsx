@@ -12,6 +12,7 @@ const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const ModelingPage = lazy(() => import("./pages/ModelingPage"));
 const ModelZooPage = lazy(() => import("./pages/ModelZooPage"));
 const ValidationLabPage = lazy(() => import("./pages/ValidationLabPage"));
+const RegimeWorkbenchPage = lazy(() => import("./pages/RegimeWorkbenchPage"));
 const CovariateLayersPage = lazy(() => import("./pages/CovariateLayersPage"));
 const ReliabilityReportsPage = lazy(() => import("./pages/ReliabilityReportsPage"));
 const ComparisonPage = lazy(() => import("./pages/ComparisonPage"));
@@ -39,6 +40,7 @@ function RoutesView() {
             <Route path="/modeling" element={<ModelingPage />} />
             <Route path="/model-zoo" element={<ModelZooPage />} />
             <Route path="/validation-lab" element={<ValidationLabPage />} />
+            <Route path="/regimes" element={<RegimeWorkbenchPage />} />
             <Route path="/covariates" element={<CovariateLayersPage />} />
             <Route path="/reliability" element={<ReliabilityReportsPage />} />
             <Route path="/comparison" element={<ComparisonPage />} />

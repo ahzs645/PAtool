@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   combineWeightedStudyGrids,
@@ -79,6 +79,7 @@ export default function ModelingPage() {
   const [draft, setDraft] = useState<SourceDraft>(defaultDraft);
   const [sourceLayers, setSourceLayers] = useState<LoadedSourceLayer[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [expandedDiagram, setExpandedDiagram] = useState<ReferenceDiagram | null>(null);
 
   const { data } = useQuery({
     queryKey: ["modeling-pas"],
@@ -270,11 +271,15 @@ export default function ModelingPage() {
         </div>
         <div className={styles.diagramGrid}>
           {REFERENCE_DIAGRAMS.map((diagram) => (
-            <ReferenceDiagramCard key={diagram.id} diagram={diagram} />
+            <ReferenceDiagramCard key={diagram.id} diagram={diagram} onExpand={setExpandedDiagram} />
           ))}
         </div>
         <p className={styles.sourceAttribution}>{REFERENCE_DIAGRAM_SOURCE.attribution}</p>
       </section>
+
+      {expandedDiagram && (
+        <DiagramModal diagram={expandedDiagram} onClose={() => setExpandedDiagram(null)} />
+      )}
 
       <Card title="Source layer">
         <div className={styles.sourceForm}>
@@ -428,20 +433,145 @@ function SitingCandidateRow({ candidate }: { candidate: SensorSitingCandidate })
   );
 }
 
-function ReferenceDiagramCard({ diagram }: { diagram: ReferenceDiagram }) {
+function ReferenceDiagramCard({
+  diagram,
+  onExpand,
+}: {
+  diagram: ReferenceDiagram;
+  onExpand: (diagram: ReferenceDiagram) => void;
+}) {
   const imageUrl = docsUrl(diagram.fileName);
 
   return (
     <article className={styles.diagramItem}>
-      <a className={styles.diagramImageLink} href={imageUrl} target="_blank" rel="noreferrer">
-        <img src={imageUrl} alt={`${diagram.title} diagram`} loading="lazy" />
-      </a>
+      <button
+        type="button"
+        className={styles.diagramPreviewButton}
+        onClick={() => onExpand(diagram)}
+        aria-label={`Expand ${diagram.title} diagram`}
+      >
+        <MermaidDiagram chart={diagram.mermaid} title={diagram.title} />
+      </button>
       <div className={styles.diagramBody}>
         <span>{diagram.category}</span>
         <h3>{diagram.title}</h3>
         <p>{diagram.summary}</p>
+        <a className={styles.diagramSourceLink} href={imageUrl} target="_blank" rel="noreferrer">
+          Open source image
+        </a>
       </div>
     </article>
+  );
+}
+
+function DiagramModal({ diagram, onClose }: { diagram: ReferenceDiagram; onClose: () => void }) {
+  const imageUrl = docsUrl(diagram.fileName);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = "";
+    };
+  }, [onClose]);
+
+  return (
+    <div className={styles.diagramModalBackdrop} role="presentation" onMouseDown={onClose}>
+      <section
+        className={styles.diagramModal}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={`expanded-${diagram.id}-title`}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className={styles.diagramModalHeader}>
+          <div>
+            <span>{diagram.category}</span>
+            <h2 id={`expanded-${diagram.id}-title`}>{diagram.title}</h2>
+            <p>{diagram.summary}</p>
+          </div>
+          <div className={styles.diagramModalActions}>
+            <a href={imageUrl} target="_blank" rel="noreferrer">
+              Source image
+            </a>
+            <button type="button" onClick={onClose} aria-label="Close expanded diagram">
+              Close
+            </button>
+          </div>
+        </header>
+        <div className={styles.diagramModalBody}>
+          <MermaidDiagram chart={diagram.mermaid} title={diagram.title} expanded />
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function MermaidDiagram({
+  chart,
+  title,
+  expanded = false,
+}: {
+  chart: string;
+  title: string;
+  expanded?: boolean;
+}) {
+  const id = useId().replace(/[^a-zA-Z0-9_-]/g, "");
+  const [svg, setSvg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    import("mermaid")
+      .then(({ default: mermaid }) => {
+        if (cancelled) return null;
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: "base",
+          themeVariables: {
+            fontFamily: "Inter, system-ui, sans-serif",
+            primaryColor: "#f7f8fb",
+            primaryTextColor: "#1f2937",
+            primaryBorderColor: "#cbd5e1",
+            lineColor: "#64748b",
+            secondaryColor: "#eef6ff",
+            tertiaryColor: "#fff7ed",
+          },
+        });
+        return mermaid.render(`reference-diagram-${id}`, chart);
+      })
+      .then((result) => {
+        if (cancelled || !result) return;
+        setSvg(result.svg);
+        setError(null);
+      })
+      .catch((err: unknown) => {
+        if (cancelled) return;
+        setSvg(null);
+        setError(err instanceof Error ? err.message : "Could not render Mermaid diagram.");
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [chart, id]);
+
+  return (
+    <div className={`${styles.mermaidFrame} ${expanded ? styles.mermaidFrameExpanded : ""}`} aria-label={`${title} Mermaid diagram`}>
+      {svg ? (
+        <div className={styles.mermaidSvg} dangerouslySetInnerHTML={{ __html: svg }} />
+      ) : (
+        <div className={styles.mermaidFallback}>
+          {error ? "Mermaid preview unavailable." : "Rendering diagram..."}
+        </div>
+      )}
+    </div>
   );
 }
 

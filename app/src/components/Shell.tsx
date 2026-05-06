@@ -13,6 +13,7 @@ const navItems = [
   { to: "/modeling", label: "Modeling", icon: LayersIcon },
   { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
   { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
+  { to: "/regimes", label: "Regimes", icon: RegimeIcon },
   { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
   { to: "/reliability", label: "Reliability", icon: ShieldIcon },
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
@@ -164,6 +165,17 @@ function ValidationIcon() {
       <path d="M20 6L9 17l-5-5" />
       <path d="M14 4h6v6" />
       <path d="M4 20h16" />
+    </svg>
+  );
+}
+
+function RegimeIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 18c3-7 7-10 16-11" />
+      <path d="M4 12c4 2 8 2 12-1" />
+      <path d="M5 5c2 3 5 4 9 4" />
+      <circle cx="18" cy="7" r="2" />
     </svg>
   );
 }

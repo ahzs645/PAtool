@@ -19,18 +19,24 @@ export function buildColumns(pm25Window: Pm25Window): Column<PasRecord>[] {
       key: "label",
       header: "Sensor",
       width: "40%",
+      sortValue: (r: PasRecord) => r.label,
+      filterValue: (r: PasRecord) => `${r.label} ${r.id}`,
       render: (r: PasRecord) => <CellStack primary={r.label} sub={`#${r.id}`} />,
     },
     {
       key: "state",
       header: "State",
       width: 80,
+      sortValue: (r: PasRecord) => r.stateCode ?? "NA",
+      filterValue: (r: PasRecord) => r.stateCode ?? "NA",
       render: (r: PasRecord) => r.stateCode ?? "NA",
     },
     {
       key: "pm25",
       header: `PM2.5 (${windowLabel})`,
       width: 120,
+      sortValue: (r: PasRecord) => getPm25ForWindow(r, pm25Window),
+      filterValue: (r: PasRecord) => getPm25ForWindow(r, pm25Window).toFixed(2),
       render: (r: PasRecord) => {
         const val = getPm25ForWindow(r, pm25Window);
         const band = pm25ToAqiBand(val);
@@ -42,6 +48,8 @@ export function buildColumns(pm25Window: Pm25Window): Column<PasRecord>[] {
       key: "mode",
       header: "Mode",
       width: 100,
+      sortValue: (r: PasRecord) => r.locationType,
+      filterValue: (r: PasRecord) => r.locationType,
       render: (r: PasRecord) => <Chip>{r.locationType}</Chip>,
     },
   ];

@@ -1,4 +1,4 @@
-import { startTransition, useDeferredValue, useMemo, useState } from "react";
+import { startTransition, useDeferredValue, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate } from "react-router-dom";
 
@@ -28,9 +28,11 @@ export default function ExplorerPage() {
   const [query, setQuery] = useState("");
   const [outsideOnly, setOutsideOnly] = useState(true);
   const [pm25Window, setPm25Window] = useState<Pm25Window>("pm25_1hr");
+  const [quickSortHighPm, setQuickSortHighPm] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [displayedSensor, setDisplayedSensor] = useState<PasRecord | null>(null);
   const [activeTab, setActiveTab] = useState<SidePanelTab>("home");
+  const searchRef = useRef<HTMLInputElement | null>(null);
   const { panelWidth, isResizing, handleMouseDown } = useResizablePanel(400);
   const deferredQuery = useDeferredValue(query);
   const navigate = useNavigate();
@@ -94,6 +96,13 @@ export default function ExplorerPage() {
   }, [datasetHealth]);
 
   const columns = useMemo(() => buildColumns(pm25Window), [pm25Window]);
+  const tableRecords = useMemo(() => {
+    if (!filtered) return [];
+    if (!quickSortHighPm) return filtered.records;
+    return [...filtered.records].sort(
+      (a, b) => getPm25ForWindow(b, pm25Window) - getPm25ForWindow(a, pm25Window),
+    );
+  }, [filtered, pm25Window, quickSortHighPm]);
 
   if (!filtered) {
     return (
@@ -127,6 +136,7 @@ export default function ExplorerPage() {
 
           <div className={styles.controls}>
             <input
+              ref={searchRef}
               aria-label="Sensor search"
               className={styles.search}
               placeholder="Search by label..."
@@ -236,20 +246,32 @@ export default function ExplorerPage() {
               <span className={styles.viewName}>All Sensors &middot; {filtered.records.length}</span>
             </div>
             <div className={styles.viewBarRight}>
-              <button className={styles.viewBarButton}>Filter</button>
-              <button className={styles.viewBarButton}>Sort</button>
-              <button className={styles.viewBarButton}>Options</button>
+              <button className={styles.viewBarButton} onClick={() => searchRef.current?.focus()}>
+                Filter
+              </button>
+              <button
+                className={`${styles.viewBarButton} ${quickSortHighPm ? styles.viewBarButtonActive : ""}`}
+                onClick={() => setQuickSortHighPm((value) => !value)}
+              >
+                Sort
+              </button>
+              <button
+                className={`${styles.viewBarButton} ${!outsideOnly ? styles.viewBarButtonActive : ""}`}
+                onClick={() => setOutsideOnly((value) => !value)}
+              >
+                Options
+              </button>
             </div>
           </div>
           <DataTable
             columns={columns}
-            data={filtered.records}
+            data={tableRecords}
             rowKey={(r) => r.id}
             onRowClick={handleRowClick}
             selectedRowKey={displayedSensor?.id ?? null}
             emptyMessage="No sensors match your filter"
             pageSize={25}
-            footer={<span>{filtered.records.length} sensors</span>}
+            footer={<span>{tableRecords.length} sensors</span>}
           />
         </Card>
       </div>
