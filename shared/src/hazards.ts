@@ -204,6 +204,94 @@ function geometryBounds(geometry: GeoJsonGeometry): { west: number; south: numbe
   return { west, south, east, north };
 }
 
+const HMS_DENSITY_RANK: Record<SmokePolygon["density"], number> = {
+  unknown: 0,
+  light: 1,
+  medium: 2,
+  heavy: 3,
+};
+
+// `SmokeRegimeKey` itself lives in domain.ts so the correction registry can
+// declare `recommendedRegimes` without pulling in hazards. We re-export it
+// here so callers can tag observations alongside the HMS helpers.
+import type { SmokeRegimeKey } from "./domain";
+export type { SmokeRegimeKey } from "./domain";
+
+/** Map an HMS density label (or the literal "none") to a smoke regime key. */
+export function smokeRegimeFromDensity(density: SmokePolygon["density"] | "none"): SmokeRegimeKey {
+  switch (density) {
+    case "heavy": return "heavy-smoke";
+    case "medium": return "moderate-smoke";
+    case "light": return "light-smoke";
+    default: return "non-smoke";
+  }
+}
+
+/**
+ * Determine the highest HMS smoke density covering a single lat/lon
+ * from a list of NOAA HMS polygons. Use this to tag observations with
+ * a `smokeRegime` so corrections and exposure pipelines can switch into
+ * smoke-aware mode without a UI round-trip.
+ *
+ * Returns `"none"` when no polygon covers the point or when the input
+ * list is empty. Coordinates are interpreted as longitude/latitude in
+ * the same WGS84 frame HMS publishes.
+ */
+export function smokeDensityAtPoint(
+  longitude: number,
+  latitude: number,
+  polygons: ReadonlyArray<SmokePolygon>,
+): SmokePolygon["density"] | "none" {
+  if (!Number.isFinite(longitude) || !Number.isFinite(latitude)) return "none";
+  if (!polygons.length) return "none";
+  let best: SmokePolygon["density"] | "none" = "none";
+  let bestRank = -1;
+  for (const polygon of polygons) {
+    if (!pointInGeometry(longitude, latitude, polygon.geometry)) continue;
+    const rank = HMS_DENSITY_RANK[polygon.density];
+    if (rank > bestRank) {
+      best = polygon.density;
+      bestRank = rank;
+    }
+  }
+  return best;
+}
+
+function pointInRing(longitude: number, latitude: number, ring: number[][]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i, i += 1) {
+    const xi = ring[i][0];
+    const yi = ring[i][1];
+    const xj = ring[j][0];
+    const yj = ring[j][1];
+    const intersect = (yi > latitude) !== (yj > latitude)
+      && longitude < ((xj - xi) * (latitude - yi)) / ((yj - yi) || Number.EPSILON) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function pointInPolygonCoords(longitude: number, latitude: number, polygon: number[][][]): boolean {
+  if (!polygon.length) return false;
+  if (!pointInRing(longitude, latitude, polygon[0])) return false;
+  for (let i = 1; i < polygon.length; i += 1) {
+    if (pointInRing(longitude, latitude, polygon[i])) return false;
+  }
+  return true;
+}
+
+function pointInGeometry(longitude: number, latitude: number, geometry: GeoJsonGeometry): boolean {
+  if (geometry.type === "Polygon") {
+    return pointInPolygonCoords(longitude, latitude, geometry.coordinates);
+  }
+  if (geometry.type === "MultiPolygon") {
+    for (const polygon of geometry.coordinates) {
+      if (pointInPolygonCoords(longitude, latitude, polygon)) return true;
+    }
+  }
+  return false;
+}
+
 function flattenCoordinates(coordinates: unknown): number[][] {
   if (!Array.isArray(coordinates)) return [];
   if (typeof coordinates[0] === "number" && typeof coordinates[1] === "number") {

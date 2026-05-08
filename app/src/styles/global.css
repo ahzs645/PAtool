@@ -77,3 +77,55 @@ ol {
 [data-theme="dark"] .maplibregl-popup-tip {
   border-top-color: var(--bg-primary);
 }
+
+/* ── Accessibility ── */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: var(--accent-primary, #2563eb);
+  color: #fff;
+  padding: 8px 16px;
+  z-index: 1000;
+  font-weight: var(--font-weight-semibold);
+  border-radius: 0 0 var(--border-radius-md) 0;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--accent-primary, #2563eb);
+  outline-offset: 2px;
+}
+
+/* ── Print styles ──
+   Hide chrome and print pages with a tighter layout. Charts and maps
+   already render to canvas; we just keep their wrappers visible. */
+@media print {
+  html, body {
+    background: white !important;
+    color: black !important;
+  }
+  aside,
+  nav,
+  .skip-link,
+  button,
+  [role="navigation"] {
+    display: none !important;
+  }
+  main {
+    padding: 0 !important;
+  }
+  a {
+    color: black !important;
+    text-decoration: underline;
+  }
+  .maplibregl-popup,
+  .maplibregl-control-container {
+    display: none !important;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

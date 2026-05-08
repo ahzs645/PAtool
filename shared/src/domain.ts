@@ -1,3 +1,25 @@
+// =============================================================================
+// shared/src/domain.ts — PAtool's domain library.
+//
+// This file is intentionally large but is organized into the following
+// sections, in order. A future refactor should split each into its own
+// module under `shared/src/<area>/` and have this file re-export from
+// them so existing imports keep working.
+//
+//   1. SCHEMAS & TYPES         — Zod schemas, TypeScript types
+//   2. INGESTION & SANITIZERS   — sentinel filters, normalize* helpers
+//   3. CORRECTIONS              — Barkjohn 2021/2022, EPA FSMap, Nilson, etc.
+//   4. CHANNEL QC               — A/B agreement profiles, channel scoring
+//   5. AGGREGATION & SUMMARIES  — daily/hourly rollups, NowCast, AQI banding
+//   6. INTERPOLATION CORE       — IDW + ordinary kriging + grid helpers
+//   7. SPATIO-TEMPORAL IDW      — ST-IDW with LOOCV grid search
+//   8. PAPER 3 (CARROLL 2025) QC — runPaper3Qc + monitor verdicts
+//   9. EXPORTS / IMAGE HELPERS  — gridToImageData, palettes, color
+//
+// The boundary between (5) and (6) is the cleanest first cut and is
+// the recommended start for the future split.
+// =============================================================================
+
 import { formatISO } from "date-fns";
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
@@ -511,8 +533,14 @@ export type PurpleAirInputBasis = "cf_1" | "atm" | "alt";
 export type PurpleAirCorrectionProfileId =
   | "epa-barkjohn-2021-cf1"
   | "epa-barkjohn-2022-smoke-cf1"
+  | "epa-airnow-fsmap-cf1"
   | "nilson-2022-rh-growth-atm"
-  | "nilson-2022-polynomial-atm";
+  | "nilson-2022-polynomial-atm"
+  | "nilson-2024-rh-temp-cf1"
+  | "delp-singer-2020-smoke-atm"
+  | "lrapa-2017-atm";
+
+export type SmokeRegimeKey = "non-smoke" | "light-smoke" | "moderate-smoke" | "heavy-smoke";
 
 export type PurpleAirCorrectionProfile = {
   id: PurpleAirCorrectionProfileId;
@@ -521,12 +549,18 @@ export type PurpleAirCorrectionProfile = {
   scope: "default-outdoor" | "extreme-smoke" | "advanced";
   citation: Citation;
   requiresHumidity: boolean;
-  correct: (pm25: number, humidity: number | null) => number;
+  /** Optional temperature dependency (Fahrenheit). */
+  requiresTemperatureF?: boolean;
+  /** Recommended smoke regimes for the auto-switcher in `pickCorrectionProfileForRegime`. */
+  recommendedRegimes?: SmokeRegimeKey[];
+  correct: (pm25: number, humidity: number | null, temperatureF?: number | null) => number;
 };
 
 export type PurpleAirCorrectionInput = {
   pm25: number | null | undefined;
   humidity?: number | null;
+  /** Sensor temperature in Fahrenheit; required by Nilson 2024 RH+T. */
+  temperatureF?: number | null;
   inputBasis: PurpleAirInputBasis;
   profileId: PurpleAirCorrectionProfileId;
 };
@@ -630,6 +664,36 @@ const NILSON_2022_CITATION: Citation = {
   year: 2022,
 };
 
+const EPA_AIRNOW_FSMAP_CITATION: Citation = {
+  title: "EPA AirNow Fire and Smoke Map PM2.5 correction (Holder et al.)",
+  url: "https://www.epa.gov/sciencematters/epa-research-improves-air-quality-information-public-airnow-fire-and-smoke-map",
+  year: 2023,
+};
+
+const NILSON_2024_CITATION: Citation = {
+  title: "Calibration of PurpleAir low-cost PM2.5 sensors under high relative humidity",
+  url: "https://amt.copernicus.org/articles/17/6735/2024/",
+  year: 2024,
+};
+
+const DELP_SINGER_2020_CITATION: Citation = {
+  title: "Wildfire Smoke Adjustments for Low-Cost Particulate Matter Sensors",
+  url: "https://pubs.acs.org/doi/10.1021/acs.est.0c01716",
+  year: 2020,
+};
+
+const LRAPA_2017_CITATION: Citation = {
+  title: "LRAPA PurpleAir adjustment factor",
+  url: "https://www.lrapa.org/Documents/Air-Quality/Outdoor%20Sensor%20Performance%20Evaluation.pdf",
+  year: 2017,
+};
+
+const KELLEHER_2023_CITATION: Citation = {
+  title: "Evaluating EPA's correction in dust, winter, and wildfire-smoke conditions (Kelleher et al. 2023)",
+  url: "https://amt.copernicus.org/articles/16/1311/2023/",
+  year: 2023,
+};
+
 function roundNonNegative(value: number, digits = 3): number {
   if (!Number.isFinite(value)) return 0;
   return Number(Math.max(0, value).toFixed(digits));
@@ -667,6 +731,48 @@ function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
   return roundNonNegative(0.53 * pm25Atm + 0.000952 * pm25Atm ** 2 - 0.0914 * humidity + 6.3);
 }
 
+// EPA AirNow Fire & Smoke Map equation (Holder et al. 2023). Distinct from
+// the Barkjohn 2022 smoke paper — the deployed map uses a piecewise form
+// that drops the RH term at high concentrations and replaces it with a
+// CF=1 quadratic term so the relationship stays monotonically increasing
+// at extreme smoke loads.
+function epaAirnowFsmap(pm25Cf1: number, humidity: number | null): number {
+  const lowConcentration = humidity !== null
+    ? 0.524 * pm25Cf1 - 0.0862 * humidity + 5.75
+    : 0.524 * pm25Cf1 + 5.75;
+  const highConcentration = 0.46 * pm25Cf1 + 3.93e-4 * pm25Cf1 ** 2 + 2.97;
+  if (pm25Cf1 < 343) return roundNonNegative(lowConcentration);
+  if (pm25Cf1 >= 410) return roundNonNegative(highConcentration);
+  const transition = (pm25Cf1 - 343) / (410 - 343);
+  return roundNonNegative(lowConcentration * (1 - transition) + highConcentration * transition);
+}
+
+// Nilson et al. 2024 (AMT, doi.org/10.5194/amt-17-6735-2024) RH+T
+// multilinear correction. Uses temperature in Celsius.
+function nilson2024RhTemp(pm25Cf1: number, humidity: number | null, temperatureF?: number | null): number {
+  if (humidity === null) {
+    throw new Error("Nilson 2024 RH+T correction requires relative humidity.");
+  }
+  if (temperatureF === undefined || temperatureF === null) {
+    throw new Error("Nilson 2024 RH+T correction requires sensor temperature (Fahrenheit).");
+  }
+  const temperatureC = (temperatureF - 32) * 5 / 9;
+  return roundNonNegative(0.412 * pm25Cf1 - 0.0594 * humidity - 0.0314 * temperatureC + 7.74);
+}
+
+// Delp & Singer 2020 (Environ. Sci. Technol., doi.org/10.1021/acs.est.0c01716).
+// Single-multiplier wildfire override: PM_corrected ≈ 0.48 × PA_atm.
+function delpSinger2020(pm25Atm: number): number {
+  return roundNonNegative(0.48 * pm25Atm);
+}
+
+// LRAPA (Lane Regional Air Protection Agency, 2017) simple correction —
+// shipped widely in early PA deployments and still used as a baseline
+// against newer corrections in places without humidity coverage.
+function lrapa2017(pm25Atm: number): number {
+  return roundNonNegative(0.5 * pm25Atm - 0.66);
+}
+
 export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId, PurpleAirCorrectionProfile> = {
   "epa-barkjohn-2021-cf1": {
     id: "epa-barkjohn-2021-cf1",
@@ -675,6 +781,7 @@ export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId,
     scope: "default-outdoor",
     citation: BARKJOHN_2021_CITATION,
     requiresHumidity: true,
+    recommendedRegimes: ["non-smoke", "light-smoke"],
     correct: barkjohn2021,
   },
   "epa-barkjohn-2022-smoke-cf1": {
@@ -684,7 +791,18 @@ export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId,
     scope: "extreme-smoke",
     citation: BARKJOHN_2022_SMOKE_CITATION,
     requiresHumidity: true,
+    recommendedRegimes: ["heavy-smoke"],
     correct: barkjohn2022Smoke,
+  },
+  "epa-airnow-fsmap-cf1": {
+    id: "epa-airnow-fsmap-cf1",
+    label: "EPA AirNow Fire and Smoke Map equation (Holder et al. 2023)",
+    inputBasis: "cf_1",
+    scope: "extreme-smoke",
+    citation: EPA_AIRNOW_FSMAP_CITATION,
+    requiresHumidity: false,
+    recommendedRegimes: ["moderate-smoke", "heavy-smoke"],
+    correct: epaAirnowFsmap,
   },
   "nilson-2022-rh-growth-atm": {
     id: "nilson-2022-rh-growth-atm",
@@ -704,7 +822,89 @@ export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId,
     requiresHumidity: true,
     correct: nilsonPolynomial,
   },
+  "nilson-2024-rh-temp-cf1": {
+    id: "nilson-2024-rh-temp-cf1",
+    label: "Nilson 2024 RH+T multilinear CF=1 correction",
+    inputBasis: "cf_1",
+    scope: "advanced",
+    citation: NILSON_2024_CITATION,
+    requiresHumidity: true,
+    requiresTemperatureF: true,
+    recommendedRegimes: ["non-smoke", "light-smoke"],
+    correct: nilson2024RhTemp,
+  },
+  "delp-singer-2020-smoke-atm": {
+    id: "delp-singer-2020-smoke-atm",
+    label: "Delp & Singer 2020 wildfire ATM × 0.48 multiplier",
+    inputBasis: "atm",
+    scope: "extreme-smoke",
+    citation: DELP_SINGER_2020_CITATION,
+    requiresHumidity: false,
+    recommendedRegimes: ["heavy-smoke"],
+    correct: (pm25Atm) => delpSinger2020(pm25Atm),
+  },
+  "lrapa-2017-atm": {
+    id: "lrapa-2017-atm",
+    label: "LRAPA 2017 simple ATM correction",
+    inputBasis: "atm",
+    scope: "advanced",
+    citation: LRAPA_2017_CITATION,
+    requiresHumidity: false,
+    correct: (pm25Atm) => lrapa2017(pm25Atm),
+  },
 };
+
+/**
+ * Pick a sensible correction profile for the given smoke regime. Falls
+ * back to Barkjohn 2021 when the regime is unknown or the requested input
+ * basis isn't satisfied by any of the recommended profiles.
+ */
+export function pickCorrectionProfileForRegime(
+  regime: SmokeRegimeKey,
+  inputBasis: PurpleAirInputBasis,
+): PurpleAirCorrectionProfileId {
+  const candidates = (Object.values(PURPLEAIR_CORRECTION_PROFILES) as PurpleAirCorrectionProfile[])
+    .filter((profile) => profile.inputBasis === inputBasis)
+    .filter((profile) => profile.recommendedRegimes?.includes(regime));
+  if (candidates.length > 0) return candidates[0].id;
+  return inputBasis === "cf_1" ? "epa-barkjohn-2021-cf1" : "nilson-2022-polynomial-atm";
+}
+
+export const PURPLEAIR_CORRECTION_KELLEHER_FIXTURE: ReadonlyArray<{
+  scenario: string;
+  pm25Cf1: number;
+  humidity: number | null;
+  temperatureF: number | null;
+  expectedReference: number;
+  notes: string;
+}> = [
+  {
+    scenario: "winter-urban-cold",
+    pm25Cf1: 12,
+    humidity: 78,
+    temperatureF: 19,
+    expectedReference: 8.5,
+    notes: "Kelleher 2023 §3 winter case where Barkjohn 2021 over-corrects in cold + high RH.",
+  },
+  {
+    scenario: "dust-event",
+    pm25Cf1: 45,
+    humidity: 24,
+    temperatureF: 88,
+    expectedReference: 32,
+    notes: "Coarse-mode dust where PA over-reports vs FRM; FSMap variant performs closer to reference.",
+  },
+  {
+    scenario: "wildfire-smoke-heavy",
+    pm25Cf1: 320,
+    humidity: 31,
+    temperatureF: 78,
+    expectedReference: 165,
+    notes: "Heavy smoke in transition band where Barkjohn 2021 is well below reference; needs extreme-smoke profile.",
+  },
+];
+
+export const PURPLEAIR_CORRECTION_KELLEHER_CITATION = KELLEHER_2023_CITATION;
 
 export function applyPurpleAirCorrection(input: PurpleAirCorrectionInput): PurpleAirCorrectionResult | null {
   if (typeof input.pm25 !== "number" || !Number.isFinite(input.pm25)) return null;
@@ -718,7 +918,9 @@ export function applyPurpleAirCorrection(input: PurpleAirCorrectionInput): Purpl
   }
 
   const humidity = typeof input.humidity === "number" && Number.isFinite(input.humidity) ? input.humidity : null;
-  const pm25Corrected = profile.correct(input.pm25, humidity);
+  const temperatureF =
+    typeof input.temperatureF === "number" && Number.isFinite(input.temperatureF) ? input.temperatureF : null;
+  const pm25Corrected = profile.correct(input.pm25, humidity, temperatureF);
   return {
     profileId: profile.id,
     label: profile.label,
@@ -787,6 +989,31 @@ function safeNumber(value: unknown): number | null | undefined {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+// PurpleAir firmware emits a small set of sentinel values to mean "no data";
+// they slip through plain Number() coercion and corrupt downstream stats.
+// Mohamed & Gong 2026 §3.2 and Carroll 2025 §QC drop or clamp these explicitly.
+const TEMPERATURE_SENTINELS = new Set<number>([2147483647, -2147483648, -224, -999]);
+const TEMPERATURE_VALID_MIN_F = -58;
+const TEMPERATURE_VALID_MAX_F = 140;
+const HUMIDITY_SENTINELS = new Set<number>([255, 2147483647, -1]);
+
+export function sanitizeTemperatureF(value: unknown): number | null {
+  const numeric = safeNumber(value);
+  if (numeric === null || numeric === undefined) return null;
+  if (TEMPERATURE_SENTINELS.has(numeric)) return null;
+  if (numeric > 1000 || numeric < -300) return null;
+  if (numeric < TEMPERATURE_VALID_MIN_F || numeric > TEMPERATURE_VALID_MAX_F) return null;
+  return numeric;
+}
+
+export function sanitizeHumidityPercent(value: unknown): number | null {
+  const numeric = safeNumber(value);
+  if (numeric === null || numeric === undefined) return null;
+  if (HUMIDITY_SENTINELS.has(numeric)) return null;
+  if (numeric <= 0 || numeric >= 100) return null;
+  return numeric;
+}
+
 function timestampString(value: unknown): string | undefined {
   if (typeof value === "number" && Number.isFinite(value)) {
     return new Date(value > 10_000_000_000 ? value : value * 1000).toISOString();
@@ -851,11 +1078,11 @@ function normalizeRecord(raw: Record<string, unknown>): PasRecord {
     particleCount03um: safeNumber(raw.particleCount03um ?? raw["0.3_um_count"]),
     particleCount05um: safeNumber(raw.particleCount05um ?? raw["0.5_um_count"]),
     particleCount10um: safeNumber(raw.particleCount10um ?? raw["10.0_um_count"]),
-    humidity: safeNumber(raw.humidity),
+    humidity: sanitizeHumidityPercent(raw.humidity),
     pressure: safeNumber(raw.pressure),
-    temperature: safeNumber(raw.temperature),
-    adjustedHumidity: safeNumber(raw.adjustedHumidity),
-    adjustedTemperature: safeNumber(raw.adjustedTemperature),
+    temperature: sanitizeTemperatureF(raw.temperature),
+    adjustedHumidity: sanitizeHumidityPercent(raw.adjustedHumidity),
+    adjustedTemperature: sanitizeTemperatureF(raw.adjustedTemperature),
     dewpoint: safeNumber(raw.dewpoint),
     confidence: safeNumber(raw.confidence),
     channelFlags: safeNumber(raw.channelFlags ?? raw.channel_flags),

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   MODEL_ZOO_MODEL_IDS,
+  MODEL_ZOO_MODEL_KINDS,
   buildModelZooReport,
   type ModelZooPoint,
 } from "./modelZoo";
@@ -29,7 +30,7 @@ describe("model zoo report", () => {
       expect(model.metrics.mae).toBeGreaterThanOrEqual(0);
       expect(model.metrics.smape).toBeGreaterThanOrEqual(0);
       expect(model.metrics.rSquared).not.toBeNull();
-      expect(model.notes.join(" ")).toMatch(/leave-one-out|deterministic|Approximation|ordinary-kriging|mean/i);
+      expect(model.notes.join(" ")).toMatch(/leave-one-out|deterministic|Approximation|ordinary-kriging|mean|forest|RFSI|kriging/i);
     }
   });
 
@@ -46,6 +47,16 @@ describe("model zoo report", () => {
     expect(report.pointsDropped).toBe(1);
     expect(report.models.map((model) => model.modelId)).toEqual(["spatial-mean", "IDW"]);
     expect(report.models.every((model) => model.predictions.length === 0)).toBe(true);
+  });
+
+  it("tags built-in baselines as production and trend+residual sketches as prototypes", () => {
+    const report = buildModelZooReport(points);
+    for (const row of report.models) {
+      expect(row.kind).toBe(MODEL_ZOO_MODEL_KINDS[row.modelId]);
+    }
+    expect(report.models.find((row) => row.modelId === "IDW")?.kind).toBe("production");
+    expect(report.models.find((row) => row.modelId === "RFSI-lite")?.kind).toBe("prototype");
+    expect(report.models.find((row) => row.modelId === "RFK-lite")?.kind).toBe("prototype");
   });
 
   it("reports infeasible models honestly for very small datasets", () => {

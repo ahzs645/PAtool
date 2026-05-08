@@ -6,6 +6,7 @@ import { calculateSohIndex, runHourlyAbQc, type PatSeries, type SohIndexResult, 
 import { Loader, PageHeader, StatCard, Card, Button, DataTable, CellStack, Chip } from "../components";
 import type { Column } from "../components";
 import { getJson, postJson } from "../lib/api";
+import { downloadCsv, rowsToCsv, suggestFilename } from "../lib/exporters";
 import styles from "./AnalyticsPage.module.css";
 
 function fmtMeanSd(mean: number | null, sd: number | null): string {
@@ -147,17 +148,70 @@ export default function AnalyticsPage() {
         {richLoading ? (
           <Loader message="Computing rich aggregation..." />
         ) : richAgg ? (
-          <DataTable
-            columns={richColumns}
-            data={richAgg.points}
-            rowKey={(r) => r.timestamp}
-            emptyMessage="No aggregation data"
-            footer={<span>{richAgg.points.length} time buckets</span>}
-          />
+          <>
+            <div className={styles.actions}>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  const header = ["timestamp", "pm25A_mean", "pm25A_sd", "pm25B_mean", "pm25B_sd", "count", "ttest_p"];
+                  const rows = richAgg.points.map((point) => [
+                    point.timestamp,
+                    point.pm25A.mean,
+                    point.pm25A.sd,
+                    point.pm25B.mean,
+                    point.pm25B.sd,
+                    point.pm25A.count,
+                    point.abTTest?.p ?? null,
+                  ]);
+                  downloadCsv(suggestFilename("analytics-rich-aggregation", "csv"), rowsToCsv([header, ...rows]));
+                }}
+              >
+                Download CSV
+              </Button>
+            </div>
+            <DataTable
+              columns={richColumns}
+              data={richAgg.points}
+              rowKey={(r) => r.timestamp}
+              emptyMessage="No aggregation data"
+              footer={<span>{richAgg.points.length} time buckets</span>}
+            />
+          </>
         ) : (
           <p className={styles.empty}>Click the button above to compute hourly rich aggregation with A/B t-tests.</p>
         )}
       </Card>
+
+      {result && (
+        <Card title="SoH metrics export">
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const header = [
+                "date",
+                "pctReporting",
+                "pctValid",
+                "pctDataCompleteness",
+                "meanAbsoluteChannelDelta",
+                "channelAgreementScore",
+                "otherFitScore",
+              ];
+              const rows = result.metrics.map((day) => [
+                day.date,
+                day.pctReporting,
+                day.pctValid,
+                day.pctDataCompleteness,
+                day.meanAbsoluteChannelDelta,
+                day.channelAgreementScore,
+                day.otherFitScore,
+              ]);
+              downloadCsv(suggestFilename("analytics-soh", "csv"), rowsToCsv([header, ...rows]));
+            }}
+          >
+            Download SoH metrics CSV
+          </Button>
+        </Card>
+      )}
     </div>
   );
 }

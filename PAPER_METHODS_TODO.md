@@ -2,6 +2,32 @@
 
 This backlog captures paper-grade QC, interpolation, validation, data-layer, and workflow additions for PAtool based on the PDFs in `/Users/ahmadjalil/Downloads/New Folder With Items 3`.
 
+## Recent additions (May 2026 sweep)
+
+- [x] Ingestion-time temperature/RH sentinel filtering (`sanitizeTemperatureF`, `sanitizeHumidityPercent` in `shared/src/domain.ts`).
+- [x] Reduced-major-axis regression already in `shared/src/domain.ts`.
+- [x] ST-IDW LOOCV `C` tuner (`stIdwGridSearchTimeWeight` in `shared/src/domain.ts`).
+- [x] Leave-Location-Out CV grouped by sensor (`leaveLocationOutCrossValidate` in `shared/src/validationWorkbench.ts`).
+- [x] Spatially blocked CV (`spatialBlockCrossValidate`).
+- [x] Temporal CV split — block + rolling-origin (`temporalCrossValidate`).
+- [x] Moran's I, residual semivariogram, SMAPE, prediction-interval coverage (`shared/src/validationWorkbench.ts`).
+- [x] Conformal prediction intervals + CRPS metric (`shared/src/conformal.ts`).
+- [x] Real Random-Forest model in `shared/src/randomForest.ts`; `RFSI` and `RFK` in `shared/src/modelZoo.ts` replace the deterministic `*-lite` proxies.
+- [x] Extended correction library: Barkjohn 2022, EPA AirNow Fire & Smoke Map, Nilson 2024 RH+T, Delp & Singer 2020, LRAPA 2017, plus Kelleher 2023 fixture and a regime-aware profile selector (`pickCorrectionProfileForRegime`).
+- [x] HMS smoke point-in-polygon (`smokeDensityAtPoint`) + smoke-regime mapping (`smokeRegimeFromDensity`).
+- [x] EJ coverage-gap analysis (`shared/src/ejCoverage.ts`) + new `/ej-coverage` page.
+- [x] Indoor infiltration model (`shared/src/exposureModeling.ts`, six building classes from ASHRAE 44 + Fires 2024) — surfaced in the Schools/POIs page.
+- [x] Wildfire-PM2.5 RR table (Aguilera 2024, Sugrue 2026, Reid 2016, Heaney 2022) and `attributableRiskForExposure` — surfaced under the outcome model.
+- [x] rapidfire-style retrospective wildfire exposure (`rapidfireExposureSeries`).
+- [x] Forecast baselines (persistence, diurnal climatology, Holt-Winters) at `/forecast` with documented ML-upgrade path.
+- [x] Reusable browser exporters (`app/src/lib/exporters.ts`) wired into Analytics, Map, ValidationLab, Diagnostics.
+- [x] URL-state sharing for the map page (`app/src/hooks/useUrlState.ts`).
+- [x] Service-worker for offline static fixtures (`app/public/sw.js` + `registerServiceWorker`).
+- [x] Print stylesheet, skip-link, mobile drawer in `app/src/styles/global.css` and `Shell.tsx`.
+- [x] Static deploy trims to runtime fixtures only (`scripts/prepare_static_data.mjs`); shipped payload drops from ~32 MB to ~12 MB.
+- [x] Updated covariate manifest with annual NLCD, Overture Transportation/Places, OpenAQ v3, EJScreen 2.3, TEMPO, MAIAC.
+- [ ] Physically split `shared/src/domain.ts` into `qc/`, `interpolation/`, `correction/`, `aqi/` modules with barrel re-exports (deferred from this sweep — banners added to mark the boundaries).
+
 ## Source Papers
 
 - Kar et al. 2024, Atmospheric Environment, "High spatio-temporal resolution predictions of PM2.5 using low-cost sensor data" (`1-s2.0-S1352231024001614-main.pdf`)

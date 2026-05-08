@@ -11,10 +11,12 @@ import {
   type InterpolationMethod,
 } from "@patool/shared";
 
-import { StatCard } from "../components";
+import { Button, StatCard } from "../components";
 import { getJson } from "../lib/api";
+import { downloadCanvasPng, downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import type { InterpolationBounds, InterpolationWorkerResponse } from "../lib/interpolationProtocol";
 import { useTheme } from "../hooks/useTheme";
+import { urlCodec, useUrlState } from "../hooks/useUrlState";
 import {
   HEATMAP_LAYER_ID,
   HEATMAP_SOURCE_ID,
@@ -78,14 +80,29 @@ export default function MapPage() {
   const activeJobMethodRef = useRef<InterpolationMethod | null>(null);
   const { theme } = useTheme();
 
-  const [query, setQuery] = useState("");
-  const [outsideOnly, setOutsideOnly] = useState(true);
-  const [pm25Window, setPm25Window] = useState<Pm25Window>("pm25_1hr");
-  const [mapMode, setMapMode] = useState<MapMode>("markers");
+  const [query, setQuery] = useUrlState("q", urlCodec.string, "");
+  const [outsideOnly, setOutsideOnly] = useUrlState("outdoor", urlCodec.boolean(true), true);
+  const [pm25Window, setPm25Window] = useUrlState<Pm25Window>(
+    "win",
+    urlCodec.enum<Pm25Window>(
+      ["pm25Current", "pm25_10min", "pm25_30min", "pm25_1hr", "pm25_6hr", "pm25_1day", "pm25_1week"],
+      "pm25_1hr",
+    ),
+    "pm25_1hr",
+  );
+  const [mapMode, setMapMode] = useUrlState<MapMode>(
+    "mode",
+    urlCodec.enum<MapMode>(["markers", "heatmap"], "markers"),
+    "markers",
+  );
   const [showSensorMarkers, setShowSensorMarkers] = useState(true);
-  const [interpMethod, setInterpMethod] = useState<InterpolationMethod>("idw");
-  const [gridRes, setGridRes] = useState(100);
-  const [idwPower, setIdwPower] = useState(2);
+  const [interpMethod, setInterpMethod] = useUrlState<InterpolationMethod>(
+    "method",
+    urlCodec.enum<InterpolationMethod>(["idw", "kriging"], "idw"),
+    "idw",
+  );
+  const [gridRes, setGridRes] = useUrlState("res", urlCodec.number(100), 100);
+  const [idwPower, setIdwPower] = useUrlState("pow", urlCodec.number(2), 2);
   const [followView, setFollowView] = useState(true);
   const [styleReloadTick, setStyleReloadTick] = useState(0);
   const [overlays, setOverlays] = useState<OverlayLayer[]>([]);
@@ -946,6 +963,40 @@ export default function MapPage() {
           tone={meanBand.label === "Good" ? "good" : "warn"}
         />
         <StatCard label="AQI" value={filtered ? meanBand.label : "..."} />
+        <div className={styles.exportButtons}>
+          <Button
+            variant="secondary"
+            disabled={!filtered}
+            onClick={() => {
+              if (!filtered) return;
+              const rows = filtered.records.map((record) => ({
+                id: record.id,
+                label: record.label,
+                latitude: record.latitude,
+                longitude: record.longitude,
+                locationType: record.locationType,
+                pm25: getPm25ValueForWindow(record, pm25Window) ?? null,
+                pm25Current: record.pm25Current ?? null,
+                humidity: record.humidity ?? null,
+                temperature: record.temperature ?? null,
+              }));
+              downloadCsv(suggestFilename(`map-${pm25Window}`, "csv"), objectsToCsv(rows));
+            }}
+          >
+            CSV (filtered sensors)
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              const map = mapRef.current;
+              if (!map) return;
+              const canvas = map.getCanvas();
+              await downloadCanvasPng(suggestFilename(`map-${pm25Window}`, "png"), canvas);
+            }}
+          >
+            PNG snapshot
+          </Button>
+        </div>
       </div>
 
       <div className={styles.mapWrap}>

@@ -20,9 +20,32 @@ const navItems = [
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
   { to: "/poi", label: "Schools / POIs", icon: PinIcon },
+  { to: "/ej-coverage", label: "EJ Coverage", icon: ScaleIcon },
+  { to: "/forecast", label: "Forecast", icon: ForecastIcon },
   { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
   { to: "/reports", label: "Reports", icon: ReportIcon },
 ];
+
+function ScaleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v18" />
+      <path d="M5 21h14" />
+      <path d="M5 8l-3 6h6z" />
+      <path d="M19 8l-3 6h6z" />
+      <path d="M5 8h14" />
+    </svg>
+  );
+}
+
+function ForecastIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 17l4-6 4 4 5-7 5 9" />
+      <path d="M3 21h18" />
+    </svg>
+  );
+}
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
@@ -35,14 +58,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className={styles.shell}>
-      <aside className={styles.sidebar}>
+      <a className="skip-link" href="#patool-main">
+        Skip to main content
+      </a>
+      <aside className={styles.sidebar} aria-label="Primary navigation">
         <Link className={styles.brand} to="/">
-          <span className={styles.brandIcon}>A</span>
+          <span className={styles.brandIcon} aria-hidden="true">A</span>
           <span className={styles.brandName}>PAtool</span>
         </Link>
 
-        <span className={styles.navLabel}>Workspace</span>
-        <nav className={styles.navSection}>
+        <span className={styles.navLabel} id="workspace-nav-label">Workspace</span>
+        <nav className={styles.navSection} aria-labelledby="workspace-nav-label">
           {navItems.map((item) => (
             <NavLink
               key={item.to}
@@ -52,7 +78,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
                 `${styles.navLink} ${isActive ? styles.active : ""}`
               }
             >
-              <span className={styles.navIcon}>
+              <span className={styles.navIcon} aria-hidden="true">
                 <item.icon />
               </span>
               {item.label}
@@ -62,11 +88,12 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
         <div className={styles.sidebarFooter}>
           <button
+            type="button"
             className={styles.themeToggle}
             onClick={toggle}
             aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
           >
-            <span className={styles.navIcon}>
+            <span className={styles.navIcon} aria-hidden="true">
               {theme === "light" ? <MoonIcon /> : <SunIcon />}
             </span>
             {theme === "light" ? "Dark mode" : "Light mode"}
@@ -74,10 +101,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
       </aside>
 
-      <main className={styles.main}>
+      <main className={styles.main} id="patool-main" tabIndex={-1}>
         {warning && (
-          <div className={styles.statusBanner}>
-            <span className={styles.statusDot} />
+          <div className={styles.statusBanner} role="status" aria-live="polite">
+            <span className={styles.statusDot} aria-hidden="true" />
             <span>{warning}</span>
             <span className={styles.statusSource}>{status.collectionSource}</span>
           </div>

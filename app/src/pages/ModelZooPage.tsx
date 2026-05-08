@@ -54,6 +54,17 @@ export default function ModelZooPage() {
     { key: "smape", header: "SMAPE", width: 100, render: (row) => percent(row.metrics.smape, 1) },
     { key: "r2", header: "R2", width: 90, render: (row) => formatMetric(row.metrics.rSquared, 3) },
     {
+      key: "kind",
+      header: "Kind",
+      width: 110,
+      render: (row) =>
+        row.kind === "prototype" ? (
+          <Chip variant="warning" title="Deterministic approximation; not a trained model">prototype</Chip>
+        ) : (
+          <Chip variant="success">production</Chip>
+        ),
+    },
+    {
       key: "status",
       header: "Status",
       width: 110,

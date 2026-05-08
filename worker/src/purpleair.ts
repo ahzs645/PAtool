@@ -17,6 +17,8 @@ import {
   parseHmsSmokeGeoJson,
   patAggregate,
   patFilterDate,
+  sanitizeHumidityPercent,
+  sanitizeTemperatureF,
 } from "@patool/shared";
 import { samplePasCollection, samplePatSeries, sampleSensorRecord } from "@patool/shared/fixtures";
 
@@ -466,8 +468,8 @@ function normalizePatSeries(sensorId: string, payload: PurpleAirFieldsPayload): 
           particleCount03umB: particle03BIndex >= 0 ? toNumber(row[particle03BIndex]) : null,
           confidence: confidenceIndex >= 0 ? toNumber(row[confidenceIndex]) : null,
           channelFlags: channelFlagsIndex >= 0 ? toNumber(row[channelFlagsIndex]) : null,
-          humidity: humidityIndex >= 0 ? toNumber(row[humidityIndex]) : null,
-          temperature: temperatureIndex >= 0 ? toNumber(row[temperatureIndex]) : null,
+          humidity: humidityIndex >= 0 ? sanitizeHumidityPercent(row[humidityIndex]) : null,
+          temperature: temperatureIndex >= 0 ? sanitizeTemperatureF(row[temperatureIndex]) : null,
           pressure: pressureIndex >= 0 ? toNumber(row[pressureIndex]) : null
         };
       })

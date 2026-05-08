@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
 import {
+  attributableRiskForExposure,
   fitBayesianLinearModel,
   compareBayesianModels,
+  WILDFIRE_RR_TABLE,
   type BayesianFitResult,
   type BayesianLinearObservation,
   type BayesianModelComparison,
+  type WildfireRiskCoefficient,
 } from "@patool/shared";
 
 import {
@@ -556,6 +559,82 @@ export default function OutcomeModelPage() {
           />
         </Card>
       )}
+
+      <WildfireRiskTable />
     </div>
+  );
+}
+
+const wildfireRiskColumns: Column<WildfireRiskCoefficient>[] = [
+  {
+    key: "outcome",
+    header: "Health outcome",
+    width: 260,
+    render: (row) => <CellStack primary={row.label} sub={row.population} />,
+  },
+  {
+    key: "rr",
+    header: "RR per +10 µg/m³",
+    width: 160,
+    render: (row) => (
+      <Chip variant={row.rrPer10 >= 1.05 ? "warning" : "default"}>
+        {row.rrPer10.toFixed(3)} ({row.ci95Lower.toFixed(3)}–{row.ci95Upper.toFixed(3)})
+      </Chip>
+    ),
+  },
+  {
+    key: "window",
+    header: "Exposure window",
+    width: 140,
+    render: (row) => row.exposureWindow,
+  },
+  {
+    key: "citation",
+    header: "Source",
+    width: 320,
+    render: (row) => row.citation,
+  },
+];
+
+function WildfireRiskTable() {
+  const [exposureUg, setExposureUg] = useState<number>(15);
+  const excess = useMemo(
+    () => attributableRiskForExposure(exposureUg, "moderate-smoke"),
+    [exposureUg],
+  );
+  return (
+    <Card title="Wildfire-PM2.5 risk reference (Aguilera 2024, Sugrue 2026, Reid 2016, Heaney 2022)">
+      <p className={styles.cardHint}>
+        Reference relative risks per 10 µg/m³ wildfire-attributable PM2.5 increase. Use these as
+        coefficient priors when fitting the Bayesian outcome-linkage model on smoke days, or as a
+        descriptive overlay against your fitted slope.
+      </p>
+      <DataTable
+        columns={wildfireRiskColumns}
+        data={[...WILDFIRE_RR_TABLE]}
+        rowKey={(row) => row.outcome}
+        emptyMessage="No wildfire RR data."
+        pageSize={10}
+      />
+      <p className={styles.cardHint} style={{ marginTop: "1em" }}>
+        Excess risk preview at attributable exposure
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={exposureUg}
+          onChange={(e) => setExposureUg(Math.max(0, Number(e.target.value) || 0))}
+          style={{ width: "5em", margin: "0 0.5em" }}
+        />
+        µg/m³ over baseline:
+      </p>
+      <ul>
+        {excess.map((row) => (
+          <li key={row.outcome}>
+            <strong>{row.outcome}:</strong> +{row.excessRiskPercent.toFixed(2)}%
+          </li>
+        ))}
+      </ul>
+    </Card>
   );
 }

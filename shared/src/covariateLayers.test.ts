@@ -28,6 +28,13 @@ describe("covariate layer manifest", () => {
       "osm-overture-pois",
       "nasa-firms",
       "noaa-hms-smoke",
+      "nlcd-annual-1985-2024",
+      "overture-transportation",
+      "overture-places",
+      "openaq-v3",
+      "ejscreen-2-3",
+      "tempo-aerosol",
+      "maiac-aod",
       "airnow-aqs-monitors",
     ]);
     expect(getCovariateLayerDefinition("hrrr-weather").featureIdeas).toContain("planetary boundary layer height");

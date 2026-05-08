@@ -5,10 +5,13 @@ import type {
   KrigingEstimateOptions,
   PointEstimate,
   PointEstimateQuery,
+  SpatioTemporalIdwOptions,
+  SpatioTemporalPoint,
 } from "./domain";
 import {
   createOrdinaryKrigingModel,
   idwEstimateAtPoints,
+  idwSpatioTemporalEstimate,
   krigingEstimateAtPoints,
 } from "./domain";
 
@@ -355,6 +358,132 @@ export function residualSemivariogram(
         semivariance: value.sum / value.pairs,
       };
     });
+}
+
+export type TemporalCvFoldKind = "block" | "rolling-origin";
+
+export type TemporalCvOptions = {
+  kind?: TemporalCvFoldKind;
+  /** Number of contiguous time-blocks to split into (default 5). */
+  folds?: number;
+  /** Optional explicit cut-points in epoch ms instead of equal-width blocks. */
+  cutpoints?: number[];
+  /** Forwarded to idwSpatioTemporalEstimate. */
+  idw?: Omit<SpatioTemporalIdwOptions, "timeWeightC"> & { timeWeightC?: number };
+};
+
+export type TemporalCvFoldResult = ValidationMetrics & {
+  foldId: string;
+  startTime: number;
+  endTime: number;
+  predictions: ValidationPrediction[];
+};
+
+export type TemporalCvResult = ValidationMetrics & {
+  kind: TemporalCvFoldKind;
+  folds: TemporalCvFoldResult[];
+};
+
+function quantileCutpoints(times: number[], folds: number): number[] {
+  if (times.length === 0 || folds <= 1) return [];
+  const sorted = [...times].sort((a, b) => a - b);
+  const cuts: number[] = [];
+  for (let i = 1; i < folds; i += 1) {
+    const idx = Math.floor((i * sorted.length) / folds);
+    cuts.push(sorted[Math.min(idx, sorted.length - 1)]);
+  }
+  return cuts;
+}
+
+function bucketIndex(time: number, cutpoints: number[]): number {
+  for (let i = 0; i < cutpoints.length; i += 1) {
+    if (time < cutpoints[i]) return i;
+  }
+  return cutpoints.length;
+}
+
+/**
+ * Time-aware cross-validation for spatio-temporal IDW.
+ *
+ * - `kind: "block"` splits the data into K equal-count time buckets and holds out
+ *   each in turn. Useful for "have we trained on all seasons?" diagnostics.
+ * - `kind: "rolling-origin"` uses past data only to predict each successive
+ *   bucket, mirroring forecast skill. The first bucket is never scored.
+ *
+ * Requires per-observation timestamps on each point so this complements the
+ * existing leave-location-out CV which is purely spatial.
+ */
+export function temporalCrossValidate(
+  points: SpatioTemporalPoint[],
+  options: TemporalCvOptions = {},
+): TemporalCvResult {
+  const usable = points.filter(
+    (point) =>
+      Number.isFinite(point.x) &&
+      Number.isFinite(point.y) &&
+      Number.isFinite(point.t) &&
+      Number.isFinite(point.value),
+  );
+  const kind = options.kind ?? "block";
+  const folds = Math.max(2, options.folds ?? 5);
+  const cutpoints = options.cutpoints && options.cutpoints.length > 0
+    ? [...options.cutpoints].sort((a, b) => a - b)
+    : quantileCutpoints(usable.map((point) => point.t), folds);
+
+  const buckets: SpatioTemporalPoint[][] = Array.from({ length: cutpoints.length + 1 }, () => []);
+  for (const point of usable) {
+    const idx = bucketIndex(point.t, cutpoints);
+    buckets[idx].push(point);
+  }
+
+  const foldResults: TemporalCvFoldResult[] = [];
+
+  buckets.forEach((heldOut, foldIndex) => {
+    if (heldOut.length === 0) return;
+    if (kind === "rolling-origin" && foldIndex === 0) return;
+
+    const training = kind === "rolling-origin"
+      ? buckets.slice(0, foldIndex).flat()
+      : usable.filter((point) => bucketIndex(point.t, cutpoints) !== foldIndex);
+
+    if (training.length === 0) return;
+
+    const queries = heldOut.map((point) => ({ id: point.id, x: point.x, y: point.y, t: point.t }));
+    const estimates = idwSpatioTemporalEstimate(training, queries, options.idw ?? {});
+    const predictions: ValidationPrediction[] = [];
+
+    estimates.forEach((estimate, i) => {
+      const value = estimate.value;
+      if (typeof value !== "number" || !Number.isFinite(value)) return;
+      const observed = heldOut[i].value;
+      predictions.push({
+        id: heldOut[i].id,
+        x: heldOut[i].x,
+        y: heldOut[i].y,
+        observed,
+        predicted: value,
+        residual: observed - value,
+        foldId: `t${foldIndex}`,
+      });
+    });
+
+    const startTime = Math.min(...heldOut.map((point) => point.t));
+    const endTime = Math.max(...heldOut.map((point) => point.t));
+    foldResults.push({
+      foldId: `t${foldIndex}`,
+      startTime,
+      endTime,
+      predictions,
+      ...metricsFromPredictions(predictions),
+    });
+  });
+
+  const merged = foldResults.flatMap((fold) => fold.predictions);
+  return {
+    kind,
+    folds: foldResults,
+    ...metricsFromPredictions(merged),
+  };
 }
 
 export function predictionIntervalCoverage(

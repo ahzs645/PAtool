@@ -1,5 +1,6 @@
 import type { InterpolationPoint } from "./domain";
 import { idwInterpolate, ordinaryKrigingInterpolate } from "./domain";
+import { fitRandomForest, predictRandomForest } from "./randomForest";
 
 export const MODEL_ZOO_MODEL_IDS = [
   "spatial-mean",
@@ -8,6 +9,8 @@ export const MODEL_ZOO_MODEL_IDS = [
   "RFSI-lite",
   "STRK-lite",
   "RFK-lite",
+  "RFSI",
+  "RFK",
 ] as const;
 
 export type ModelZooModelId = (typeof MODEL_ZOO_MODEL_IDS)[number];
@@ -32,12 +35,26 @@ export type ModelZooPrediction = {
   error: number;
 };
 
+export type ModelZooModelKind = "production" | "prototype";
+
 export type ModelZooReportRow = {
   modelId: ModelZooModelId;
   label: string;
+  kind: ModelZooModelKind;
   metrics: ModelZooMetrics;
   notes: string[];
   predictions: ModelZooPrediction[];
+};
+
+export const MODEL_ZOO_MODEL_KINDS: Record<ModelZooModelId, ModelZooModelKind> = {
+  "spatial-mean": "production",
+  IDW: "production",
+  "ordinary-kriging": "production",
+  "RFSI-lite": "prototype",
+  "STRK-lite": "prototype",
+  "RFK-lite": "prototype",
+  RFSI: "production",
+  RFK: "production",
 };
 
 export type ModelZooReport = {
@@ -76,6 +93,8 @@ const MODEL_LABELS: Record<ModelZooModelId, string> = {
   "RFSI-lite": "RFSI-lite deterministic trend + IDW residual",
   "STRK-lite": "STRK-lite deterministic spatial trend + kriging residual",
   "RFK-lite": "RFK-lite deterministic trend + blended kriging/IDW residual",
+  RFSI: "Random Forest Spatial Interpolation",
+  RFK: "Random Forest Kriging",
 };
 
 const MODEL_NOTES: Record<ModelZooModelId, string> = {
@@ -85,6 +104,8 @@ const MODEL_NOTES: Record<ModelZooModelId, string> = {
   "RFSI-lite": "Approximation only: fits a deterministic spatial trend and interpolates residuals with IDW; no random forest is trained.",
   "STRK-lite": "Approximation only: fits a deterministic spatial trend and interpolates residuals with ordinary kriging; no temporal component is used.",
   "RFK-lite": "Approximation only: fits a deterministic spatial trend and blends kriging and IDW residual interpolation; no random forest is trained.",
+  RFSI: "Trains a 50-tree regression forest on (x, y, k-NN observations, k-NN distances). Browser-side per Kar 2024 SI.",
+  RFK: "RFSI trend + ordinary-kriging of the residuals; matches Kar 2024 RFK method.",
 };
 
 export function buildModelZooReport(
@@ -153,6 +174,7 @@ function evaluateModel(
   return {
     modelId,
     label: MODEL_LABELS[modelId],
+    kind: MODEL_ZOO_MODEL_KINDS[modelId],
     metrics: evaluatePredictions(predictions),
     notes,
     predictions: includePredictions ? predictions : [],
@@ -173,7 +195,92 @@ function predict(modelId: ModelZooModelId, context: PredictionContext): number |
       return predictTrendResidual(context, "kriging");
     case "RFK-lite":
       return predictTrendResidual(context, "blend");
+    case "RFSI":
+      return predictRfsi(context);
+    case "RFK":
+      return predictRfk(context);
   }
+}
+
+const RFSI_K_NEIGHBORS = 5;
+const RFSI_TREE_COUNT = 30;
+const RFSI_RNG_SEED = 0xc0ffee;
+
+function buildRfsiFeatures(
+  reference: ModelZooPoint,
+  trainingPool: ReadonlyArray<ModelZooPoint>,
+  k: number,
+): { features: number[]; targets: ReadonlyArray<ModelZooPoint> } | null {
+  if (trainingPool.length < k) return null;
+  const sorted = [...trainingPool]
+    .map((point) => ({ point, dist: pointDistance(reference, point) }))
+    .sort((a, b) => a.dist - b.dist)
+    .slice(0, k);
+  const features: number[] = [reference.x, reference.y];
+  for (const neighbor of sorted) {
+    features.push(neighbor.point.value);
+    features.push(neighbor.dist);
+  }
+  return { features, targets: sorted.map((entry) => entry.point) };
+}
+
+function predictRfsi(context: PredictionContext): number | null {
+  // Adapt k to training-set size so small fixtures still produce a
+  // prediction. We need at least k+1 points to fit (one held out per row).
+  const k = Math.min(RFSI_K_NEIGHBORS, Math.max(1, context.training.length - 1));
+  if (context.training.length < k + 1) return null;
+
+  // Build a (n_train × F) feature matrix where each row uses k-NN
+  // observations *from the rest of the training set*, mirroring Kar 2024
+  // SI §RFSI. This is a leave-one-out feature pass at fit time.
+  const featureMatrix: number[][] = [];
+  const targetVector: number[] = [];
+  for (let i = 0; i < context.training.length; i += 1) {
+    const point = context.training[i];
+    const others = context.training.slice(0, i).concat(context.training.slice(i + 1));
+    const built = buildRfsiFeatures(point, others, k);
+    if (!built) continue;
+    featureMatrix.push(built.features);
+    targetVector.push(point.value);
+  }
+  if (featureMatrix.length < k) return null;
+
+  const model = fitRandomForest(featureMatrix, targetVector, {
+    numTrees: RFSI_TREE_COUNT,
+    seed: RFSI_RNG_SEED,
+  });
+
+  const queryFeatures = buildRfsiFeatures(context.target, context.training, k);
+  if (!queryFeatures) return null;
+  const prediction = predictRandomForest(model, queryFeatures.features);
+  return Number.isFinite(prediction.mean) ? prediction.mean : null;
+}
+
+function predictRfk(context: PredictionContext): number | null {
+  // 1) Predict an RF trend at every training point, including the query.
+  if (context.training.length < 4) return null;
+  const trendAtTarget = predictRfsi(context);
+  if (trendAtTarget === null) return null;
+
+  // 2) Compute residuals at training points and ordinary-krige them.
+  const residuals: ModelZooPoint[] = [];
+  for (let i = 0; i < context.training.length; i += 1) {
+    const point = context.training[i];
+    const others = context.training.slice(0, i).concat(context.training.slice(i + 1));
+    const trend = predictRfsi({ ...context, target: point, training: others });
+    if (trend === null) continue;
+    residuals.push({ ...point, value: point.value - trend });
+  }
+  if (residuals.length < 3) return trendAtTarget;
+  const residualKrige = predictKriging(residuals, context.target, context.options.krigingMaxNeighbors);
+  if (residualKrige === null) return trendAtTarget;
+  return trendAtTarget + residualKrige;
+}
+
+function pointDistance(a: ModelZooPoint, b: ModelZooPoint): number {
+  const dx = a.x - b.x;
+  const dy = a.y - b.y;
+  return Math.sqrt(dx * dx + dy * dy);
 }
 
 function predictTrendResidual(

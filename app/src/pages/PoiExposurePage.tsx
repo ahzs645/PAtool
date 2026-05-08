@@ -2,10 +2,13 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createOrdinaryKrigingModel,
+  estimateIndoorPm25,
   idwEstimateAtPoints,
+  INFILTRATION_PROFILES,
   krigingEstimateAtPoints,
   pm25ToAqi,
   pm25ToAqiBand,
+  type BuildingClass,
   type InterpolationPoint,
   type PasCollection,
   type PointEstimate,
@@ -172,6 +175,9 @@ export default function PoiExposurePage() {
   const [valueField, setValueField] = useState<string>("pm25_1hr");
   const [maxNeighbors, setMaxNeighbors] = useState<number>(12);
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(50);
+  const [showIndoor, setShowIndoor] = useState<boolean>(false);
+  const [buildingClass, setBuildingClass] = useState<BuildingClass>("typical-hvac");
+  const [smokeDay, setSmokeDay] = useState<boolean>(false);
 
   const parsed = useMemo(() => parseCsv(csv), [csv]);
   const knownPoints = useMemo(() => buildKnownPoints(data, valueField), [data, valueField]);
@@ -273,6 +279,30 @@ export default function PoiExposurePage() {
       width: 100,
       render: (row) => String(row.estimate.neighborCount),
     },
+    ...(showIndoor
+      ? [
+          {
+            key: "indoor",
+            header: `Indoor PM2.5 (${buildingClass}, ${smokeDay ? "smoke" : "clean"})`,
+            width: 200,
+            render: (row: PoiResult) => {
+              const v = row.estimate.value;
+              if (v === null || !Number.isFinite(v)) return "—";
+              const indoor = estimateIndoorPm25({
+                outdoorPm25: v,
+                buildingClass,
+                smoke: smokeDay,
+              });
+              return (
+                <CellStack
+                  primary={`${indoor.indoorPm25.toFixed(2)} (f_inf=${indoor.fInf.toFixed(2)})`}
+                  sub={`${(indoor.fInf * 100).toFixed(0)}% of outdoor`}
+                />
+              );
+            },
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -337,6 +367,44 @@ export default function PoiExposurePage() {
               value={maxDistanceKm}
               onChange={(e) => setMaxDistanceKm(Math.max(0, Number(e.target.value) || 0))}
               disabled={method !== "idw"}
+            />
+          </label>
+        </div>
+      </Card>
+
+      <Card title="Indoor exposure (optional)">
+        <p className={styles.cardHint}>
+          Apply paired-sensor infiltration ratios (Fires 2024 + ASHRAE Guideline 44-2024) to estimate indoor PM2.5
+          for each receptor under the selected building class and smoke regime.
+        </p>
+        <div className={styles.controls}>
+          <label className={styles.field}>
+            <span>Show indoor column</span>
+            <input
+              type="checkbox"
+              checked={showIndoor}
+              onChange={(e) => setShowIndoor(e.target.checked)}
+            />
+          </label>
+          <label className={styles.field}>
+            <span>Building class</span>
+            <select
+              value={buildingClass}
+              onChange={(e) => setBuildingClass(e.target.value as BuildingClass)}
+              disabled={!showIndoor}
+            >
+              {(Object.keys(INFILTRATION_PROFILES) as BuildingClass[]).map((cls) => (
+                <option key={cls} value={cls}>{cls}</option>
+              ))}
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>Smoke day (HMS plume present)</span>
+            <input
+              type="checkbox"
+              checked={smokeDay}
+              onChange={(e) => setSmokeDay(e.target.checked)}
+              disabled={!showIndoor}
             />
           </label>
         </div>

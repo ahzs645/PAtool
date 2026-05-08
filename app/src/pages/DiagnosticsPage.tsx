@@ -22,6 +22,7 @@ import {
 import { EChart } from "../components/EChart";
 import { getJson, postJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import styles from "./DiagnosticsPage.module.css";
 
 /** Format a timestamp for x-axis: "Aug 1" for daily, "08/01 14:00" for sub-day */
@@ -340,6 +341,65 @@ export default function DiagnosticsPage() {
           ) : <p className={styles.muted}>Generate wind analysis.</p>}
         </Card>
       </div>
+
+      {/* Export bar */}
+      <Card title="Export diagnostics">
+        <div className={styles.actions}>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!series}
+            onClick={() => {
+              if (!series) return;
+              const rows = series.points.map((point) => ({
+                timestamp: point.timestamp,
+                pm25A: point.pm25A,
+                pm25B: point.pm25B,
+                humidity: point.humidity,
+                temperature: point.temperature,
+                pressure: point.pressure,
+              }));
+              downloadCsv(suggestFilename(`diagnostics-${sensorId}-series`, "csv"), objectsToCsv(rows));
+            }}
+          >
+            Series CSV
+          </Button>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!series || !outliers}
+            onClick={() => {
+              if (!series || !outliers) return;
+              const flagged = new Set(outliers.outlierIndices);
+              const rows = series.points.map((point, i) => ({
+                timestamp: point.timestamp,
+                pm25A: point.pm25A,
+                pm25B: point.pm25B,
+                isOutlier: flagged.has(i),
+              }));
+              downloadCsv(suggestFilename(`diagnostics-${sensorId}-outliers`, "csv"), objectsToCsv(rows));
+            }}
+          >
+            Outliers CSV
+          </Button>
+          <Button
+            size="small"
+            variant="secondary"
+            disabled={!qcResult}
+            onClick={() => {
+              if (!qcResult) return;
+              const rows = qcResult.issues.map((issue) => ({
+                code: issue.code,
+                count: issue.count,
+                message: issue.message,
+              }));
+              downloadCsv(suggestFilename(`diagnostics-${sensorId}-qc`, "csv"), objectsToCsv(rows));
+            }}
+          >
+            QC issues CSV
+          </Button>
+        </div>
+      </Card>
 
       {/* Row 5: Scatter matrix */}
       <Card title="Scatter Matrix">

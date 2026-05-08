@@ -23,6 +23,8 @@ const AirFusePage = lazy(() => import("./pages/AirFusePage"));
 const PoiExposurePage = lazy(() => import("./pages/PoiExposurePage"));
 const OutcomeModelPage = lazy(() => import("./pages/OutcomeModelPage"));
 const ReportBuilderPage = lazy(() => import("./pages/ReportBuilderPage"));
+const EjCoveragePage = lazy(() => import("./pages/EjCoveragePage"));
+const ForecastPage = lazy(() => import("./pages/ForecastPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -51,6 +53,8 @@ function RoutesView() {
             <Route path="/poi" element={<PoiExposurePage />} />
             <Route path="/outcome-model" element={<OutcomeModelPage />} />
             <Route path="/reports" element={<ReportBuilderPage />} />
+            <Route path="/ej-coverage" element={<EjCoveragePage />} />
+            <Route path="/forecast" element={<ForecastPage />} />
           </Routes>
         </Suspense>
       </Shell>

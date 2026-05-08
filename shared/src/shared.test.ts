@@ -67,7 +67,7 @@ import {
   normalizePurpleAirLocalSeries,
   purpleAirLocalPm25,
 } from "./purpleairLocal";
-import { attributePm25Event, parseFirmsCsv, parseHmsSmokeGeoJson } from "./hazards";
+import { attributePm25Event, parseFirmsCsv, parseHmsSmokeGeoJson, smokeDensityAtPoint, smokeRegimeFromDensity } from "./hazards";
 import {
   classifyPm25Regime,
   estimateRegimeSeparatedExposure,
@@ -225,6 +225,25 @@ describe("PurpleAir local JSON helpers", () => {
     expect(correctPurpleAirPm25(8, null)).toBe(8);
     expect(purpleAirLocalPm25(localPayload, true)).toBe(7.108);
   });
+
+  it("strips PurpleAir sentinel temperature/humidity values at ingestion", () => {
+    const polluted = {
+      ...localPayload,
+      current_temp_f: 2_147_483_647,
+      current_humidity: 255,
+    };
+    const record = normalizePurpleAirLocalRecord(polluted, { id: "garage" });
+    expect(record.temperature).toBeNull();
+    expect(record.humidity).toBeNull();
+    expect(record.adjustedTemperature).toBeNull();
+
+    const series = normalizePurpleAirLocalSeries(
+      { ...polluted, current_temp_f: -224, current_humidity: 0 },
+      { id: "garage" },
+    );
+    expect(series.points[0].temperature).toBeNull();
+    expect(series.points[0].humidity).toBeNull();
+  });
 });
 
 describe("PurpleAir correction profiles and health checks", () => {
@@ -260,6 +279,71 @@ describe("PurpleAir correction profiles and health checks", () => {
       inputBasis: "atm",
       profileId: "epa-barkjohn-2021-cf1",
     })).toThrow(/requires cf_1 input/);
+  });
+
+  it("supports the extended correction library (FSMap, Nilson 2024, Delp & Singer, LRAPA)", async () => {
+    const { pickCorrectionProfileForRegime, PURPLEAIR_CORRECTION_KELLEHER_FIXTURE } = await import("./domain");
+
+    // EPA AirNow Fire & Smoke Map equation matches Barkjohn 2021 below the
+    // breakpoint and the high-concentration quadratic above it.
+    const fsmapLow = applyPurpleAirCorrection({
+      pm25: 100,
+      humidity: 60,
+      inputBasis: "cf_1",
+      profileId: "epa-airnow-fsmap-cf1",
+    });
+    expect(fsmapLow?.pm25Corrected).toBeCloseTo(0.524 * 100 - 0.0862 * 60 + 5.75, 3);
+    const fsmapHigh = applyPurpleAirCorrection({
+      pm25: 500,
+      humidity: 60,
+      inputBasis: "cf_1",
+      profileId: "epa-airnow-fsmap-cf1",
+    });
+    expect(fsmapHigh?.pm25Corrected).toBeCloseTo(0.46 * 500 + 3.93e-4 * 500 ** 2 + 2.97, 2);
+
+    // Nilson 2024 needs both RH and temperature.
+    const nilson2024 = applyPurpleAirCorrection({
+      pm25: 30,
+      humidity: 50,
+      temperatureF: 68,
+      inputBasis: "cf_1",
+      profileId: "nilson-2024-rh-temp-cf1",
+    });
+    expect(nilson2024?.pm25Corrected).toBeGreaterThan(0);
+    expect(() => applyPurpleAirCorrection({
+      pm25: 30,
+      humidity: 50,
+      inputBasis: "cf_1",
+      profileId: "nilson-2024-rh-temp-cf1",
+    })).toThrow(/temperature/);
+
+    // Delp & Singer is a single multiplier and does not depend on RH.
+    const delp = applyPurpleAirCorrection({
+      pm25: 200,
+      inputBasis: "atm",
+      profileId: "delp-singer-2020-smoke-atm",
+    });
+    expect(delp?.pm25Corrected).toBeCloseTo(96, 3);
+
+    // LRAPA is a simple linear curve.
+    const lrapa = applyPurpleAirCorrection({
+      pm25: 20,
+      inputBasis: "atm",
+      profileId: "lrapa-2017-atm",
+    });
+    expect(lrapa?.pm25Corrected).toBeCloseTo(9.34, 3);
+
+    // The smoke-regime selector swaps profiles based on regime + input.
+    expect(pickCorrectionProfileForRegime("non-smoke", "cf_1")).toBe("epa-barkjohn-2021-cf1");
+    expect(pickCorrectionProfileForRegime("heavy-smoke", "cf_1")).toBe("epa-barkjohn-2022-smoke-cf1");
+    expect(pickCorrectionProfileForRegime("heavy-smoke", "atm")).toBe("delp-singer-2020-smoke-atm");
+
+    // Kelleher 2023 fixture seed values are present and shaped correctly.
+    expect(PURPLEAIR_CORRECTION_KELLEHER_FIXTURE.length).toBeGreaterThan(0);
+    for (const row of PURPLEAIR_CORRECTION_KELLEHER_FIXTURE) {
+      expect(row.scenario).toMatch(/.+/);
+      expect(typeof row.pm25Cf1).toBe("number");
+    }
   });
 
   it("evaluates A/B channel agreement at EPA-style threshold boundaries", () => {
@@ -1535,6 +1619,14 @@ describe("reference comparison and hazard helpers", () => {
     expect(smoke[0]).toMatchObject({ source: "hms", density: "heavy", timestamp: "2026-04-20T08:00:00.000Z" });
     expect(attributePm25Event({ nearbySmoke: true, nearbyFire: true }).label).toBe("likely smoke event");
     expect(attributePm25Event({ channelDisagreement: true }).label).toBe("likely sensor fault");
+
+    // Spatial point-in-polygon: a sensor inside the polygon should pick up
+    // the polygon's density; one outside falls back to "none".
+    expect(smokeDensityAtPoint(-122.5, 47.5, smoke)).toBe("heavy");
+    expect(smokeDensityAtPoint(-110, 40, smoke)).toBe("none");
+    expect(smokeRegimeFromDensity("heavy")).toBe("heavy-smoke");
+    expect(smokeRegimeFromDensity("light")).toBe("light-smoke");
+    expect(smokeRegimeFromDensity("none")).toBe("non-smoke");
   });
 });
 

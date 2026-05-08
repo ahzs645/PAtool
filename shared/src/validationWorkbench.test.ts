@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { InterpolationPoint } from "./domain";
+import type { InterpolationPoint, SpatioTemporalPoint } from "./domain";
 import {
   leaveLocationOutCrossValidate,
   moransI,
@@ -9,6 +9,7 @@ import {
   smape,
   smapeForPairs,
   spatialBlockCrossValidate,
+  temporalCrossValidate,
 } from "./validationWorkbench";
 
 const points: InterpolationPoint[] = [
@@ -90,6 +91,39 @@ describe("validation workbench", () => {
     expect(bins).toHaveLength(2);
     expect(bins[0]).toMatchObject({ bin: 1, pairs: 2, semivariance: 2 });
     expect(bins[1]).toMatchObject({ bin: 2, pairs: 1, semivariance: 8 });
+  });
+
+  it("runs block-style temporal CV across equal-count time buckets", () => {
+    const day = 86_400_000;
+    const stPoints: SpatioTemporalPoint[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      stPoints.push({
+        id: `s${i % 3}`,
+        x: (i % 3) * 0.5,
+        y: Math.floor(i / 3) * 0.5,
+        t: i * day,
+        value: 10 + i,
+      });
+    }
+    const result = temporalCrossValidate(stPoints, { folds: 3 });
+    expect(result.folds.length).toBeGreaterThanOrEqual(2);
+    expect(result.kind).toBe("block");
+    expect(result.n).toBeGreaterThan(0);
+    expect(Number.isFinite(result.rmse)).toBe(true);
+    for (const fold of result.folds) {
+      expect(fold.endTime).toBeGreaterThanOrEqual(fold.startTime);
+    }
+  });
+
+  it("rolling-origin CV never trains on the future", () => {
+    const day = 86_400_000;
+    const stPoints: SpatioTemporalPoint[] = [];
+    for (let i = 0; i < 9; i += 1) {
+      stPoints.push({ id: `s${i % 3}`, x: (i % 3), y: 0, t: i * day, value: i });
+    }
+    const result = temporalCrossValidate(stPoints, { folds: 3, kind: "rolling-origin" });
+    // First fold should be skipped because there is no training history.
+    expect(result.folds.every((fold) => fold.foldId !== "t0")).toBe(true);
   });
 
   it("summarizes prediction interval coverage and miss direction", () => {

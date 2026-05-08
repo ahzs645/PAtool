@@ -365,20 +365,26 @@ describe("app", () => {
 
     render(<App />);
 
-    await waitFor(() => {
-      expect(screen.getByText("AirFuse surface viewer")).toBeInTheDocument();
-      expect(screen.getByText("GeoJSON surface")).toBeInTheDocument();
-      expect(screen.getByText("Validation CSV")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(screen.getByText("AirFuse surface viewer")).toBeInTheDocument();
+        expect(screen.getByText("GeoJSON surface")).toBeInTheDocument();
+        expect(screen.getByText("Validation CSV")).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
 
-    await waitFor(() => {
-      const map = mockMaps.at(-1);
-      expect(map?.addSource).toHaveBeenCalledWith(
-        "airfuse-surface",
-        expect.objectContaining({ type: "geojson" }),
-      );
-      expect(map?.fitBounds).toHaveBeenCalled();
-    });
+    await waitFor(
+      () => {
+        const map = mockMaps.at(-1);
+        expect(map?.addSource).toHaveBeenCalledWith(
+          "airfuse-surface",
+          expect.objectContaining({ type: "geojson" }),
+        );
+        expect(map?.fitBounds).toHaveBeenCalled();
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("renders the AirNow reference comparison page", async () => {

@@ -4,6 +4,8 @@ import {
   patSeriesSchema,
   type PasRecord,
   type PatSeries,
+  sanitizeHumidityPercent,
+  sanitizeTemperatureF,
 } from "./domain";
 
 export type PurpleAirLocalOptions = {
@@ -163,8 +165,8 @@ export function normalizePurpleAirLocalRecord(input: unknown, options: PurpleAir
   const raw = input as Record<string, unknown>;
   const latitude = options.latitude ?? firstNumber(raw, ["lat", "latitude", "Latitude"]) ?? 0;
   const longitude = options.longitude ?? firstNumber(raw, ["lon", "lng", "longitude", "Longitude"]) ?? 0;
-  const humidity = firstNumber(raw, ["current_humidity", "humidity", "Humidity"]);
-  const temperature = firstNumber(raw, ["current_temp_f", "temperature", "Temperature"]);
+  const humidity = sanitizeHumidityPercent(firstNumber(raw, ["current_humidity", "humidity", "Humidity"]));
+  const temperature = sanitizeTemperatureF(firstNumber(raw, ["current_temp_f", "temperature", "Temperature"]));
   const pressure = firstNumber(raw, ["pressure", "current_pressure", "Pressure"]);
   const adjustedHumidity = typeof humidity === "number" ? Number(clamp(humidity + 4, 0, 100).toFixed(3)) : null;
   const adjustedTemperature = typeof temperature === "number" ? Number((temperature - 8).toFixed(3)) : null;
@@ -212,8 +214,8 @@ export function normalizePurpleAirLocalRecord(input: unknown, options: PurpleAir
 
 export function normalizePurpleAirLocalSeries(input: unknown, options: PurpleAirLocalOptions = {}): PatSeries {
   const raw = input as Record<string, unknown>;
-  const humidity = firstNumber(raw, ["current_humidity", "humidity", "Humidity"]);
-  const temperature = firstNumber(raw, ["current_temp_f", "temperature", "Temperature"]);
+  const humidity = sanitizeHumidityPercent(firstNumber(raw, ["current_humidity", "humidity", "Humidity"]));
+  const temperature = sanitizeTemperatureF(firstNumber(raw, ["current_temp_f", "temperature", "Temperature"]));
   const pressure = firstNumber(raw, ["pressure", "current_pressure", "Pressure"]);
   const adjustedHumidity = typeof humidity === "number" ? Number(clamp(humidity + 4, 0, 100).toFixed(3)) : null;
   const adjustedTemperature = typeof temperature === "number" ? Number((temperature - 8).toFixed(3)) : null;

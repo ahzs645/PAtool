@@ -336,13 +336,15 @@ export function CellStack({ primary, sub }: { primary: ReactNode; sub?: ReactNod
 export function Chip({
   children,
   variant = "default",
+  title,
 }: {
   children: ReactNode;
   variant?: "default" | "success" | "warning" | "danger" | "accent";
+  title?: string;
 }) {
   const variantClass =
     variant === "default"
       ? styles.chip
       : `${styles.chip} ${styles[`chip${variant.charAt(0).toUpperCase()}${variant.slice(1)}`]}`;
-  return <span className={variantClass}>{children}</span>;
+  return <span className={variantClass} title={title}>{children}</span>;
 }

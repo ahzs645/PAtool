@@ -3,9 +3,16 @@ import type { AreaBounds } from "./domain";
 export type CovariateLayerId =
   | "hrrr-weather"
   | "nlcd-land-cover"
+  | "nlcd-annual-1985-2024"
   | "tiger-roads"
+  | "overture-transportation"
   | "acs-population"
   | "osm-overture-pois"
+  | "overture-places"
+  | "openaq-v3"
+  | "ejscreen-2-3"
+  | "tempo-aerosol"
+  | "maiac-aod"
   | "nasa-firms"
   | "noaa-hms-smoke"
   | "airnow-aqs-monitors";
@@ -214,6 +221,146 @@ export const COVARIATE_LAYER_MANIFEST: readonly CovariateLayerDefinition[] = [
     staticNote: "Join by analysis date and density class; plume membership changes day to day.",
     requiredEnv: [],
     keyNote: "No API key is required for public HMS smoke archives.",
+  },
+  {
+    id: "nlcd-annual-1985-2024",
+    label: "NLCD annual land cover (1985–2024)",
+    provider: "MRLC/USGS",
+    kind: "raster",
+    cadence: "annual",
+    access: "public-download",
+    pm25Relevance: "Year-resolved land cover supports retrospective PM2.5 modeling that aligns with the actual sensor observation year.",
+    featureIdeas: ["per-year land-cover class fractions", "annual impervious change", "yearly canopy proxy", "developed-class drift"],
+    urlTemplates: [
+      "https://www.mrlc.gov/data/project/annual-nlcd",
+      "https://www.mrlc.gov/geoserver/mrlc_display/Annual_NLCD_LndCov_{censusVintage}_CU_C1V1/wms?service=WMS&version=1.1.0&request=GetMap&layers=mrlc_display:Annual_NLCD_LndCov_{censusVintage}_CU_C1V1&bbox={bboxCsv}&width={width}&height={height}&srs=EPSG:4326&format=image/geotiff",
+    ],
+    cacheSupport: "strong",
+    cacheNote: "Cache rasters by year and clipped bounds; the annual product is versioned but does not change after release.",
+    staticSupport: "time-varying",
+    staticNote: "Treat as static within a single year; pick the year matching each observation when joining to sensor records.",
+    requiredEnv: [],
+    keyNote: "No API key is required for the public MRLC WMS endpoint.",
+  },
+  {
+    id: "overture-transportation",
+    label: "Overture Maps Transportation",
+    provider: "Overture Maps Foundation",
+    kind: "vector",
+    cadence: "near-real-time",
+    access: "bulk-download",
+    pm25Relevance: "Globally consistent road network with class and surface attributes for road-density PM2.5 covariates outside US-only TIGER.",
+    featureIdeas: ["road length density", "highway-class distance", "intersection density", "surface-type fraction"],
+    urlTemplates: [
+      "https://overturemaps.org/announcements/2024/overture-general-availability-of-transportation-dataset/",
+      "s3://overturemaps-us-west-2/release/{date}/theme=transportation/type=segment/",
+    ],
+    cacheSupport: "strong",
+    cacheNote: "Cache by Overture release tag and clipped bounds; parquet partitions are immutable per release.",
+    staticSupport: "static",
+    staticNote: "Pin a release in your study and treat as static — global updates ship monthly.",
+    requiredEnv: [],
+    keyNote: "Direct S3/Azure access does not require a key; use DuckDB or AWS CLI to pull GeoParquet partitions.",
+  },
+  {
+    id: "overture-places",
+    label: "Overture Maps Places",
+    provider: "Overture Maps Foundation",
+    kind: "point",
+    cadence: "near-real-time",
+    access: "bulk-download",
+    pm25Relevance: "54M+ POIs with deduplicated category schema — a free SafeGraph alternative for activity-pattern covariates.",
+    featureIdeas: ["restaurant density", "industrial-POI distance", "fuel-station nearest-distance", "school-and-daycare counts"],
+    urlTemplates: [
+      "https://overturemaps.org/documentation/places/",
+      "s3://overturemaps-us-west-2/release/{date}/theme=places/type=place/",
+    ],
+    cacheSupport: "strong",
+    cacheNote: "Cache by Overture release tag and bounds; categories are stable within a release.",
+    staticSupport: "static",
+    staticNote: "Treat as static within a release; do not assume real-time changes between releases.",
+    requiredEnv: [],
+    keyNote: "Public S3/Azure buckets — no key needed.",
+  },
+  {
+    id: "openaq-v3",
+    label: "OpenAQ v3 reference observations",
+    provider: "OpenAQ",
+    kind: "point",
+    cadence: "hourly",
+    access: "public-with-key",
+    pm25Relevance: "Global non-US reference PM2.5 measurements; v1/v2 retired Jan 2025 in favor of v3 with bbox + aggregate endpoints.",
+    featureIdeas: ["nearest non-EPA reference PM2.5", "OpenAQ instrument metadata", "bbox-aggregated regional background"],
+    urlTemplates: [
+      "https://api.openaq.org/v3/locations?coordinates={south},{west},{north},{east}&parameters_id=2",
+      "https://api.openaq.org/v3/measurements?date_from={date}T00:00:00Z&date_to={date}T23:59:59Z&parameters_id=2&coordinates={south},{west},{north},{east}",
+    ],
+    cacheSupport: "moderate",
+    cacheNote: "Cache by location id + parameter + day; OpenAQ retains raw measurements but allows late updates.",
+    staticSupport: "time-varying",
+    staticNote: "Locations are slowly varying; measurements join by timestamp.",
+    requiredEnv: ["OPENAQ_API_KEY"],
+    keyNote: "OpenAQ v3 requires an API key — set OPENAQ_API_KEY.",
+  },
+  {
+    id: "ejscreen-2-3",
+    label: "EPA EJScreen 2.3",
+    provider: "US EPA",
+    kind: "tabular",
+    cadence: "annual",
+    access: "public-download",
+    pm25Relevance: "Tract-level environmental-justice indicators (demographics, pollution burden) for sensor-coverage equity analysis and exposure disparities.",
+    featureIdeas: ["EJ index per pollutant", "supplemental EJ index", "low-income share", "people-of-color share", "extreme-heat days"],
+    urlTemplates: [
+      "https://www.epa.gov/system/files/documents/2024-07/ejscreen-tech-doc-version-2-3.pdf",
+      "https://gaftp.epa.gov/EJScreen/2024/2.3/EJScreen_Y2024_Tract.csv.zip",
+    ],
+    cacheSupport: "strong",
+    cacheNote: "Cache by EJScreen version + geography level; releases are annual and stable.",
+    staticSupport: "static",
+    staticNote: "Treat as static within a study; refresh when EPA publishes a new EJScreen version.",
+    requiredEnv: [],
+    keyNote: "No key required; download CSVs or use the EJScreen REST endpoints.",
+  },
+  {
+    id: "tempo-aerosol",
+    label: "NASA TEMPO hourly aerosol indices",
+    provider: "NASA Smithsonian Astrophysical Observatory",
+    kind: "raster",
+    cadence: "hourly",
+    access: "public-download",
+    pm25Relevance: "Geostationary hourly NO2/aerosol radiances over North America (V03 May 2024, NRT Sept 2025) — useful as exogenous predictor when paired with PA networks.",
+    featureIdeas: ["TEMPO aerosol index", "hourly NO2 column proxy", "satellite-derived smoke flag"],
+    urlTemplates: [
+      "https://tempo.si.edu/data.html",
+      "https://disc.gsfc.nasa.gov/datasets?keywords=TEMPO",
+    ],
+    cacheSupport: "moderate",
+    cacheNote: "Cache by granule + clipped bounds; near-real-time files may be reprocessed.",
+    staticSupport: "time-varying",
+    staticNote: "Join hourly to sensor observations; lag the granule timestamp by typical processing delay.",
+    requiredEnv: ["NASA_EARTHDATA_TOKEN"],
+    keyNote: "Requires an Earthdata login token via NASA_EARTHDATA_TOKEN.",
+  },
+  {
+    id: "maiac-aod",
+    label: "MAIAC daily 1 km AOD (MCD19A2)",
+    provider: "NASA LP DAAC",
+    kind: "raster",
+    cadence: "daily",
+    access: "public-download",
+    pm25Relevance: "Globally available 1km AOD covariate for ML PM2.5 estimation; gap-filled XGBoost EOF variants extend coverage in cloudy regions.",
+    featureIdeas: ["AOD 550nm daily", "AOD 7-day rolling mean", "QA-screened AOD", "EOF gap-filled AOD"],
+    urlTemplates: [
+      "https://lpdaac.usgs.gov/products/mcd19a2v061/",
+      "https://search.earthdata.nasa.gov/search?q=MCD19A2",
+    ],
+    cacheSupport: "strong",
+    cacheNote: "Cache by date and bounds; v061 granules are immutable.",
+    staticSupport: "time-varying",
+    staticNote: "Daily join with sensor PM2.5; consider 7-day rolling means for sparse coverage.",
+    requiredEnv: ["NASA_EARTHDATA_TOKEN"],
+    keyNote: "Earthdata login required for direct downloads; public viewers don't need a key.",
   },
   {
     id: "airnow-aqs-monitors",

@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
+  calibrateConformal,
+  conformalIntervals,
+  evaluateConformalIntervals,
   leaveLocationOutCrossValidate,
   moransI,
   predictionIntervalCoverage,
@@ -12,10 +15,11 @@ import {
   type ValidationCvResult,
 } from "@patool/shared";
 
-import { Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
+import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
 import { EChart } from "../components/EChart";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { getJson } from "../lib/api";
+import { downloadCsv, objectsToCsv, rowsToCsv, suggestFilename } from "../lib/exporters";
 import { buildOutdoorInterpolationPoints, formatMetric, percent, SENSOR_VALUE_FIELDS } from "./toolsetUtils";
 import styles from "./ToolsetPage.module.css";
 
@@ -93,6 +97,18 @@ export default function ValidationLabPage() {
     })));
   }, [primary]);
 
+  const conformalReport = useMemo(() => {
+    if (!primary || primary.predictions.length < 5) return null;
+    const calibration = calibrateConformal(primary.predictions, { alpha: 0.05 });
+    const intervals = conformalIntervals(
+      calibration,
+      primary.predictions.map((prediction) => ({ predicted: prediction.predicted })),
+    );
+    const observed = primary.predictions.map((prediction) => prediction.observed);
+    const evaluation = evaluateConformalIntervals(intervals, observed, 0.05);
+    return { calibration, evaluation, intervals };
+  }, [primary]);
+
   const chartOption = useMemo(() => ({
     textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
     tooltip: {
@@ -151,7 +167,16 @@ export default function ValidationLabPage() {
         <StatCard label="Sensors evaluated" value={String(points.length)} />
         <StatCard label="LLOCV RMSE" value={primary ? formatMetric(primary.rmse) : "-"} />
         <StatCard label="Moran I" value={formatMetric(moran.i, 3)} />
-        <StatCard label="95% coverage" value={coverage.n ? percent(coverage.coverage, 0) : "-"} />
+        <StatCard label="95% coverage (1.96σ)" value={coverage.n ? percent(coverage.coverage, 0) : "-"} />
+        <StatCard
+          label="95% coverage (conformal)"
+          value={conformalReport ? percent(conformalReport.evaluation.coverage, 0) : "-"}
+          tone={conformalReport && conformalReport.evaluation.coverage >= 0.9 ? "good" : "warn"}
+        />
+        <StatCard
+          label="Conformal margin"
+          value={conformalReport ? formatMetric(conformalReport.calibration.qhat) : "-"}
+        />
       </div>
 
       <Card title="Configuration">
@@ -183,6 +208,47 @@ export default function ValidationLabPage() {
       </Card>
 
       <Card title="Validation results">
+        <div className={styles.controls}>
+          <Button
+            variant="secondary"
+            disabled={results.length === 0}
+            onClick={() => {
+              const summary = results.map((row) => ({
+                strategy: row.label,
+                method: row.result.method,
+                folds: row.result.folds,
+                n: row.result.n,
+                rmse: row.result.rmse,
+                mae: row.result.mae,
+                bias: row.result.bias,
+                smape: row.result.smape,
+              }));
+              downloadCsv(suggestFilename("validation-summary", "csv"), objectsToCsv(summary));
+            }}
+          >
+            Download summary CSV
+          </Button>
+          <Button
+            variant="secondary"
+            disabled={!primary}
+            onClick={() => {
+              if (!primary) return;
+              const header = ["foldId", "id", "x", "y", "observed", "predicted", "residual"];
+              const rows = primary.predictions.map((prediction) => [
+                prediction.foldId,
+                prediction.id ?? "",
+                prediction.x,
+                prediction.y,
+                prediction.observed,
+                prediction.predicted,
+                prediction.residual,
+              ]);
+              downloadCsv(suggestFilename("validation-residuals", "csv"), rowsToCsv([header, ...rows]));
+            }}
+          >
+            Download residuals CSV
+          </Button>
+        </div>
         <DataTable columns={columns} data={results} rowKey={(row) => row.id} emptyMessage="Not enough sensor points for validation." />
       </Card>
 
