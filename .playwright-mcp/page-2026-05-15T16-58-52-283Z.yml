@@ -1,0 +1,399 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#patool-main"
+  - complementary "Primary navigation" [ref=e5]:
+    - link "PAtool" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e7]: A
+      - generic [ref=e8]: PAtool
+    - generic [ref=e9]: Workspace
+    - navigation "Workspace" [ref=e10]:
+      - link "Explorer" [ref=e11] [cursor=pointer]:
+        - /url: /
+        - img [ref=e13]
+        - text: Explorer
+      - link "Map" [ref=e15] [cursor=pointer]:
+        - /url: /map
+        - img [ref=e17]
+        - text: Map
+      - link "AirFuse" [ref=e19] [cursor=pointer]:
+        - /url: /airfuse
+        - img [ref=e21]
+        - text: AirFuse
+      - link "Campaigns" [ref=e26] [cursor=pointer]:
+        - /url: /campaigns
+        - img [ref=e28]
+        - text: Campaigns
+      - link "SENTINEL" [ref=e32] [cursor=pointer]:
+        - /url: /sentinel
+        - img [ref=e34]
+        - text: SENTINEL
+      - link "Analytics" [ref=e37] [cursor=pointer]:
+        - /url: /analytics
+        - img [ref=e39]
+        - text: Analytics
+      - link "Network" [ref=e40] [cursor=pointer]:
+        - /url: /network-summary
+        - img [ref=e42]
+        - text: Network
+      - link "Modeling" [ref=e48] [cursor=pointer]:
+        - /url: /modeling
+        - img [ref=e50]
+        - text: Modeling
+      - link "Model Zoo" [ref=e54] [cursor=pointer]:
+        - /url: /model-zoo
+        - img [ref=e56]
+        - text: Model Zoo
+      - link "Validation" [ref=e60] [cursor=pointer]:
+        - /url: /validation-lab
+        - img [ref=e62]
+        - text: Validation
+      - link "Measurement Error" [ref=e65] [cursor=pointer]:
+        - /url: /measurement-error
+        - img [ref=e67]
+        - text: Measurement Error
+      - link "Regimes" [ref=e69] [cursor=pointer]:
+        - /url: /regimes
+        - img [ref=e71]
+        - text: Regimes
+      - link "Covariates" [ref=e76] [cursor=pointer]:
+        - /url: /covariates
+        - img [ref=e78]
+        - text: Covariates
+      - link "Reliability" [ref=e82] [cursor=pointer]:
+        - /url: /reliability
+        - img [ref=e84]
+        - text: Reliability
+      - link "Comparison" [ref=e87] [cursor=pointer]:
+        - /url: /comparison
+        - img [ref=e89]
+        - text: Comparison
+      - link "Diagnostics" [ref=e94] [cursor=pointer]:
+        - /url: /diagnostics
+        - img [ref=e96]
+        - text: Diagnostics
+      - link "Health" [ref=e99] [cursor=pointer]:
+        - /url: /health
+        - img [ref=e101]
+        - text: Health
+      - link "Schools / POIs" [ref=e103] [cursor=pointer]:
+        - /url: /poi
+        - img [ref=e105]
+        - text: Schools / POIs
+      - link "EJ Coverage" [ref=e108] [cursor=pointer]:
+        - /url: /ej-coverage
+        - img [ref=e110]
+        - text: EJ Coverage
+      - link "Forecast" [ref=e113] [cursor=pointer]:
+        - /url: /forecast
+        - img [ref=e115]
+        - text: Forecast
+      - link "Weather Norm" [ref=e117] [cursor=pointer]:
+        - /url: /weather-normalization
+        - img [ref=e119]
+        - text: Weather Norm
+      - link "Human Impact" [ref=e122] [cursor=pointer]:
+        - /url: /human-impact
+        - img [ref=e124]
+        - text: Human Impact
+      - link "Data Readiness" [ref=e127] [cursor=pointer]:
+        - /url: /data-readiness
+        - img [ref=e129]
+        - text: Data Readiness
+      - link "Outcome model" [ref=e130] [cursor=pointer]:
+        - /url: /outcome-model
+        - img [ref=e132]
+        - text: Outcome model
+      - link "Reports" [ref=e134] [cursor=pointer]:
+        - /url: /reports
+        - img [ref=e136]
+        - text: Reports
+    - button "Switch to light mode" [active] [ref=e508] [cursor=pointer]:
+      - img [ref=e509]
+      - text: Light mode
+  - main [ref=e144]:
+    - status [ref=e148]:
+      - generic [ref=e150]: Static mode uses committed fixture data and deterministic per-sensor demo time series.
+      - generic [ref=e151]: fixture
+    - generic [ref=e153]:
+      - generic [ref=e154]:
+        - generic [ref=e155]:
+          - generic [ref=e156]: PAS Explorer
+          - heading "Browse synoptic PurpleAir coverage" [level=1] [ref=e157]
+          - paragraph [ref=e158]: Filter live or archive-backed sensor snapshots, inspect AQI-adjacent PM2.5, and jump into a detailed timeseries workflow.
+        - generic [ref=e159]:
+          - textbox "Sensor search" [ref=e160]:
+            - /placeholder: Search by label...
+          - combobox "PM2.5 time window" [ref=e161] [cursor=pointer]:
+            - option "PM2.5 Current"
+            - option "PM2.5 10min"
+            - option "PM2.5 30min"
+            - option "PM2.5 1hr" [selected]
+            - option "PM2.5 6hr"
+            - option "PM2.5 1day"
+            - option "PM2.5 1week"
+          - generic [ref=e162] [cursor=pointer]:
+            - checkbox "Outside only" [checked] [ref=e163]
+            - text: Outside only
+          - button "Open first match" [ref=e164] [cursor=pointer]
+        - generic [ref=e165]:
+          - article [ref=e166]:
+            - generic [ref=e167]: Visible sensors
+            - strong [ref=e168]: "4159"
+          - article [ref=e169]:
+            - generic [ref=e170]: Mean PM2.5 (1hr)
+            - strong [ref=e171]: 15.57 ug/m3
+          - article [ref=e172]:
+            - generic [ref=e173]: AQI band
+            - strong [ref=e174]: Moderate
+          - article [ref=e175]:
+            - generic [ref=e176]: Model-ready
+            - strong [ref=e177]: 40.7%
+          - article [ref=e178]:
+            - generic [ref=e179]: Missing coords
+            - strong [ref=e180]: "0"
+        - generic [ref=e181]:
+          - heading "Dataset Readiness" [level=2] [ref=e182]
+          - generic [ref=e183]:
+            - generic [ref=e184]:
+              - generic [ref=e185]: Outdoor
+              - strong [ref=e186]: "4159"
+            - generic [ref=e187]:
+              - generic [ref=e188]: PM-ready
+              - strong [ref=e189]: "9611"
+            - generic [ref=e190]:
+              - generic [ref=e191]: Generated
+              - strong [ref=e192]: 4/15/2026
+            - generic [ref=e193]:
+              - generic [ref=e194]: Source
+              - strong [ref=e195]: fixture
+          - generic [ref=e196]:
+            - generic [ref=e197]:
+              - generic [ref=e198]: Sensor ID
+              - strong [ref=e199]: 100.0%
+            - generic [ref=e200]:
+              - generic [ref=e201]: Latitude
+              - strong [ref=e202]: 100.0%
+            - generic [ref=e203]:
+              - generic [ref=e204]: Longitude
+              - strong [ref=e205]: 100.0%
+            - generic [ref=e206]:
+              - generic [ref=e207]: Location type
+              - strong [ref=e208]: 100.0%
+            - generic [ref=e209]:
+              - generic [ref=e210]: PM2.5 current
+              - strong [ref=e211]: 94.0%
+            - generic [ref=e212]:
+              - generic [ref=e213]: PM2.5 1h
+              - strong [ref=e214]: 94.0%
+            - generic [ref=e215]:
+              - generic [ref=e216]: PM2.5 CF=1
+              - strong [ref=e217]: 0.0%
+            - generic [ref=e218]:
+              - generic [ref=e219]: PM2.5 ATM
+              - strong [ref=e220]: 0.0%
+            - generic [ref=e221]:
+              - generic [ref=e222]: PM2.5 ALT
+              - strong [ref=e223]: 0.0%
+            - generic [ref=e224]:
+              - generic [ref=e225]: 0.3um count
+              - strong [ref=e226]: 0.0%
+          - generic [ref=e227]:
+            - generic [ref=e228]: 609 records do not expose a usable PM2.5 field.
+            - generic [ref=e229]: 5160 records have unknown indoor/outdoor metadata.
+            - generic [ref=e230]: Only 40.7% of records are outdoor, geolocated, and PM-ready.
+      - generic [ref=e231]:
+        - generic [ref=e232]:
+          - generic [ref=e234]: All Sensors · 4159
+          - generic [ref=e235]:
+            - button "Filter" [ref=e236] [cursor=pointer]
+            - button "Sort" [ref=e237] [cursor=pointer]
+            - button "Options" [ref=e238] [cursor=pointer]
+        - generic [ref=e239]:
+          - generic [ref=e240]:
+            - generic [ref=e242] [cursor=pointer]: Sensor
+            - generic [ref=e244] [cursor=pointer]: State
+            - generic [ref=e246] [cursor=pointer]: PM2.5 (1hr)
+            - generic [ref=e248] [cursor=pointer]: Mode
+          - generic [ref=e249]:
+            - generic [ref=e250] [cursor=pointer]:
+              - generic [ref=e252]:
+                - generic [ref=e253]: Hazelwood canary
+                - generic [ref=e254]: "#14633"
+              - generic [ref=e255]: CA
+              - generic [ref=e257]: "3.70"
+              - generic [ref=e259]: outside
+            - generic [ref=e260] [cursor=pointer]:
+              - generic [ref=e262]:
+                - generic [ref=e263]: "#ValleyClimate"
+                - generic [ref=e264]: "#22751"
+              - generic [ref=e265]: CA
+              - generic [ref=e267]: "37.23"
+              - generic [ref=e269]: outside
+            - generic [ref=e270] [cursor=pointer]:
+              - generic [ref=e272]:
+                - generic [ref=e273]: "'S' St Between Inyo and Mono"
+                - generic [ref=e274]: "#30755"
+              - generic [ref=e275]: CA
+              - generic [ref=e277]: "36.64"
+              - generic [ref=e279]: outside
+            - generic [ref=e280] [cursor=pointer]:
+              - generic [ref=e282]:
+                - generic [ref=e283]: 1000ft Montclair
+                - generic [ref=e284]: "#20747"
+              - generic [ref=e285]: CA
+              - generic [ref=e287]: "27.45"
+              - generic [ref=e289]: outside
+            - generic [ref=e290] [cursor=pointer]:
+              - generic [ref=e292]:
+                - generic [ref=e293]: 1105 Trail View Place, Nipomo, CA
+                - generic [ref=e294]: "#21249"
+              - generic [ref=e295]: CA
+              - generic [ref=e297]: "4.58"
+              - generic [ref=e299]: outside
+            - generic [ref=e300] [cursor=pointer]:
+              - generic [ref=e302]:
+                - generic [ref=e303]: 1128 Key Route Blvd, Albany CA
+                - generic [ref=e304]: "#37971"
+              - generic [ref=e305]: CA
+              - generic [ref=e307]: "42.36"
+              - generic [ref=e309]: outside
+            - generic [ref=e310] [cursor=pointer]:
+              - generic [ref=e312]:
+                - generic [ref=e313]: 120 pine ave
+                - generic [ref=e314]: "#13143"
+              - generic [ref=e315]: CA
+              - generic [ref=e317]: "45.34"
+              - generic [ref=e319]: outside
+            - generic [ref=e320] [cursor=pointer]:
+              - generic [ref=e322]:
+                - generic [ref=e323]: 1300 Block Lemon
+                - generic [ref=e324]: "#4928"
+              - generic [ref=e325]: CA
+              - generic [ref=e327]: "51.80"
+              - generic [ref=e329]: outside
+            - generic [ref=e330] [cursor=pointer]:
+              - generic [ref=e332]:
+                - generic [ref=e333]: 1303 Ryder st,Vallejo,ca,94590
+                - generic [ref=e334]: "#15477"
+              - generic [ref=e335]: CA
+              - generic [ref=e337]: "51.59"
+              - generic [ref=e339]: outside
+            - generic [ref=e340] [cursor=pointer]:
+              - generic [ref=e342]:
+                - generic [ref=e343]: 132 Germania St
+                - generic [ref=e344]: "#37121"
+              - generic [ref=e345]: CA
+              - generic [ref=e347]: "39.13"
+              - generic [ref=e349]: outside
+            - generic [ref=e350] [cursor=pointer]:
+              - generic [ref=e352]:
+                - generic [ref=e353]: 1381 Rock Haven St
+                - generic [ref=e354]: "#3479"
+              - generic [ref=e355]: CA
+              - generic [ref=e357]: "17.16"
+              - generic [ref=e359]: outside
+            - generic [ref=e360] [cursor=pointer]:
+              - generic [ref=e362]:
+                - generic [ref=e363]: 13th & T
+                - generic [ref=e364]: "#38831"
+              - generic [ref=e365]: CA
+              - generic [ref=e367]: "40.70"
+              - generic [ref=e369]: outside
+            - generic [ref=e370] [cursor=pointer]:
+              - generic [ref=e372]:
+                - generic [ref=e373]: 1518 Trail View Place, Nipomo, CA 93444-6619
+                - generic [ref=e374]: "#6786"
+              - generic [ref=e375]: CA
+              - generic [ref=e377]: "4.79"
+              - generic [ref=e379]: outside
+            - generic [ref=e380] [cursor=pointer]:
+              - generic [ref=e382]:
+                - generic [ref=e383]: 1678 School St., Moraga, CA 94556
+                - generic [ref=e384]: "#34103"
+              - generic [ref=e385]: CA
+              - generic [ref=e387]: "41.69"
+              - generic [ref=e389]: outside
+            - generic [ref=e390] [cursor=pointer]:
+              - generic [ref=e392]:
+                - generic [ref=e393]: 16th Street, Richmond
+                - generic [ref=e394]: "#5216"
+              - generic [ref=e395]: CA
+              - generic [ref=e397]: "45.31"
+              - generic [ref=e399]: outside
+            - generic [ref=e400] [cursor=pointer]:
+              - generic [ref=e402]:
+                - generic [ref=e403]: 17th Ave
+                - generic [ref=e404]: "#4101"
+              - generic [ref=e405]: CA
+              - generic [ref=e407]: "40.28"
+              - generic [ref=e409]: outside
+            - generic [ref=e410] [cursor=pointer]:
+              - generic [ref=e412]:
+                - generic [ref=e413]: 1800 Owens
+                - generic [ref=e414]: "#34265"
+              - generic [ref=e415]: CA
+              - generic [ref=e417]: "33.25"
+              - generic [ref=e419]: outside
+            - generic [ref=e420] [cursor=pointer]:
+              - generic [ref=e422]:
+                - generic [ref=e423]: 19th St & Guerrero St
+                - generic [ref=e424]: "#21435"
+              - generic [ref=e425]: CA
+              - generic [ref=e427]: "32.31"
+              - generic [ref=e429]: outside
+            - generic [ref=e430] [cursor=pointer]:
+              - generic [ref=e432]:
+                - generic [ref=e433]: 20 S Grant
+                - generic [ref=e434]: "#20543"
+              - generic [ref=e435]: CA
+              - generic [ref=e437]: "11.88"
+              - generic [ref=e439]: outside
+            - generic [ref=e440] [cursor=pointer]:
+              - generic [ref=e442]:
+                - generic [ref=e443]: 200 lowell
+                - generic [ref=e444]: "#17781"
+              - generic [ref=e445]: CA
+              - generic [ref=e447]: "15.80"
+              - generic [ref=e449]: outside
+            - generic [ref=e450] [cursor=pointer]:
+              - generic [ref=e452]:
+                - generic [ref=e453]: 211 Sonora pass rd
+                - generic [ref=e454]: "#3960"
+              - generic [ref=e455]: CA
+              - generic [ref=e457]: "43.32"
+              - generic [ref=e459]: outside
+            - generic [ref=e460] [cursor=pointer]:
+              - generic [ref=e462]:
+                - generic [ref=e463]: 2169 Mission Street
+                - generic [ref=e464]: "#16915"
+              - generic [ref=e465]: CA
+              - generic [ref=e467]: "28.54"
+              - generic [ref=e469]: outside
+            - generic [ref=e470] [cursor=pointer]:
+              - generic [ref=e472]:
+                - generic [ref=e473]: 21stAtClement
+                - generic [ref=e474]: "#28669"
+              - generic [ref=e475]: CA
+              - generic [ref=e477]: "41.27"
+              - generic [ref=e479]: outside
+            - generic [ref=e480] [cursor=pointer]:
+              - generic [ref=e482]:
+                - generic [ref=e483]: 23rd & Lake
+                - generic [ref=e484]: "#19335"
+              - generic [ref=e485]: CA
+              - generic [ref=e487]: "41.34"
+              - generic [ref=e489]: outside
+            - generic [ref=e490] [cursor=pointer]:
+              - generic [ref=e492]:
+                - generic [ref=e493]: 24th and Diamond
+                - generic [ref=e494]: "#20709"
+              - generic [ref=e495]: CA
+              - generic [ref=e497]: "27.58"
+              - generic [ref=e499]: outside
+          - generic [ref=e500]:
+            - generic [ref=e501]: Page 1 of 167
+            - generic [ref=e502]:
+              - button "Previous" [disabled] [ref=e503]
+              - button "Next" [ref=e504] [cursor=pointer]
+          - generic [ref=e507]: 4159 sensors

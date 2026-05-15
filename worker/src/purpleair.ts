@@ -669,7 +669,9 @@ export async function getAirNowConditions(
             pm25: null,
             aqi: obs.AQI === null || obs.AQI === undefined ? null : Number(obs.AQI),
             provenance: "official-reference",
-            category: typeof obs.Category?.Name === "string" ? obs.Category.Name : undefined,
+            category: obs.Category && typeof obs.Category === "object" && typeof (obs.Category as { Name?: unknown }).Name === "string"
+              ? (obs.Category as { Name: string }).Name
+              : undefined,
             reportingArea: typeof obs.ReportingArea === "string" ? obs.ReportingArea : undefined,
           }))
         };

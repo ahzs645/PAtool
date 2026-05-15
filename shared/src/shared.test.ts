@@ -22,6 +22,7 @@ import {
   buildPatModelingMatrix,
   patExternalFit,
   patFilterDate,
+  patJoin,
   patRollingMean,
   patScatterMatrix,
   summarizePasDatasetHealth,
@@ -434,6 +435,26 @@ describe("new analytics functions", () => {
     const duped = { ...base, points: [...base.points, base.points[0]] };
     const distinct = patDistinct(duped);
     expect(distinct.points.length).toBe(base.points.length);
+  });
+
+  it("joins PAT series in timestamp order and trims overlaps", () => {
+    const first = { ...samplePatSeries, points: samplePatSeries.points.slice(0, 4) };
+    const second = { ...samplePatSeries, points: samplePatSeries.points.slice(2, 6) };
+    const joined = patJoin([second, first]);
+
+    expect(joined.meta).toEqual(samplePatSeries.meta);
+    expect(joined.points.map((point) => point.timestamp)).toEqual(
+      samplePatSeries.points.slice(0, 6).map((point) => point.timestamp),
+    );
+  });
+
+  it("rejects PAT joins with mismatched metadata", () => {
+    const other = {
+      ...samplePatSeries,
+      meta: { ...samplePatSeries.meta, sensorId: "other-sensor" },
+    };
+
+    expect(() => patJoin(samplePatSeries, other)).toThrow(/metadata/i);
   });
 
   it("detects outliers using Hampel filter", () => {

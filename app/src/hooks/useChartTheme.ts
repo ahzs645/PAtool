@@ -1,6 +1,7 @@
 import { useTheme } from "./useTheme";
 
-const light = {
+export const chartThemes = {
+  light: {
   colors: ["#4754b8", "#2e9e8f", "#e06c5e", "#e5953e", "#6e7ac8"],
   axis: "#999999",
   grid: "#ebebeb",
@@ -9,9 +10,8 @@ const light = {
   tooltipBg: "#ffffff",
   tooltipBorder: "#ebebeb",
   tooltipText: "#333333",
-};
-
-const dark = {
+  },
+  dark: {
   colors: ["#8b95d6", "#4ec9b0", "#f07070", "#f0b060", "#abb2e4"],
   axis: "#818181",
   grid: "#2a2a2a",
@@ -20,9 +20,10 @@ const dark = {
   tooltipBg: "#1b1b1b",
   tooltipBorder: "#222222",
   tooltipText: "#ebebeb",
+  },
 };
 
 export function useChartTheme() {
   const { theme } = useTheme();
-  return theme === "dark" ? dark : light;
+  return chartThemes[theme];
 }

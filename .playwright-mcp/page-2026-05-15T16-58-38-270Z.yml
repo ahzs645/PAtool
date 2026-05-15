@@ -1,0 +1,115 @@
+- generic [ref=e3]:
+  - link "Skip to main content" [ref=e4] [cursor=pointer]:
+    - /url: "#patool-main"
+  - complementary "Primary navigation" [ref=e5]:
+    - link "PAtool" [ref=e6] [cursor=pointer]:
+      - /url: /
+      - generic [ref=e7]: A
+      - generic [ref=e8]: PAtool
+    - generic [ref=e9]: Workspace
+    - navigation "Workspace" [ref=e10]:
+      - link "Explorer" [ref=e11] [cursor=pointer]:
+        - /url: /
+        - img [ref=e13]
+        - text: Explorer
+      - link "Map" [ref=e15] [cursor=pointer]:
+        - /url: /map
+        - img [ref=e17]
+        - text: Map
+      - link "AirFuse" [ref=e19] [cursor=pointer]:
+        - /url: /airfuse
+        - img [ref=e21]
+        - text: AirFuse
+      - link "Campaigns" [ref=e26] [cursor=pointer]:
+        - /url: /campaigns
+        - img [ref=e28]
+        - text: Campaigns
+      - link "SENTINEL" [ref=e32] [cursor=pointer]:
+        - /url: /sentinel
+        - img [ref=e34]
+        - text: SENTINEL
+      - link "Analytics" [ref=e37] [cursor=pointer]:
+        - /url: /analytics
+        - img [ref=e39]
+        - text: Analytics
+      - link "Network" [ref=e40] [cursor=pointer]:
+        - /url: /network-summary
+        - img [ref=e42]
+        - text: Network
+      - link "Modeling" [ref=e48] [cursor=pointer]:
+        - /url: /modeling
+        - img [ref=e50]
+        - text: Modeling
+      - link "Model Zoo" [ref=e54] [cursor=pointer]:
+        - /url: /model-zoo
+        - img [ref=e56]
+        - text: Model Zoo
+      - link "Validation" [ref=e60] [cursor=pointer]:
+        - /url: /validation-lab
+        - img [ref=e62]
+        - text: Validation
+      - link "Measurement Error" [ref=e65] [cursor=pointer]:
+        - /url: /measurement-error
+        - img [ref=e67]
+        - text: Measurement Error
+      - link "Regimes" [ref=e69] [cursor=pointer]:
+        - /url: /regimes
+        - img [ref=e71]
+        - text: Regimes
+      - link "Covariates" [ref=e76] [cursor=pointer]:
+        - /url: /covariates
+        - img [ref=e78]
+        - text: Covariates
+      - link "Reliability" [ref=e82] [cursor=pointer]:
+        - /url: /reliability
+        - img [ref=e84]
+        - text: Reliability
+      - link "Comparison" [ref=e87] [cursor=pointer]:
+        - /url: /comparison
+        - img [ref=e89]
+        - text: Comparison
+      - link "Diagnostics" [ref=e94] [cursor=pointer]:
+        - /url: /diagnostics
+        - img [ref=e96]
+        - text: Diagnostics
+      - link "Health" [ref=e99] [cursor=pointer]:
+        - /url: /health
+        - img [ref=e101]
+        - text: Health
+      - link "Schools / POIs" [ref=e103] [cursor=pointer]:
+        - /url: /poi
+        - img [ref=e105]
+        - text: Schools / POIs
+      - link "EJ Coverage" [ref=e108] [cursor=pointer]:
+        - /url: /ej-coverage
+        - img [ref=e110]
+        - text: EJ Coverage
+      - link "Forecast" [ref=e113] [cursor=pointer]:
+        - /url: /forecast
+        - img [ref=e115]
+        - text: Forecast
+      - link "Weather Norm" [ref=e117] [cursor=pointer]:
+        - /url: /weather-normalization
+        - img [ref=e119]
+        - text: Weather Norm
+      - link "Human Impact" [ref=e122] [cursor=pointer]:
+        - /url: /human-impact
+        - img [ref=e124]
+        - text: Human Impact
+      - link "Data Readiness" [ref=e127] [cursor=pointer]:
+        - /url: /data-readiness
+        - img [ref=e129]
+        - text: Data Readiness
+      - link "Outcome model" [ref=e130] [cursor=pointer]:
+        - /url: /outcome-model
+        - img [ref=e132]
+        - text: Outcome model
+      - link "Reports" [ref=e134] [cursor=pointer]:
+        - /url: /reports
+        - img [ref=e136]
+        - text: Reports
+    - button "Switch to dark mode" [ref=e140] [cursor=pointer]:
+      - img [ref=e142]
+      - text: Dark mode
+  - main [ref=e144]:
+    - generic [ref=e147]: Loading page...

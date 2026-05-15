@@ -15,11 +15,41 @@ html {
   background: var(--bg-secondary);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  color-scheme: light dark;
+  color-scheme: light;
+  scrollbar-color: var(--border-strong) var(--bg-secondary);
+  scrollbar-width: thin;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 body {
   min-height: 100vh;
+}
+
+* {
+  scrollbar-color: var(--border-strong) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--bg-secondary) 82%, transparent);
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--border-strong) 72%, var(--bg-secondary));
+  border: 2px solid var(--bg-secondary);
+  border-radius: var(--border-radius-pill);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--text-tertiary) 72%, var(--bg-secondary));
 }
 
 a {
@@ -39,6 +69,29 @@ input,
 button,
 select,
 textarea {
+  font: inherit;
+}
+
+input,
+select,
+textarea {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border-color: var(--border-medium);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: var(--text-tertiary);
+}
+
+input[type="file"]::file-selector-button {
+  min-height: 28px;
+  margin-right: var(--spacing-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
   font: inherit;
 }
 
@@ -76,6 +129,36 @@ ol {
 
 [data-theme="dark"] .maplibregl-popup-tip {
   border-top-color: var(--bg-primary);
+}
+
+.maplibregl-ctrl-group {
+  overflow: hidden;
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-medium);
+}
+
+.maplibregl-ctrl-group button {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.maplibregl-ctrl-group button + button {
+  border-top-color: var(--border-medium);
+}
+
+.maplibregl-ctrl-group button:hover {
+  background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .maplibregl-ctrl button .maplibregl-ctrl-icon {
+  filter: invert(1) brightness(1.4);
+}
+
+[data-theme="dark"] .maplibregl-ctrl-attrib {
+  background: color-mix(in srgb, var(--bg-primary) 86%, transparent);
+  color: var(--text-secondary);
 }
 
 /* ── Accessibility ── */

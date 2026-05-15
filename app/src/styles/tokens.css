@@ -65,6 +65,13 @@
   --border-light: #f1f1f1;
   --border-medium: #ebebeb;
   --border-strong: #d6d6d6;
+  --border: var(--border-medium);
+  --border-subtle: var(--border-light);
+
+  --surface: var(--bg-primary);
+  --surface-muted: var(--bg-secondary);
+  --radius-sm: var(--border-radius-sm);
+  --radius-md: var(--border-radius-md);
 
   --accent-primary: #4754b8;
   --accent-secondary: #6e7ac8;
@@ -117,6 +124,11 @@
   --border-light: #1d1d1d;
   --border-medium: #222222;
   --border-strong: #484848;
+  --border: var(--border-medium);
+  --border-subtle: var(--border-medium);
+
+  --surface: var(--bg-primary);
+  --surface-muted: var(--bg-secondary);
 
   --accent-primary: #6e7ac8;
   --accent-secondary: #8b95d6;

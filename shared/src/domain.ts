@@ -1525,11 +1525,50 @@ export function patSample(series: PatSeries, sampleSize: number): PatSeries {
   };
 }
 
-export function patJoin(left: PatSeries, right: PatSeries): PatSeries {
-  return {
-    meta: left.meta,
-    points: [...left.points, ...right.points].sort((a, b) => a.timestamp.localeCompare(b.timestamp))
-  };
+function patMetaFingerprint(meta: PatMeta): string {
+  return JSON.stringify({
+    sensorId: meta.sensorId,
+    label: meta.label,
+    timezone: meta.timezone,
+    latitude: meta.latitude ?? null,
+    longitude: meta.longitude ?? null,
+  });
+}
+
+export function patJoin(series: readonly PatSeries[]): PatSeries;
+export function patJoin(first: PatSeries, ...rest: PatSeries[]): PatSeries;
+export function patJoin(firstOrSeries: PatSeries | readonly PatSeries[], ...rest: PatSeries[]): PatSeries {
+  const seriesList: PatSeries[] = (Array.isArray(firstOrSeries) ? [...firstOrSeries] : [firstOrSeries, ...rest]) as PatSeries[];
+  if (!seriesList.length) {
+    throw new Error("patJoin requires at least one PAT series.");
+  }
+
+  const metaKey = patMetaFingerprint(seriesList[0].meta);
+  for (const series of seriesList) {
+    if (!series.points.length) {
+      throw new Error("patJoin cannot join empty PAT series.");
+    }
+    if (patMetaFingerprint(series.meta) !== metaKey) {
+      throw new Error("patJoin requires identical PAT metadata.");
+    }
+  }
+
+  const ordered = seriesList
+    .map((series) => ({
+      ...series,
+      points: [...series.points].sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+    }))
+    .sort((a, b) => a.points[0].timestamp.localeCompare(b.points[0].timestamp));
+
+  const trimmed = ordered.flatMap((series, index) => {
+    const nextStart = ordered[index + 1]?.points[0]?.timestamp;
+    return nextStart ? series.points.filter((point) => point.timestamp < nextStart) : series.points;
+  });
+
+  return patDistinct({
+    meta: ordered[0].meta,
+    points: trimmed.sort((a, b) => a.timestamp.localeCompare(b.timestamp)),
+  });
 }
 
 export function findOutlierIndices(series: PatSeries): number[] {

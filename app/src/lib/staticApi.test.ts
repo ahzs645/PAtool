@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { DataStatus, PatSeries } from "@patool/shared";
+import type { DataStatus, PasCollection, PatSeries } from "@patool/shared";
 import { samplePasCollection, samplePatSeries } from "@patool/shared/fixtures";
 
 import { getStaticJson } from "./staticApi";
@@ -46,7 +46,7 @@ describe("static API adapter", () => {
       })
     );
 
-    await expect(getStaticJson<PatCollection>("/api/pas")).rejects.toThrow();
+    await expect(getStaticJson<PasCollection>("/api/pas")).rejects.toThrow();
     const status = await getStaticJson<DataStatus>("/api/status");
 
     expect(status.mode).toBe("static");

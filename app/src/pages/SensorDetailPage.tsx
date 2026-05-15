@@ -5,8 +5,12 @@ import { Link, useParams } from "react-router-dom";
 import {
   applyPurpleAirCorrection,
   buildMonitorMatrix,
+  calculateNowCast,
+  calculateSohIndex,
   computeDailySummaries,
   monitorMatrixToCsvBundle,
+  runHourlyAbQc,
+  summarizeSensorHealth,
   summarizePatCurrentStatus,
   type NowCastResult,
   type PatSeries,
@@ -80,29 +84,30 @@ export default function SensorDetailPage() {
     queryFn: () => getJson<PatSeries>(`/api/pat?id=${id}&aggregate=raw`)
   });
 
-  const { data: qc } = useQuery({
-    queryKey: ["qc", id, series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () => postJson<QcResult>("/api/qc/hourly-ab", { series, removeOutOfSpec: true })
-  });
+  const qc = useMemo<QcResult | null>(
+    () => (series ? runHourlyAbQc(series, { removeOutOfSpec: true }) : null),
+    [series],
+  );
 
-  const { data: soh } = useQuery({
-    queryKey: ["soh-index", id, series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () => postJson<SohIndexResult>("/api/soh/index", { series })
-  });
+  const soh = useMemo<SohIndexResult | null>(
+    () => (series ? calculateSohIndex(series) : null),
+    [series],
+  );
 
-  const { data: health } = useQuery({
-    queryKey: ["sensor-health", id, series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () => postJson<SensorHealthResult>("/api/qc/sensor-health", { series, profileId: "qapp-hourly" })
-  });
+  const health = useMemo<SensorHealthResult | null>(
+    () => (series ? summarizeSensorHealth(series, { profileId: "qapp-hourly" }) : null),
+    [series],
+  );
 
-  const { data: nowCast } = useQuery({
-    queryKey: ["nowcast", id, series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () => postJson<NowCastResult>("/api/aqi/nowcast", { series })
-  });
+  const nowCast = useMemo<NowCastResult | null>(
+    () => (series
+      ? calculateNowCast(series.points.map((point) => ({
+          timestamp: point.timestamp,
+          pm25: point.pm25A !== null && point.pm25B !== null ? (point.pm25A + point.pm25B) / 2 : point.pm25A ?? point.pm25B,
+        })))
+      : null),
+    [series],
+  );
 
   const correction = useMemo(() => {
     const latest = series?.points.at(-1);

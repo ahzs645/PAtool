@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
 import {
+  buildCalendarPm25,
+  calculateAirSensorDailyMetrics,
   type AirSensorSohCompatResult,
   type CalendarPm25Result,
   type PatSeries,
@@ -99,23 +101,15 @@ export default function HealthPage() {
       postJson<EnhancedSohIndexResult>("/api/soh/enhanced", { series }),
   });
 
-  const { data: airSensorSoh } = useQuery({
-    queryKey: ["soh-airsensor", series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () =>
-      postJson<AirSensorSohCompatResult>("/api/soh/airsensor", { series }),
-  });
+  const airSensorSoh = useMemo<AirSensorSohCompatResult | null>(
+    () => (series ? calculateAirSensorDailyMetrics(series) : null),
+    [series],
+  );
 
-  const { data: calendar } = useQuery({
-    queryKey: ["calendar-pm25", series?.points.length],
-    enabled: Boolean(series),
-    queryFn: () =>
-      postJson<CalendarPm25Result>("/api/calendar/pm25", {
-        series,
-        palette: "aqi",
-        dataThreshold: 50,
-      }),
-  });
+  const calendar = useMemo<CalendarPm25Result | null>(
+    () => (series ? buildCalendarPm25(series, { palette: "aqi", dataThreshold: 50 }) : null),
+    [series],
+  );
 
   /* ── Section B: SoH Index Trend ── */
   const trendChartOption = useMemo(() => {

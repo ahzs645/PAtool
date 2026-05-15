@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef } from "react";
 import maplibregl from "maplibre-gl";
 
 import type { MobileSensingPoint, ReferenceMonitorMatch } from "@patool/shared";
-import { STYLE_LIGHT } from "../map/config";
+import { useTheme } from "../../hooks/useTheme";
+import { STYLE_DARK, STYLE_LIGHT } from "../map/config";
 import styles from "../MobileCampaignsPage.module.css";
 
 import "maplibre-gl/dist/maplibre-gl.css";
@@ -21,6 +22,7 @@ const MONITOR_LAYER = "mobile-campaign-monitor-points";
 export function RouteMap({ points, monitors }: RouteMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
+  const { theme } = useTheme();
   const routeGeoJson = useMemo(() => buildRouteGeoJson(points), [points]);
   const monitorGeoJson = useMemo(() => buildMonitorGeoJson(monitors), [monitors]);
 
@@ -30,7 +32,7 @@ export function RouteMap({ points, monitors }: RouteMapProps) {
 
     const map = new maplibregl.Map({
       container: node,
-      style: STYLE_LIGHT,
+      style: theme === "dark" ? STYLE_DARK : STYLE_LIGHT,
       center: initialCenter(points, monitors),
       zoom: 11,
       attributionControl: false,
@@ -39,46 +41,13 @@ export function RouteMap({ points, monitors }: RouteMapProps) {
     mapRef.current = map;
 
     map.on("load", () => {
-      map.addSource(ROUTE_SOURCE, { type: "geojson", data: routeGeoJson });
-      map.addSource(MONITOR_SOURCE, { type: "geojson", data: monitorGeoJson });
-
-      map.addLayer({
-        id: ROUTE_LINE_LAYER,
-        type: "line",
-        source: ROUTE_SOURCE,
-        filter: ["==", ["geometry-type"], "LineString"],
-        paint: {
-          "line-color": ["get", "color"],
-          "line-width": 5,
-          "line-opacity": 0.9,
-        },
-      });
-
-      map.addLayer({
-        id: ROUTE_POINT_LAYER,
-        type: "circle",
-        source: ROUTE_SOURCE,
-        filter: ["==", ["geometry-type"], "Point"],
-        paint: {
-          "circle-radius": 4,
-          "circle-color": ["get", "color"],
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 1,
-        },
-      });
-
-      map.addLayer({
-        id: MONITOR_LAYER,
-        type: "circle",
-        source: MONITOR_SOURCE,
-        paint: {
-          "circle-radius": 7,
-          "circle-color": "#111827",
-          "circle-stroke-color": "#ffffff",
-          "circle-stroke-width": 2,
-        },
-      });
+      ensureRouteLayers(map, routeGeoJson, monitorGeoJson, theme);
       fitMap(map, points, monitors);
+    });
+
+    map.on("styledata", () => {
+      if (!map.isStyleLoaded()) return;
+      ensureRouteLayers(map, routeGeoJson, monitorGeoJson, theme);
     });
 
     map.on("click", ROUTE_POINT_LAYER, (event) => {
@@ -107,13 +76,16 @@ export function RouteMap({ points, monitors }: RouteMapProps) {
 
   useEffect(() => {
     const map = mapRef.current;
+    if (!map) return;
+    map.setStyle(theme === "dark" ? STYLE_DARK : STYLE_LIGHT, { diff: true });
+  }, [theme]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     if (!map || !map.isStyleLoaded()) return;
-    const routeSource = map.getSource(ROUTE_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    const monitorSource = map.getSource(MONITOR_SOURCE) as maplibregl.GeoJSONSource | undefined;
-    routeSource?.setData(routeGeoJson);
-    monitorSource?.setData(monitorGeoJson);
+    ensureRouteLayers(map, routeGeoJson, monitorGeoJson, theme);
     fitMap(map, points, monitors);
-  }, [routeGeoJson, monitorGeoJson, points, monitors]);
+  }, [routeGeoJson, monitorGeoJson, points, monitors, theme]);
 
   return (
     <div className={styles.mapPanel}>
@@ -124,6 +96,70 @@ export function RouteMap({ points, monitors }: RouteMapProps) {
       </div>
     </div>
   );
+}
+
+function ensureRouteLayers(
+  map: maplibregl.Map,
+  routeGeoJson: GeoJSON.FeatureCollection,
+  monitorGeoJson: GeoJSON.FeatureCollection,
+  theme: "light" | "dark",
+) {
+  const routeSource = map.getSource(ROUTE_SOURCE) as maplibregl.GeoJSONSource | undefined;
+  const monitorSource = map.getSource(MONITOR_SOURCE) as maplibregl.GeoJSONSource | undefined;
+
+  if (routeSource) routeSource.setData(routeGeoJson);
+  else map.addSource(ROUTE_SOURCE, { type: "geojson", data: routeGeoJson });
+
+  if (monitorSource) monitorSource.setData(monitorGeoJson);
+  else map.addSource(MONITOR_SOURCE, { type: "geojson", data: monitorGeoJson });
+
+  if (!map.getLayer(ROUTE_LINE_LAYER)) {
+    map.addLayer({
+      id: ROUTE_LINE_LAYER,
+      type: "line",
+      source: ROUTE_SOURCE,
+      filter: ["==", ["geometry-type"], "LineString"],
+      paint: {
+        "line-color": ["get", "color"],
+        "line-width": 5,
+        "line-opacity": 0.9,
+      },
+    });
+  }
+
+  if (!map.getLayer(ROUTE_POINT_LAYER)) {
+    map.addLayer({
+      id: ROUTE_POINT_LAYER,
+      type: "circle",
+      source: ROUTE_SOURCE,
+      filter: ["==", ["geometry-type"], "Point"],
+      paint: {
+        "circle-radius": 4,
+        "circle-color": ["get", "color"],
+        "circle-stroke-color": theme === "dark" ? "#111827" : "#ffffff",
+        "circle-stroke-width": 1.25,
+      },
+    });
+  } else {
+    map.setPaintProperty(ROUTE_POINT_LAYER, "circle-stroke-color", theme === "dark" ? "#111827" : "#ffffff");
+  }
+
+  if (!map.getLayer(MONITOR_LAYER)) {
+    map.addLayer({
+      id: MONITOR_LAYER,
+      type: "circle",
+      source: MONITOR_SOURCE,
+      paint: {
+        "circle-radius": 7,
+        "circle-color": theme === "dark" ? "#f8fafc" : "#111827",
+        "circle-stroke-color": theme === "dark" ? "#111827" : "#ffffff",
+        "circle-stroke-width": 2,
+      },
+    });
+  } else {
+    map.setPaintProperty(MONITOR_LAYER, "circle-color", theme === "dark" ? "#f8fafc" : "#111827");
+    map.setPaintProperty(MONITOR_LAYER, "circle-stroke-color", theme === "dark" ? "#111827" : "#ffffff");
+  }
 }
 
 function buildRouteGeoJson(points: MobileSensingPoint[]): GeoJSON.FeatureCollection {

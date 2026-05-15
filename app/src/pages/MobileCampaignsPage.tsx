@@ -37,6 +37,7 @@ import { loadBundledCampaignCsv, SAMPLE_AIRBEAM_CSV, SAMPLE_REFERENCE_MONITORS, 
 import styles from "./MobileCampaignsPage.module.css";
 
 const AGGREGATIONS: MobileAggregation[] = ["raw", "1min", "1hr", "1day"];
+const REFERENCE_RADIUS_KM = 50;
 
 const sessionColumns: Column<MobileSessionSummary>[] = [
   { key: "session", header: "Session", width: 170, render: (row) => row.sessionId, sortable: true },
@@ -95,7 +96,7 @@ export default function MobileCampaignsPage() {
     [pasCollection],
   );
   const nearestMonitor = useMemo(() => findNearestReferenceMonitor(points, referenceMonitors), [points, referenceMonitors]);
-  const nearbyMonitors = useMemo(() => findReferenceMonitorsWithinRadius(points, referenceMonitors, 20), [points, referenceMonitors]);
+  const nearbyMonitors = useMemo(() => findReferenceMonitorsWithinRadius(points, referenceMonitors, REFERENCE_RADIUS_KM), [points, referenceMonitors]);
   const { data: nearestReferenceSeries } = useQuery({
     queryKey: ["mobile-campaign-reference-series", nearestMonitor?.monitor.id],
     queryFn: () => getJson<PatSeries>(`/api/pat?id=${encodeURIComponent(nearestMonitor!.monitor.id)}&aggregate=hourly`),
@@ -215,7 +216,7 @@ export default function MobileCampaignsPage() {
           </p>
         </Card>
 
-        <Card title="Reference monitors within 20 km">
+        <Card title={`Reference monitors within ${REFERENCE_RADIUS_KM} km`}>
           <DataTable
             columns={monitorColumns}
             data={nearbyMonitors}
