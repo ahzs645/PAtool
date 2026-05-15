@@ -605,7 +605,22 @@ export async function getPatSeries(
 
 export async function getSensorRecord(env: WorkerEnv = {}, sensorId: string, period: "latest" | "month" | "year"): Promise<SensorRecord> {
   const series = await getPatSeries(env, sensorId);
-  const latest = period === "latest" ? series.points.at(-1) ?? sampleSensorRecord.latest : series.points.at(-1) ?? sampleSensorRecord.latest;
+  let latest = series.points.at(-1);
+
+  if (period !== "latest") {
+    const windowMs = period === "month" ? 31 * 24 * 60 * 60 * 1000 : 366 * 24 * 60 * 60 * 1000;
+    const cutoff = Date.now() - windowMs;
+    const recent = series.points.filter((point) => {
+      const timestampMs = Date.parse(point.timestamp);
+      return Number.isFinite(timestampMs) && timestampMs >= cutoff;
+    });
+    latest = recent.at(-1) ?? latest;
+  }
+
+  if (!latest) {
+    latest = sampleSensorRecord.latest;
+  }
+
   return {
     id: sensorId,
     meta: series.meta,
@@ -634,10 +649,12 @@ export async function getAirNowConditions(
     url.searchParams.set("API_KEY", env.AIRNOW_API_KEY);
 
     const data = await tryFetchJson(url.toString());
-    if (data && Array.isArray(data)) {
-      const pm25Obs = (data as any[]).filter((d: any) => d.ParameterName === "PM2.5");
+    if (Array.isArray(data)) {
+      const pm25Obs = data
+        .map((row) => (row && typeof row === "object" ? row as Record<string, unknown> : null))
+        .filter((row): row is Record<string, unknown> => row !== null && row.ParameterName === "PM2.5");
       if (pm25Obs.length > 0) {
-        const label = `${pm25Obs[0].ReportingArea} (Federal)`;
+        const label = `${typeof pm25Obs[0].ReportingArea === "string" ? pm25Obs[0].ReportingArea : "Unknown"} (Federal)`;
         return {
           source: "airnow",
           kind: "conditions",
@@ -646,7 +663,7 @@ export async function getAirNowConditions(
           longitude,
           sourceUrl: "https://docs.airnowapi.org/webservices",
           attribution: "AirNow reporting-area AQI from federal, state, local, and tribal monitoring agencies.",
-          observations: pm25Obs.map((obs: any) => ({
+          observations: pm25Obs.map((obs) => ({
             timestamp: airNowTimestamp(obs),
             parameter: "PM2.5",
             pm25: null,

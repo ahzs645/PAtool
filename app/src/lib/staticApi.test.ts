@@ -33,6 +33,27 @@ describe("static API adapter", () => {
     expect(first.points[0].pm25A).not.toBe(second.points[0].pm25A);
   });
 
+  it("recovers from temporary static asset parse failures by reloading", async () => {
+    let requestCount = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        requestCount += 1;
+        if (requestCount === 1) {
+          return new Response("not-json");
+        }
+        return new Response(JSON.stringify(samplePasCollection));
+      })
+    );
+
+    await expect(getStaticJson<PatCollection>("/api/pas")).rejects.toThrow();
+    const status = await getStaticJson<DataStatus>("/api/status");
+
+    expect(status.mode).toBe("static");
+    expect(status.collectionSource).toBe("fixture");
+    expect(requestCount).toBe(2);
+  });
+
   it("reports static data provenance", async () => {
     vi.stubGlobal(
       "fetch",

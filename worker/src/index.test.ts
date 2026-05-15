@@ -389,4 +389,55 @@ describe("worker api", () => {
     expect(payload.cautions).toEqual([]);
     expect(payload.smoke[0]).toMatchObject({ source: "hms", density: "heavy" });
   });
+
+  it("handles sensor periods by limiting to the requested lookback when possible", async () => {
+    const recent = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString();
+    const old = new Date(Date.now() - 260 * 24 * 60 * 60 * 1000).toISOString();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({
+        fields: ["time_stamp", "pm2.5_atm_a", "pm2.5_atm_b", "humidity", "temperature", "pressure"],
+        data: [
+          [Date.parse(old), 10, 11, 45, 70, 1000],
+          [Date.parse(recent), 11, 12, 45, 71, 1001],
+        ],
+      })))
+    );
+
+    const monthResponse = await app.request(
+      "/api/sensor/1001?period=month",
+      {},
+      { PURPLEAIR_API_KEY: "test-key", PURPLEAIR_API_BASE: "https://api.example.test/v1" }
+    );
+    expect(monthResponse.status).toBe(200);
+    const monthPayload = (await monthResponse.json()) as { latest: { timestamp: string } };
+    expect(monthPayload.latest.timestamp).toBe(recent);
+
+    const yearResponse = await app.request(
+      "/api/sensor/1001?period=year",
+      {},
+      { PURPLEAIR_API_KEY: "test-key", PURPLEAIR_API_BASE: "https://api.example.test/v1" }
+    );
+    expect(yearResponse.status).toBe(200);
+    const yearPayload = (await yearResponse.json()) as { latest: { timestamp: string } };
+    expect(yearPayload.latest.timestamp).toBe(recent);
+  });
+
+  it("returns no crash for malformed AirNow condition payloads", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ unexpected: "shape" }), {
+        headers: { "content-type": "application/json" },
+      }))
+    );
+
+    const response = await app.request(
+      "/api/reference/airnow/conditions?latitude=47.61&longitude=-122.33",
+      {},
+      { AIRNOW_API_KEY: "test-key" }
+    );
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as null;
+    expect(payload).toBeNull();
+  });
 });

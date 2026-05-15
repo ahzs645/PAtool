@@ -302,7 +302,8 @@ export function createApp() {
   });
 
   app.get("/api/sensor/:id", async (c) => {
-    const period = (c.req.query("period") as "latest" | "month" | "year" | null) ?? "latest";
+    const periodQuery = c.req.query("period");
+    const period = periodQuery === "latest" || periodQuery === "month" || periodQuery === "year" ? periodQuery : "latest";
     return cachedJson(c, c.req.url, () => getSensorRecord(c.env, c.req.param("id"), period));
   });
 

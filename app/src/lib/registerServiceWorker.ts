@@ -3,12 +3,19 @@
  *
  * Skips registration in development (Vite's HMR conflicts with cached
  * modules), in tests (jsdom does not implement service workers), and
- * when the page is served over an insecure non-localhost origin where
+ * when the page is served over an insecure non-local localhost origin where
  * service workers are unavailable.
  */
 export function registerServiceWorker(): void {
   if (typeof window === "undefined") return;
   if (!("serviceWorker" in navigator)) return;
+  if (
+    document.location.protocol !== "https:" &&
+    document.location.hostname !== "localhost" &&
+    document.location.hostname !== "127.0.0.1"
+  ) {
+    return;
+  }
   if (import.meta.env.DEV) return;
 
   // Use the same base URL as the app shell so registrations work for both

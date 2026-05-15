@@ -44,15 +44,19 @@ function assetUrl(file: string): string {
 
 async function loadAsset<T>(file: string): Promise<T> {
   if (!assetCache.has(file)) {
-    assetCache.set(
-      file,
-      fetch(assetUrl(file)).then(async (response) => {
+    const request = fetch(assetUrl(file))
+      .then(async (response) => {
         if (!response.ok) {
           throw new Error(`Static data request failed for ${file}`);
         }
         return response.json();
       })
-    );
+      .catch((error) => {
+        assetCache.delete(file);
+        throw error;
+      });
+
+    assetCache.set(file, request);
   }
 
   return assetCache.get(file) as Promise<T>;
