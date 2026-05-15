@@ -59,9 +59,15 @@ export function buildGeoJson(
   records: PasRecord[],
   pm25Window: Pm25Window,
 ): GeoJSON.FeatureCollection {
+  const sortedRecords = [...records].sort((left, right) => {
+    const leftValue = getPm25ValueForWindow(left, pm25Window) ?? -Infinity;
+    const rightValue = getPm25ValueForWindow(right, pm25Window) ?? -Infinity;
+    return leftValue - rightValue;
+  });
+
   return {
     type: "FeatureCollection",
-    features: records.map((r) => {
+    features: sortedRecords.map((r) => {
       const pm25 = getPm25ValueForWindow(r, pm25Window);
       const band = pm25ToAqiBand(pm25);
 

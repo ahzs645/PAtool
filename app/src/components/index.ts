@@ -5,4 +5,5 @@ export { StatCard } from "./StatCard";
 export { Button } from "./Button";
 export { Loader } from "./Loader";
 export { DataTable, CellStack, Chip } from "./DataTable";
+export { EChart } from "./EChart";
 export type { Column } from "./DataTable";

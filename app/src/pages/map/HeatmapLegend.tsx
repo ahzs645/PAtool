@@ -1,3 +1,5 @@
+import { aqiBreakpointsWithPalette, EPA_PM25_AQI_PROFILE } from "@patool/shared";
+
 import type { InterpolationMeta } from "./types";
 import styles from "../MapPage.module.css";
 
@@ -9,19 +11,18 @@ type HeatmapLegendProps = {
 export function HeatmapLegend({ heatmapMethodLabel, interpolationMeta }: HeatmapLegendProps) {
   const krigingDiagnostics = interpolationMeta?.krigingDiagnostics ?? null;
   const exactComparison = krigingDiagnostics?.artifacts.exactSampleComparison;
+  const bands = aqiBreakpointsWithPalette(EPA_PM25_AQI_PROFILE, "subdued");
 
   return (
     <div className={styles.legend}>
       <div className={styles.legendTitle}>AQI Surface</div>
       <div className={styles.legendSubtitle}>{heatmapMethodLabel}</div>
-      <div className={styles.legendBar} />
+      <div
+        className={styles.legendBar}
+        style={{ background: `linear-gradient(90deg, ${bands.map((band) => band.color).join(", ")})` }}
+      />
       <div className={styles.legendLabels}>
-        <span>0</span>
-        <span>50</span>
-        <span>100</span>
-        <span>150</span>
-        <span>200</span>
-        <span>300</span>
+        {bands.map((band) => <span key={`${band.aqiLow}-${band.aqiHigh}`}>{band.aqiLow}</span>)}
       </div>
       {interpolationMeta && (
         <div className={styles.legendMeta}>

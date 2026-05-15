@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef } from "react";
 import * as echarts from "echarts/core";
-import { BarChart, LineChart, PieChart, RadarChart, ScatterChart } from "echarts/charts";
+import { BarChart, HeatmapChart, LineChart, PieChart, RadarChart, ScatterChart } from "echarts/charts";
 import {
+  CalendarComponent,
   DataZoomComponent,
   GridComponent,
   LegendComponent,
@@ -18,10 +19,12 @@ import styles from "./EChart.module.css";
 
 echarts.use([
   BarChart,
+  HeatmapChart,
   LineChart,
   PieChart,
   RadarChart,
   ScatterChart,
+  CalendarComponent,
   DataZoomComponent,
   GridComponent,
   LegendComponent,

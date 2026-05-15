@@ -1,0 +1,142 @@
+.layout {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-3);
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--spacing-2);
+}
+
+.controls {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-3);
+  align-items: end;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-1);
+  min-width: 0;
+}
+
+.field span,
+.legendLabel {
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.field input,
+.field select {
+  width: 100%;
+  min-height: 34px;
+  padding: var(--spacing-1-5) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  outline: none;
+}
+
+.splitGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(320px, 0.8fr);
+  gap: var(--spacing-3);
+  align-items: stretch;
+}
+
+.stripeHeader {
+  display: grid;
+  grid-template-columns: 110px repeat(8, minmax(22px, 1fr));
+  gap: 3px;
+  margin-bottom: var(--spacing-1);
+  color: var(--text-tertiary);
+  font-size: var(--font-size-xxs);
+  text-align: center;
+}
+
+.stripeRow {
+  display: grid;
+  grid-template-columns: 110px repeat(8, minmax(22px, 1fr));
+  gap: 3px;
+  align-items: center;
+  margin-bottom: 3px;
+}
+
+.rowLabel {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stripeCell {
+  min-height: 22px;
+  border: 1px solid var(--border-light);
+  border-radius: 3px;
+}
+
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--spacing-2);
+  align-items: center;
+  margin-top: var(--spacing-2);
+}
+
+.legendSwatch {
+  width: 18px;
+  height: 12px;
+  border: 1px solid var(--border-light);
+  border-radius: 2px;
+}
+
+.metricList {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--spacing-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.metricList li {
+  padding: var(--spacing-2);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-md);
+}
+
+.metricList strong {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+@media (max-width: 980px) {
+  .controls,
+  .splitGrid,
+  .metricList {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .stripeHeader,
+  .stripeRow {
+    grid-template-columns: 72px repeat(8, minmax(18px, 1fr));
+  }
+
+  .stripeCell {
+    min-height: 18px;
+  }
+}

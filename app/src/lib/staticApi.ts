@@ -1,5 +1,7 @@
 import {
   applyPurpleAirCorrection,
+  buildCalendarPm25,
+  calculateAirSensorDailyMetrics,
   calculateEnhancedSohIndex,
   calculateNowCast,
   calculateSohIndex,
@@ -19,6 +21,7 @@ import {
   pm25ToAqi,
   pm25ToAqiBand,
   runAdvancedHourlyAbQc,
+  runAirSensorQc,
   runHourlyAbQc,
   summarizeSensorHealth,
   type ComparisonResult,
@@ -353,16 +356,43 @@ export async function postStaticJson<T>(path: string, body: unknown): Promise<T>
     }
     case "/api/qc/advanced":
       return runAdvancedHourlyAbQc(series!, { removeOutOfSpec: Boolean(payload.removeOutOfSpec) }) as T;
+    case "/api/qc/airsensor":
+      return runAirSensorQc(series!, {
+        profileId: payload.profileId as "AB_00" | "AB_01" | "AB_02" | "AB_03" | undefined,
+        removeOutOfSpec: Boolean(payload.removeOutOfSpec),
+        minCount: typeof payload.minCount === "number" ? payload.minCount : undefined,
+        maxPValue: typeof payload.maxPValue === "number" ? payload.maxPValue : undefined,
+        maxMeanDiff: typeof payload.maxMeanDiff === "number" ? payload.maxMeanDiff : undefined,
+        maxMad: typeof payload.maxMad === "number" ? payload.maxMad : undefined,
+        maxRelativePercentDiff: typeof payload.maxRelativePercentDiff === "number" ? payload.maxRelativePercentDiff : undefined,
+        maxHumidity: typeof payload.maxHumidity === "number" ? payload.maxHumidity : undefined,
+      }) as T;
+    case "/api/soh/airsensor":
+      return calculateAirSensorDailyMetrics(series!, {
+        samplingIntervalSeconds: typeof payload.samplingIntervalSeconds === "number" ? payload.samplingIntervalSeconds : undefined,
+      }) as T;
+    case "/api/calendar/pm25":
+      return buildCalendarPm25(series!, {
+        palette: payload.palette === "scaqmd" ? "scaqmd" : "aqi",
+        dataThreshold: typeof payload.dataThreshold === "number" ? payload.dataThreshold : undefined,
+        samplingIntervalSeconds: typeof payload.samplingIntervalSeconds === "number" ? payload.samplingIntervalSeconds : undefined,
+      }) as T;
     case "/api/scatter-matrix":
       return patScatterMatrix(series!, Number(payload.sampleSize ?? 500)) as T;
     case "/api/wind-rose": {
       const wind = generateSyntheticWindData(series!);
-      const rose = computeWindRose(wind);
+      const rose = computeWindRose(wind, {
+        statistic: payload.statistic as "abs.count" | "prop.count" | "prop.mean" | undefined,
+        normalize: Boolean(payload.normalize),
+      });
       return { ...rose, sensorId: series!.meta.sensorId } as T;
     }
     case "/api/polar-plot": {
       const wind = generateSyntheticWindData(series!);
-      const polar = computePolarPlot(wind);
+      const polar = computePolarPlot(wind, {
+        statistic: payload.statistic as "mean" | "median" | "max" | "frequency" | "weighted.mean" | undefined,
+        normalize: Boolean(payload.normalize),
+      });
       return { ...polar, sensorId: series!.meta.sensorId } as T;
     }
     default:

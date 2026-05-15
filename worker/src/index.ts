@@ -3,11 +3,13 @@ import { cors } from "hono/cors";
 import { z } from "zod";
 
 import {
+  buildCalendarPm25,
   applyPurpleAirCorrection,
   calculateDailySoh,
   calculateEnhancedSohIndex,
   calculateNowCast,
   calculateSohIndex,
+  calculateAirSensorDailyMetrics,
   computePolarPlot,
   computeWindRose,
   generateSyntheticWindData,
@@ -21,6 +23,7 @@ import {
   patScatterMatrix,
   patSeriesSchema,
   runAdvancedHourlyAbQc,
+  runAirSensorQc,
   runHourlyAbQc,
   summarizeSensorHealth,
 } from "@patool/shared";
@@ -51,6 +54,18 @@ const advancedQcRequestSchema = z.object({
   minCount: z.number().optional(),
   maxPValue: z.number().optional(),
   maxMeanDiff: z.number().optional(),
+  maxHumidity: z.number().optional(),
+});
+
+const airSensorCompatQcRequestSchema = z.object({
+  series: patSeriesSchema,
+  profileId: z.enum(["AB_00", "AB_01", "AB_02", "AB_03"]).optional(),
+  removeOutOfSpec: z.boolean().optional(),
+  minCount: z.number().optional(),
+  maxPValue: z.number().optional(),
+  maxMeanDiff: z.number().optional(),
+  maxMad: z.number().optional(),
+  maxRelativePercentDiff: z.number().optional(),
   maxHumidity: z.number().optional(),
 });
 
@@ -88,6 +103,32 @@ const scatterMatrixRequestSchema = z.object({
 const rollingMeanRequestSchema = z.object({
   series: patSeriesSchema,
   windowSize: z.number().optional(),
+});
+
+const airSensorSohRequestSchema = z.object({
+  series: patSeriesSchema,
+  samplingIntervalSeconds: z.number().optional(),
+});
+
+const calendarPm25RequestSchema = z.object({
+  series: patSeriesSchema,
+  palette: z.enum(["aqi", "scaqmd"]).optional(),
+  dataThreshold: z.number().optional(),
+  samplingIntervalSeconds: z.number().optional(),
+});
+
+const windRoseRequestSchema = z.object({
+  series: patSeriesSchema,
+  statistic: z.enum(["abs.count", "prop.count", "prop.mean"]).optional(),
+  normalize: z.boolean().optional(),
+});
+
+const polarPlotRequestSchema = z.object({
+  series: patSeriesSchema,
+  statistic: z.enum(["mean", "median", "max", "frequency", "weighted.mean"]).optional(),
+  normalize: z.boolean().optional(),
+  directionBinDegrees: z.number().optional(),
+  speedBinSize: z.number().optional(),
 });
 
 const correctionRequestSchema = z.object({
@@ -299,6 +340,12 @@ export function createApp() {
     return c.json(runAdvancedHourlyAbQc(series, options));
   });
 
+  app.post("/api/qc/airsensor", async (c) => {
+    const parsed = airSensorCompatQcRequestSchema.parse(await c.req.json());
+    const { series, ...options } = parsed;
+    return c.json(runAirSensorQc(series, options));
+  });
+
   app.post("/api/outliers", async (c) => {
     const parsed = outlierRequestSchema.parse(await c.req.json());
     const { series, ...options } = parsed;
@@ -328,6 +375,22 @@ export function createApp() {
     return c.json(calculateEnhancedSohIndex(series));
   });
 
+  app.post("/api/soh/airsensor", async (c) => {
+    const parsed = airSensorSohRequestSchema.parse(await c.req.json());
+    return c.json(calculateAirSensorDailyMetrics(parsed.series, {
+      samplingIntervalSeconds: parsed.samplingIntervalSeconds,
+    }));
+  });
+
+  app.post("/api/calendar/pm25", async (c) => {
+    const parsed = calendarPm25RequestSchema.parse(await c.req.json());
+    return c.json(buildCalendarPm25(parsed.series, {
+      palette: parsed.palette,
+      dataThreshold: parsed.dataThreshold,
+      samplingIntervalSeconds: parsed.samplingIntervalSeconds,
+    }));
+  });
+
   app.post("/api/fit/external", async (c) => {
     const parsed = externalFitRequestSchema.parse(await c.req.json());
     return c.json(patExternalFit(parsed.series, parsed.reference));
@@ -344,19 +407,24 @@ export function createApp() {
   });
 
   app.post("/api/wind-rose", async (c) => {
-    const payload = await c.req.json();
-    const series = patSeriesSchema.parse(payload.series ?? payload);
+    const parsed = windRoseRequestSchema.parse(await c.req.json());
+    const series = parsed.series;
     const windData = generateSyntheticWindData(series);
-    const rose = computeWindRose(windData);
+    const rose = computeWindRose(windData, { statistic: parsed.statistic, normalize: parsed.normalize });
     rose.sensorId = series.meta.sensorId;
     return c.json(rose);
   });
 
   app.post("/api/polar-plot", async (c) => {
-    const payload = await c.req.json();
-    const series = patSeriesSchema.parse(payload.series ?? payload);
+    const parsed = polarPlotRequestSchema.parse(await c.req.json());
+    const series = parsed.series;
     const windData = generateSyntheticWindData(series);
-    const polar = computePolarPlot(windData);
+    const polar = computePolarPlot(windData, {
+      statistic: parsed.statistic,
+      normalize: parsed.normalize,
+      directionBinDegrees: parsed.directionBinDegrees,
+      speedBinSize: parsed.speedBinSize,
+    });
     polar.sensorId = series.meta.sensorId;
     return c.json(polar);
   });

@@ -23,6 +23,7 @@
 import { formatISO } from "date-fns";
 import { fromZonedTime, formatInTimeZone } from "date-fns-tz";
 import { z } from "zod";
+import { pm25ToAqiRegulatory, truncatePm25ForAqi } from "./aqi";
 
 export const pasRecordSchema = z.object({
   id: z.string(),
@@ -492,8 +493,10 @@ export type AqiCategory =
 
 export type AqiBreakpoint = {
   category: AqiCategory;
+  label: AqiCategory;
   concLow: number;
   concHigh: number;
+  concentrationHigh: number;
   aqiLow: number;
   aqiHigh: number;
   color: string;
@@ -501,6 +504,7 @@ export type AqiBreakpoint = {
 
 export type AqiBandResult = {
   label: AqiCategory | "Unavailable";
+  category?: AqiCategory | "Unavailable";
   color: string;
   aqi: number | null;
 };
@@ -1893,13 +1897,13 @@ export const EPA_PM25_AQI_PROFILE: AqiProfile = {
     year: 2026,
   },
   breakpoints: [
-    { category: "Good", concLow: 0.0, concHigh: 9.0, aqiLow: 0, aqiHigh: 50, color: "#2e9d5b" },
-    { category: "Moderate", concLow: 9.1, concHigh: 35.4, aqiLow: 51, aqiHigh: 100, color: "#f0c419" },
-    { category: "USG", concLow: 35.5, concHigh: 55.4, aqiLow: 101, aqiHigh: 150, color: "#f2994a" },
-    { category: "Unhealthy", concLow: 55.5, concHigh: 125.4, aqiLow: 151, aqiHigh: 200, color: "#d64545" },
-    { category: "Very Unhealthy", concLow: 125.5, concHigh: 225.4, aqiLow: 201, aqiHigh: 300, color: "#7d3c98" },
-    { category: "Hazardous", concLow: 225.5, concHigh: 325.4, aqiLow: 301, aqiHigh: 500, color: "#8b0000" },
-    { category: "Hazardous", concLow: 325.5, concHigh: 99_999.9, aqiLow: 501, aqiHigh: 999, color: "#8b0000" },
+    { category: "Good", label: "Good", concLow: 0.0, concHigh: 9.0, concentrationHigh: 9.0, aqiLow: 0, aqiHigh: 50, color: "#2e9d5b" },
+    { category: "Moderate", label: "Moderate", concLow: 9.1, concHigh: 35.4, concentrationHigh: 35.4, aqiLow: 51, aqiHigh: 100, color: "#f0c419" },
+    { category: "USG", label: "USG", concLow: 35.5, concHigh: 55.4, concentrationHigh: 55.4, aqiLow: 101, aqiHigh: 150, color: "#f2994a" },
+    { category: "Unhealthy", label: "Unhealthy", concLow: 55.5, concHigh: 125.4, concentrationHigh: 125.4, aqiLow: 151, aqiHigh: 200, color: "#d64545" },
+    { category: "Very Unhealthy", label: "Very Unhealthy", concLow: 125.5, concHigh: 225.4, concentrationHigh: 225.4, aqiLow: 201, aqiHigh: 300, color: "#7d3c98" },
+    { category: "Hazardous", label: "Hazardous", concLow: 225.5, concHigh: 325.4, concentrationHigh: 325.4, aqiLow: 301, aqiHigh: 500, color: "#8b0000" },
+    { category: "Hazardous", label: "Hazardous", concLow: 325.5, concHigh: 99_999.9, concentrationHigh: 99_999.9, aqiLow: 501, aqiHigh: 999, color: "#8b0000" },
   ],
 };
 
@@ -1915,7 +1919,7 @@ export function pm25ToAqiBand(value: number | null | undefined, profile: AqiProf
   const breakpoint = profile.breakpoints.find((bp) => aqi >= bp.aqiLow && aqi <= bp.aqiHigh)
     ?? profile.breakpoints.at(-1);
   if (!breakpoint) return AQI_UNAVAILABLE_BAND;
-  return { label: breakpoint.category, color: breakpoint.color, aqi };
+  return { label: breakpoint.category, category: breakpoint.category, color: breakpoint.color, aqi };
 }
 
 export function patDistinct(series: PatSeries): PatSeries {
@@ -4511,69 +4515,68 @@ export function krigingEstimateAtPoints(
  */
 export function pm25ToAqi(pm25: number, profile: AqiProfile = EPA_PM25_AQI_PROFILE): number {
   if (!Number.isFinite(pm25)) return 0;
-  const c = Math.max(0, pm25);
-  const last = profile.breakpoints.at(-1);
-  for (const bp of profile.breakpoints) {
-    if (c >= bp.concLow && c <= bp.concHigh) {
-      return Math.round(((bp.aqiHigh - bp.aqiLow) / (bp.concHigh - bp.concLow)) * (c - bp.concLow) + bp.aqiLow);
-    }
-  }
-  return last ? last.aqiHigh : 0;
+  return pm25ToAqiRegulatory(pm25, profile);
 }
 
-function hourlyPm25Buckets(samples: NowCastSample[]): number[] {
-  const buckets = new Map<number, number[]>();
+function hourlyPm25Buckets(samples: NowCastSample[]): Array<number | null> {
+  const buckets = new Map<number, Array<number | null>>();
   for (const sample of samples) {
-    if (typeof sample.pm25 !== "number" || !Number.isFinite(sample.pm25)) continue;
     const timestamp = new Date(sample.timestamp).getTime();
     if (!Number.isFinite(timestamp)) continue;
     const hour = Math.floor(timestamp / 3_600_000) * 3_600_000;
     const values = buckets.get(hour) ?? [];
-    values.push(sample.pm25);
+    values.push(typeof sample.pm25 === "number" && Number.isFinite(sample.pm25) ? sample.pm25 : null);
     buckets.set(hour, values);
   }
 
   return [...buckets.entries()]
     .sort((left, right) => right[0] - left[0])
-    .map(([, values]) => average(values))
+    .map(([, values]) => {
+      const valid = values.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+      return valid.length ? average(valid) : null;
+    })
     .slice(0, 12);
 }
 
 export function calculateNowCast(samples: NowCastSample[], profile: AqiProfile = EPA_PM25_AQI_PROFILE): NowCastResult {
   const hourlyValues = hourlyPm25Buckets(samples);
+  const validHourlyValues = hourlyValues.filter((value): value is number => typeof value === "number" && Number.isFinite(value));
   const hoursRequired = 12;
-  if (hourlyValues.length < 2) {
+  const latestThreeMissing = hourlyValues.slice(0, 3).filter((value) => value === null).length;
+  if (validHourlyValues.length < 2 || latestThreeMissing >= 2) {
     return {
       pm25NowCast: null,
       aqi: null,
       weightFactor: null,
-      hoursUsed: hourlyValues.length,
+      hoursUsed: validHourlyValues.length,
       hoursRequired,
       status: "insufficient",
       provenance: "epa-nowcast-aqi",
     };
   }
 
-  const maxValue = Math.max(...hourlyValues);
-  const minValue = Math.min(...hourlyValues);
+  const maxValue = Math.max(...validHourlyValues);
+  const minValue = Math.min(...validHourlyValues);
   const weightFactor = maxValue > 0 ? Math.max(0.5, minValue / maxValue) : 1;
   let weightedSum = 0;
   let weightSum = 0;
 
   for (let index = 0; index < hourlyValues.length; index += 1) {
+    const value = hourlyValues[index];
+    if (value === null) continue;
     const weight = weightFactor ** index;
-    weightedSum += hourlyValues[index] * weight;
+    weightedSum += value * weight;
     weightSum += weight;
   }
 
-  const pm25NowCast = Number((weightedSum / Math.max(weightSum, 1e-9)).toFixed(3));
+  const pm25NowCast = truncatePm25ForAqi(weightedSum / Math.max(weightSum, 1e-9));
   return {
     pm25NowCast,
     aqi: pm25ToAqi(pm25NowCast, profile),
     weightFactor: Number(weightFactor.toFixed(3)),
-    hoursUsed: hourlyValues.length,
+    hoursUsed: validHourlyValues.length,
     hoursRequired,
-    status: hourlyValues.length >= hoursRequired ? "stable" : "calculating",
+    status: validHourlyValues.length >= hoursRequired ? "stable" : "calculating",
     provenance: "epa-nowcast-aqi",
   };
 }

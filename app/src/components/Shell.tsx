@@ -9,10 +9,14 @@ const navItems = [
   { to: "/", label: "Explorer", icon: TableIcon },
   { to: "/map", label: "Map", icon: MapIcon },
   { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
+  { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
+  { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
   { to: "/analytics", label: "Analytics", icon: ChartIcon },
+  { to: "/network-summary", label: "Network", icon: NetworkIcon },
   { to: "/modeling", label: "Modeling", icon: LayersIcon },
   { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
   { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
+  { to: "/measurement-error", label: "Measurement Error", icon: ErrorIcon },
   { to: "/regimes", label: "Regimes", icon: RegimeIcon },
   { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
   { to: "/reliability", label: "Reliability", icon: ShieldIcon },
@@ -22,6 +26,9 @@ const navItems = [
   { to: "/poi", label: "Schools / POIs", icon: PinIcon },
   { to: "/ej-coverage", label: "EJ Coverage", icon: ScaleIcon },
   { to: "/forecast", label: "Forecast", icon: ForecastIcon },
+  { to: "/weather-normalization", label: "Weather Norm", icon: WeatherNormIcon },
+  { to: "/human-impact", label: "Human Impact", icon: HumanImpactIcon },
+  { to: "/data-readiness", label: "Data Readiness", icon: DataReadinessIcon },
   { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
   { to: "/reports", label: "Reports", icon: ReportIcon },
 ];
@@ -43,6 +50,49 @@ function ForecastIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 17l4-6 4 4 5-7 5 9" />
       <path d="M3 21h18" />
+    </svg>
+  );
+}
+
+function RouteIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="18" r="3" />
+      <circle cx="18" cy="6" r="3" />
+      <path d="M8.5 16.5c4-2 3-7 7-8.5" />
+      <path d="M9 18h6" />
+    </svg>
+  );
+}
+
+function WeatherNormIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 17c3-5 7-6 12-4 2 .8 3.5.6 5-.8" />
+      <path d="M4 21h16" />
+      <path d="M7 7a5 5 0 0 1 9.6-1.8A3.5 3.5 0 1 1 18 12H7a2.5 2.5 0 0 1 0-5z" />
+    </svg>
+  );
+}
+
+function HumanImpactIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.6l-1-1a5.5 5.5 0 0 0-7.8 7.8l1 1L12 21l7.8-7.6 1-1a5.5 5.5 0 0 0 0-7.8z" />
+      <path d="M3 13h4l2-4 3 8 2-4h7" />
+    </svg>
+  );
+}
+
+function DataReadinessIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19V5" />
+      <path d="M8 17V9" />
+      <path d="M12 17V7" />
+      <path d="M16 17v-5" />
+      <path d="M20 17V6" />
+      <path d="M3 19h18" />
     </svg>
   );
 }
@@ -139,12 +189,37 @@ function AirFuseIcon() {
   );
 }
 
+function ImportIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3v12" />
+      <path d="M8 11l4 4 4-4" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+      <path d="M5 5h4" />
+      <path d="M15 5h4" />
+    </svg>
+  );
+}
+
 function ChartIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
       <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function NetworkIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="6" cy="7" r="3" />
+      <circle cx="18" cy="7" r="3" />
+      <circle cx="12" cy="17" r="3" />
+      <path d="M8.5 9.2l2 4.3" />
+      <path d="M15.5 9.2l-2 4.3" />
+      <path d="M9 7h6" />
     </svg>
   );
 }
@@ -192,6 +267,18 @@ function ValidationIcon() {
       <path d="M20 6L9 17l-5-5" />
       <path d="M14 4h6v6" />
       <path d="M4 20h16" />
+    </svg>
+  );
+}
+
+function ErrorIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 19V5" />
+      <path d="M4 19h16" />
+      <path d="M7 15l4-5 4 3 5-7" />
+      <path d="M7 8h4" />
+      <path d="M9 6v4" />
     </svg>
   );
 }

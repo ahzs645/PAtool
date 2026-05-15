@@ -3,6 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
 import {
+  type AirSensorSohCompatResult,
+  type CalendarPm25Result,
   type PatSeries,
   type EnhancedSohIndexResult,
   type EnhancedSohDailyMetrics,
@@ -95,6 +97,24 @@ export default function HealthPage() {
     enabled: Boolean(series),
     queryFn: () =>
       postJson<EnhancedSohIndexResult>("/api/soh/enhanced", { series }),
+  });
+
+  const { data: airSensorSoh } = useQuery({
+    queryKey: ["soh-airsensor", series?.points.length],
+    enabled: Boolean(series),
+    queryFn: () =>
+      postJson<AirSensorSohCompatResult>("/api/soh/airsensor", { series }),
+  });
+
+  const { data: calendar } = useQuery({
+    queryKey: ["calendar-pm25", series?.points.length],
+    enabled: Boolean(series),
+    queryFn: () =>
+      postJson<CalendarPm25Result>("/api/calendar/pm25", {
+        series,
+        palette: "aqi",
+        dataThreshold: 50,
+      }),
   });
 
   /* ── Section B: SoH Index Trend ── */
@@ -236,6 +256,59 @@ export default function HealthPage() {
     };
   }, [soh, ct]);
 
+  const calendarChartOption = useMemo(() => {
+    if (!calendar?.days.length) return null;
+    const values = calendar.days.map((day) => [day.date, day.pm25]);
+    const start = calendar.days[0].date;
+    const end = calendar.days.at(-1)?.date ?? start;
+
+    return {
+      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
+      tooltip: {
+        trigger: "item" as const,
+        backgroundColor: ct.tooltipBg,
+        borderColor: ct.tooltipBorder,
+        textStyle: { color: ct.tooltipText },
+        formatter: (params: { value: [string, number | null] }) => {
+          const day = calendar.days.find((entry) => entry.date === params.value[0]);
+          if (!day) return params.value[0];
+          const pm = day.pm25 === null ? "insufficient" : `${day.pm25.toFixed(1)} ug/m3`;
+          return `${day.date}<br/>PM2.5: ${pm}<br/>Completeness: ${day.completeness.toFixed(1)}%<br/>${day.label}`;
+        },
+      },
+      visualMap: {
+        min: 0,
+        max: 80,
+        show: false,
+        inRange: { color: ["#2e9d5b", "#f0c419", "#f2994a", "#d64545", "#7d3c98", "#8b0000"] },
+      },
+      calendar: {
+        range: [start, end],
+        top: 24,
+        left: 36,
+        right: 20,
+        bottom: 12,
+        cellSize: ["auto", 18],
+        itemStyle: { color: "transparent", borderColor: ct.grid },
+        splitLine: { lineStyle: { color: ct.grid } },
+        dayLabel: { color: ct.axis, fontSize: 10 },
+        monthLabel: { color: ct.axis, fontSize: 10 },
+        yearLabel: { show: false },
+      },
+      series: [
+        {
+          type: "heatmap" as const,
+          coordinateSystem: "calendar" as const,
+          data: values,
+          itemStyle: {
+            borderColor: ct.grid,
+            borderWidth: 1,
+          },
+        },
+      ],
+    };
+  }, [calendar, ct]);
+
   /* ── Loading state ── */
   if (!series) {
     return <Loader message="Loading health data..." />;
@@ -290,6 +363,45 @@ export default function HealthPage() {
               : "..."
           }
         />
+        <StatCard
+          label="AirSensor index"
+          value={airSensorSoh ? `${airSensorSoh.airSensorIndex}` : "..."}
+          tone={airSensorSoh && airSensorSoh.airSensorIndex >= 70 ? "good" : "warn"}
+        />
+        <StatCard
+          label="Reporting avg"
+          value={airSensorSoh ? `${airSensorSoh.averageReporting.toFixed(1)}%` : "..."}
+        />
+      </div>
+
+      <div className={styles.chartGrid}>
+        <Card title="Daily PM2.5 Calendar">
+          {calendarChartOption ? (
+            <EChart option={calendarChartOption} height={240} />
+          ) : (
+            <Loader message="Preparing calendar..." />
+          )}
+        </Card>
+        <Card title="AirSensor Compatibility">
+          <div className={styles.compatGrid}>
+            <div>
+              <span>Expected samples/day</span>
+              <strong>{airSensorSoh?.expectedSamplesPerDay ?? "..."}</strong>
+            </div>
+            <div>
+              <span>Average valid</span>
+              <strong>{airSensorSoh ? `${airSensorSoh.averageValid.toFixed(1)}%` : "..."}</strong>
+            </div>
+            <div>
+              <span>DC signal</span>
+              <strong>{airSensorSoh ? `${airSensorSoh.averageDcSignal.toFixed(1)}%` : "..."}</strong>
+            </div>
+            <div>
+              <span>Average A/B R²</span>
+              <strong>{airSensorSoh?.averageAbRSquared?.toFixed(4) ?? "..."}</strong>
+            </div>
+          </div>
+        </Card>
       </div>
 
       {soh ? (

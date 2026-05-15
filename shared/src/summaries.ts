@@ -1,4 +1,4 @@
-import { formatInTimeZone } from "date-fns-tz";
+import { formatInTimeZone, getTimezoneOffset } from "date-fns-tz";
 
 import type { PatPoint, PatSeries } from "./domain";
 
@@ -15,10 +15,13 @@ export type PmWindowStats = {
 export type DailySummary = {
   date: string;
   nObservations: number;
+  validPmHours?: number;
+  meetsMinValidPmHours?: boolean;
   humidityMean: number | null;
   temperatureMean: number | null;
   pressureMean: number | null;
   minutesAboveEpaThreshold: number;
+  exceededEpaThreshold?: boolean;
   fullDay: PmWindowStats;
   morningRush: PmWindowStats;
   eveningRush: PmWindowStats;
@@ -29,6 +32,8 @@ export type DailySummary = {
 export type DailySummaryOptions = {
   epaDailyThreshold?: number;
   assumedMinutesPerObservation?: number;
+  minValidPmHours?: number;
+  dayBoundary?: "clock" | "LST";
 };
 
 const DEFAULT_EPA_THRESHOLD = 12;
@@ -145,10 +150,21 @@ function statsFromPmPoints(
   };
 }
 
-function groupByLocalDate(series: PatSeries): Map<string, PatPoint[]> {
+function localStandardDate(timestamp: string, timezone: string): string {
+  const date = new Date(timestamp);
+  const year = Number(formatInTimeZone(date, timezone, "yyyy"));
+  const janOffset = getTimezoneOffset(timezone, new Date(Date.UTC(year, 0, 1)));
+  const julOffset = getTimezoneOffset(timezone, new Date(Date.UTC(year, 6, 1)));
+  const standardOffset = Math.abs(janOffset) >= Math.abs(julOffset) ? janOffset : julOffset;
+  return new Date(date.getTime() + standardOffset).toISOString().slice(0, 10);
+}
+
+function groupByLocalDate(series: PatSeries, dayBoundary: "clock" | "LST"): Map<string, PatPoint[]> {
   const buckets = new Map<string, PatPoint[]>();
   for (const point of series.points) {
-    const day = formatInTimeZone(new Date(point.timestamp), series.meta.timezone, "yyyy-MM-dd");
+    const day = dayBoundary === "LST"
+      ? localStandardDate(point.timestamp, series.meta.timezone)
+      : formatInTimeZone(new Date(point.timestamp), series.meta.timezone, "yyyy-MM-dd");
     const existing = buckets.get(day);
     if (existing) existing.push(point);
     else buckets.set(day, [point]);
@@ -162,7 +178,9 @@ export function computeDailySummaries(
 ): DailySummary[] {
   const threshold = options.epaDailyThreshold ?? DEFAULT_EPA_THRESHOLD;
   const minutesPerObs = options.assumedMinutesPerObservation ?? DEFAULT_MINUTES_PER_OBSERVATION;
-  const buckets = groupByLocalDate(series);
+  const minValidPmHours = options.minValidPmHours ?? 18;
+  const dayBoundary = options.dayBoundary ?? "clock";
+  const buckets = groupByLocalDate(series, dayBoundary);
   const tz = series.meta.timezone;
 
   const summaries: DailySummary[] = [];
@@ -183,15 +201,21 @@ export function computeDailySummaries(
       if (point.temperature !== null && point.temperature !== undefined) temperature.push(point.temperature);
       if (point.pressure !== null && point.pressure !== undefined) pressure.push(point.pressure);
     }
+    const validPmHours = pmEntries.length * minutesPerObs / 60;
+    const meetsMinValidPmHours = validPmHours >= minValidPmHours;
+    const fullDay = statsFromPmPoints(pmEntries, tz);
 
     summaries.push({
       date,
       nObservations: points.length,
+      validPmHours: round(validPmHours, 3) ?? 0,
+      meetsMinValidPmHours,
       humidityMean: round(mean(humidity), 3),
       temperatureMean: round(mean(temperature), 3),
       pressureMean: round(mean(pressure), 3),
       minutesAboveEpaThreshold: minutesAbove,
-      fullDay: statsFromPmPoints(pmEntries, tz),
+      exceededEpaThreshold: meetsMinValidPmHours && fullDay.mean !== null && fullDay.mean > threshold,
+      fullDay,
       morningRush: computeWindowStats(points, tz, WINDOWS.morningRush),
       eveningRush: computeWindowStats(points, tz, WINDOWS.eveningRush),
       daytimeAmbient: computeWindowStats(points, tz, WINDOWS.daytimeAmbient),

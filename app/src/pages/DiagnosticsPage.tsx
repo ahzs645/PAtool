@@ -41,6 +41,12 @@ export default function DiagnosticsPage() {
   const sensorId = routeId ?? "1001";
   const ct = useChartTheme();
   const [replaceMode, setReplaceMode] = useState(false);
+  const [qcProfile, setQcProfile] = useState<"advanced" | "AB_00" | "AB_01" | "AB_02" | "AB_03">("AB_03");
+  const [multiPanelPreset, setMultiPanelPreset] = useState<"all" | "pm25" | "aux">("all");
+  const [scatterSampleSize, setScatterSampleSize] = useState(500);
+  const [windStatistic, setWindStatistic] = useState<"abs.count" | "prop.count" | "prop.mean">("abs.count");
+  const [polarStatistic, setPolarStatistic] = useState<"mean" | "median" | "max" | "frequency" | "weighted.mean">("mean");
+  const [windNormalize, setWindNormalize] = useState(false);
 
   const { data: series } = useQuery({
     queryKey: ["diag-series", sensorId],
@@ -176,22 +182,25 @@ export default function DiagnosticsPage() {
       axisLabel: { color: ct.axis, fontSize: 8 },
       splitLine: { lineStyle: { color: ct.grid } },
     });
-    return [
-      { ...base, legend: { top: 0, textStyle: { color: ct.text, fontSize: 9 } }, yAxis: mkY("PM2.5"), series: [
+    const panels = [
+      { id: "pm25", option: { ...base, legend: { top: 0, textStyle: { color: ct.text, fontSize: 9 } }, yAxis: mkY("PM2.5"), series: [
         { name: "A", type: "line" as const, smooth: true, data: series.points.map((p) => p.pm25A), color: ct.colors[0], symbol: "none" },
         { name: "B", type: "line" as const, smooth: true, data: series.points.map((p) => p.pm25B), color: ct.colors[2], symbol: "none" },
-      ] },
-      { ...base, legend: { show: false }, yAxis: mkY("Temp (F)"), series: [
+      ] } },
+      { id: "aux", option: { ...base, legend: { show: false }, yAxis: mkY("Temp (F)"), series: [
         { name: "Temperature", type: "line" as const, smooth: true, data: series.points.map((p) => p.temperature), color: ct.colors[3], symbol: "none" },
-      ] },
-      { ...base, legend: { show: false }, yAxis: mkY("RH (%)"), series: [
+      ] } },
+      { id: "aux", option: { ...base, legend: { show: false }, yAxis: mkY("RH (%)"), series: [
         { name: "Humidity", type: "line" as const, smooth: true, data: series.points.map((p) => p.humidity), color: ct.colors[1], symbol: "none" },
-      ] },
-      { ...base, legend: { show: false }, yAxis: mkY("hPa"), series: [
+      ] } },
+      { id: "aux", option: { ...base, legend: { show: false }, yAxis: mkY("hPa"), series: [
         { name: "Pressure", type: "line" as const, smooth: true, data: series.points.map((p) => p.pressure), color: ct.colors[4], symbol: "none" },
-      ] },
+      ] } },
     ];
-  }, [series, ct, timeAxis, baseTooltip]);
+    return panels
+      .filter((panel) => multiPanelPreset === "all" || panel.id === multiPanelPreset)
+      .map((panel) => panel.option);
+  }, [series, ct, timeAxis, baseTooltip, multiPanelPreset]);
 
   /* ── Scatter matrix ── */
   const scatterMatrixOpts = useMemo(() => {
@@ -302,6 +311,18 @@ export default function DiagnosticsPage() {
 
       {/* Row 3: Multi-panel timeseries */}
       <Card title="Multi-Panel Timeseries">
+        <div className={styles.actions}>
+          <select
+            className={styles.control}
+            aria-label="Timeseries preset"
+            value={multiPanelPreset}
+            onChange={(event) => setMultiPanelPreset(event.target.value as typeof multiPanelPreset)}
+          >
+            <option value="all">All</option>
+            <option value="pm25">PM2.5 only</option>
+            <option value="aux">Auxiliary</option>
+          </select>
+        </div>
         {multiPanelOptions ? (
           <div className={styles.multiPanelStack}>
             {multiPanelOptions.map((opt, i) => (
@@ -315,7 +336,19 @@ export default function DiagnosticsPage() {
       <div className={styles.dashRow}>
         <Card title="QC Validation">
           <div className={styles.actions}>
-            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setQcLoading(true); try { setQcResult(await postJson<QcResult>("/api/qc/advanced", { series, removeOutOfSpec: true })); } finally { setQcLoading(false); } }}>
+            <select
+              className={styles.control}
+              aria-label="QC profile"
+              value={qcProfile}
+              onChange={(event) => setQcProfile(event.target.value as typeof qcProfile)}
+            >
+              <option value="AB_03">AirSensor AB_03</option>
+              <option value="AB_02">AirSensor AB_02</option>
+              <option value="AB_01">AirSensor AB_01</option>
+              <option value="AB_00">AirSensor AB_00</option>
+              <option value="advanced">PAtool advanced</option>
+            </select>
+            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setQcLoading(true); try { setQcResult(await postJson<QcResult>(qcProfile === "advanced" ? "/api/qc/advanced" : "/api/qc/airsensor", { series, profileId: qcProfile, removeOutOfSpec: true })); } finally { setQcLoading(false); } }}>
               {qcLoading ? "Running QC..." : "Run QC"}
             </Button>
           </div>
@@ -328,7 +361,33 @@ export default function DiagnosticsPage() {
         </Card>
         <Card title="Wind Analysis">
           <div className={styles.actions}>
-            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setWindLoading(true); try { const [r, p] = await Promise.all([postJson<WindRoseData>("/api/wind-rose", { series }), postJson<PolarPlotData>("/api/polar-plot", { series })]); setWindRose(r); setPolarPlot(p); } finally { setWindLoading(false); } }}>
+            <select
+              className={styles.control}
+              aria-label="Wind rose statistic"
+              value={windStatistic}
+              onChange={(event) => setWindStatistic(event.target.value as typeof windStatistic)}
+            >
+              <option value="abs.count">Abs count</option>
+              <option value="prop.count">Prop count</option>
+              <option value="prop.mean">Prop mean</option>
+            </select>
+            <select
+              className={styles.control}
+              aria-label="Polar statistic"
+              value={polarStatistic}
+              onChange={(event) => setPolarStatistic(event.target.value as typeof polarStatistic)}
+            >
+              <option value="mean">Mean</option>
+              <option value="median">Median</option>
+              <option value="max">Max</option>
+              <option value="frequency">Frequency</option>
+              <option value="weighted.mean">Weighted mean</option>
+            </select>
+            <label className={styles.checkboxControl}>
+              <input type="checkbox" checked={windNormalize} onChange={() => setWindNormalize((value) => !value)} />
+              Normalize
+            </label>
+            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setWindLoading(true); try { const [r, p] = await Promise.all([postJson<WindRoseData>("/api/wind-rose", { series, statistic: windStatistic, normalize: windNormalize }), postJson<PolarPlotData>("/api/polar-plot", { series, statistic: polarStatistic, normalize: windNormalize })]); setWindRose(r); setPolarPlot(p); } finally { setWindLoading(false); } }}>
               {windLoading ? "Generating wind..." : "Generate wind"}
             </Button>
           </div>
@@ -404,7 +463,17 @@ export default function DiagnosticsPage() {
       {/* Row 5: Scatter matrix */}
       <Card title="Scatter Matrix">
         <div className={styles.actions}>
-          <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setScatterLoading(true); try { setScatterMatrix(await postJson<ScatterMatrixData>("/api/scatter-matrix", { series, sampleSize: 500 })); } finally { setScatterLoading(false); } }}>
+          <select
+            className={styles.control}
+            aria-label="Scatter sample size"
+            value={scatterSampleSize}
+            onChange={(event) => setScatterSampleSize(Number(event.target.value))}
+          >
+            <option value={250}>250 samples</option>
+            <option value={500}>500 samples</option>
+            <option value={1000}>1000 samples</option>
+          </select>
+          <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setScatterLoading(true); try { setScatterMatrix(await postJson<ScatterMatrixData>("/api/scatter-matrix", { series, sampleSize: scatterSampleSize })); } finally { setScatterLoading(false); } }}>
             {scatterLoading ? "Generating scatter..." : "Generate scatter matrix"}
           </Button>
         </div>

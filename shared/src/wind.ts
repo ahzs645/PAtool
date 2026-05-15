@@ -14,8 +14,16 @@ export type WindRoseSector = {
     label: string;
     count: number;
     meanPm25: number;
+    displayValue?: number;
   }>;
   totalCount: number;
+};
+
+export type WindRoseStatistic = "abs.count" | "prop.count" | "prop.mean";
+
+export type WindRoseOptions = {
+  statistic?: WindRoseStatistic;
+  normalize?: boolean;
 };
 
 export type WindRoseData = {
@@ -23,14 +31,26 @@ export type WindRoseData = {
   source: "synthetic" | "observed";
   sourceLabel: string;
   totalPoints: number;
+  statistic?: WindRoseStatistic;
   sectors: WindRoseSector[];
   speedBinLabels: string[];
+};
+
+export type PolarPlotStatistic = "mean" | "median" | "max" | "frequency" | "weighted.mean";
+
+export type PolarPlotOptions = {
+  statistic?: PolarPlotStatistic;
+  normalize?: boolean;
+  directionBinDegrees?: number;
+  speedBinSize?: number;
 };
 
 export type PolarPlotData = {
   sensorId: string;
   source: "synthetic" | "observed";
   sourceLabel: string;
+  statistic?: PolarPlotStatistic;
+  normalized?: boolean;
   points: Array<[number, number, number]>;
   maxSpeed: number;
   maxPm25: number;
@@ -170,16 +190,25 @@ export function generateSyntheticWindData(series: PatSeries): WindDataPoint[] {
     });
 }
 
-export function computeWindRose(windData: WindDataPoint[]): WindRoseData {
+function median(values: readonly number[]): number {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
+export function computeWindRose(windData: WindDataPoint[], options: WindRoseOptions = {}): WindRoseData {
+  const statistic = options.statistic ?? "abs.count";
   const sectorSize = 360 / WIND_DIRECTIONS.length;
 
   const sectors: WindRoseSector[] = WIND_DIRECTIONS.map((dir, i) => ({
     direction: dir,
     directionDeg: i * sectorSize,
-    speedBins: SPEED_BINS.map((bin) => ({ label: bin.label, count: 0, meanPm25: 0 })),
+    speedBins: SPEED_BINS.map((bin) => ({ label: bin.label, count: 0, meanPm25: 0, displayValue: 0 })),
     totalCount: 0,
   }));
   const pm25Sums: number[][] = WIND_DIRECTIONS.map(() => SPEED_BINS.map(() => 0));
+  let totalPm25 = 0;
 
   for (const point of windData) {
     const sectorIdx = Math.round(point.windDirection / sectorSize) % WIND_DIRECTIONS.length;
@@ -189,14 +218,24 @@ export function computeWindRose(windData: WindDataPoint[]): WindRoseData {
     sectors[sectorIdx].speedBins[binIdx].count++;
     sectors[sectorIdx].totalCount++;
     pm25Sums[sectorIdx][binIdx] += point.pm25;
+    totalPm25 += point.pm25;
   }
 
   for (let sector = 0; sector < sectors.length; sector += 1) {
+    const sectorTotal = Math.max(sectors[sector].totalCount, 1);
     for (let bin = 0; bin < SPEED_BINS.length; bin += 1) {
       const count = sectors[sector].speedBins[bin].count;
       sectors[sector].speedBins[bin].meanPm25 = count > 0
         ? Number((pm25Sums[sector][bin] / count).toFixed(2))
         : 0;
+      const denominator = options.normalize ? sectorTotal : Math.max(windData.length, 1);
+      const displayValue = statistic === "prop.count"
+        ? (count / denominator) * 100
+        : statistic === "prop.mean"
+          ? (pm25Sums[sector][bin] / Math.max(totalPm25, 1)) * 100
+          : count;
+      sectors[sector].speedBins[bin].displayValue = Number(displayValue.toFixed(2));
+      sectors[sector].speedBins[bin].count = Number(displayValue.toFixed(2));
     }
   }
 
@@ -205,27 +244,76 @@ export function computeWindRose(windData: WindDataPoint[]): WindRoseData {
     source: "synthetic",
     sourceLabel: SYNTHETIC_WIND_LABEL,
     totalPoints: windData.length,
+    statistic,
     sectors,
     speedBinLabels: SPEED_BINS.map((bin) => bin.label),
   };
 }
 
-export function computePolarPlot(windData: WindDataPoint[]): PolarPlotData {
+export function computePolarPlot(windData: WindDataPoint[], options: PolarPlotOptions = {}): PolarPlotData {
+  const statistic = options.statistic ?? "mean";
+  const directionBinDegrees = options.directionBinDegrees ?? 15;
+  const speedBinSize = options.speedBinSize ?? 1;
   let maxSpeed = 0;
   let maxPm25 = 0;
 
-  const points: Array<[number, number, number]> = windData.map((point) => {
+  const rawPoints: Array<[number, number, number]> = windData.map((point) => {
     if (point.windSpeed > maxSpeed) maxSpeed = point.windSpeed;
     if (point.pm25 > maxPm25) maxPm25 = point.pm25;
     return [point.windDirection, point.windSpeed, point.pm25];
   });
 
+  if (!windData.length || statistic === "mean" && !options.normalize) {
+    return {
+      sensorId: "",
+      source: "synthetic",
+      sourceLabel: SYNTHETIC_WIND_LABEL,
+      statistic,
+      normalized: false,
+      points: rawPoints,
+      maxSpeed: Number(maxSpeed.toFixed(2)),
+      maxPm25: Number(maxPm25.toFixed(2)),
+    };
+  }
+
+  const buckets = new Map<string, { direction: number; speed: number; values: number[] }>();
+  for (const point of windData) {
+    const direction = Math.round(point.windDirection / directionBinDegrees) * directionBinDegrees;
+    const speed = Math.round(point.windSpeed / speedBinSize) * speedBinSize;
+    const key = `${direction}:${speed}`;
+    const bucket = buckets.get(key) ?? { direction: direction % 360, speed, values: [] };
+    bucket.values.push(point.pm25);
+    buckets.set(key, bucket);
+  }
+
+  const totalCount = windData.length;
+  const totalPm25 = windData.reduce((sum, point) => sum + point.pm25, 0);
+  const points = [...buckets.values()].map<[number, number, number]>((bucket) => {
+    const value = statistic === "median"
+      ? median(bucket.values)
+      : statistic === "max"
+        ? Math.max(...bucket.values)
+        : statistic === "frequency"
+          ? (bucket.values.length / totalCount) * 100
+          : statistic === "weighted.mean"
+            ? ((bucket.values.reduce((sum, value) => sum + value, 0) / Math.max(totalPm25, 1)) * 100)
+            : bucket.values.reduce((sum, value) => sum + value, 0) / bucket.values.length;
+    return [bucket.direction, bucket.speed, Number(value.toFixed(2))];
+  });
+
+  const maxValue = Math.max(0, ...points.map((point) => point[2]));
+  const normalizedPoints = options.normalize && maxValue > 0
+    ? points.map<[number, number, number]>((point) => [point[0], point[1], Number(((point[2] / maxValue) * 100).toFixed(2))])
+    : points;
+
   return {
     sensorId: "",
     source: "synthetic",
     sourceLabel: SYNTHETIC_WIND_LABEL,
-    points,
+    statistic,
+    normalized: Boolean(options.normalize),
+    points: normalizedPoints,
     maxSpeed: Number(maxSpeed.toFixed(2)),
-    maxPm25: Number(maxPm25.toFixed(2)),
+    maxPm25: Number((options.normalize ? 100 : Math.max(maxValue, maxPm25)).toFixed(2)),
   };
 }

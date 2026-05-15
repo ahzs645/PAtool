@@ -4,6 +4,8 @@ import { Link, useParams } from "react-router-dom";
 
 import {
   applyPurpleAirCorrection,
+  computeDailySummaries,
+  summarizePatCurrentStatus,
   type NowCastResult,
   type PatSeries,
   type QcResult,
@@ -17,6 +19,7 @@ import { EChart } from "../components/EChart";
 import type { Column } from "../components";
 import { getJson, postJson } from "../lib/api";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { buildAqiMarkAreas, buildAqiMarkLines, colorDailyPm25Bar } from "./chart/aqiEcharts";
 import styles from "./SensorDetailPage.module.css";
 
 interface QcIssue {
@@ -60,6 +63,9 @@ export default function SensorDetailPage() {
   const [rollingMean, setRollingMean] = useState<RollingMeanResult | null>(null);
   const [rollingMeanLoading, setRollingMeanLoading] = useState(false);
   const [rollingMeanEnabled, setRollingMeanEnabled] = useState(false);
+  const [rollingWindow, setRollingWindow] = useState(5);
+  const [parameterView, setParameterView] = useState<"pm25" | "humidity" | "temperature" | "pressure">("pm25");
+  const [showLegend, setShowLegend] = useState(true);
 
   const { data: sensor } = useQuery({
     queryKey: ["sensor", id],
@@ -115,6 +121,11 @@ export default function SensorDetailPage() {
     }
   }, [series]);
 
+  const currentStatus = useMemo(() => {
+    if (!series) return null;
+    return summarizePatCurrentStatus(series);
+  }, [series]);
+
   const toggleRollingMean = async () => {
     if (rollingMeanEnabled) {
       setRollingMeanEnabled(false);
@@ -126,7 +137,7 @@ export default function SensorDetailPage() {
       try {
         const result = await postJson<RollingMeanResult>("/api/rolling-mean", {
           series,
-          windowSize: 5,
+          windowSize: rollingWindow,
         });
         setRollingMean(result);
       } finally {
@@ -138,12 +149,32 @@ export default function SensorDetailPage() {
 
   const chartOption = useMemo(() => {
     if (!series) return null;
-    const baseSeries = [
-      { name: "PM2.5 A", type: "line" as const, smooth: true, data: series.points.map((p) => p.pm25A), color: ct.colors[0], symbol: "none" as const },
-      { name: "PM2.5 B", type: "line" as const, smooth: true, data: series.points.map((p) => p.pm25B), color: ct.colors[2], symbol: "none" as const },
-    ];
+    const baseSeries = parameterView === "pm25"
+      ? [
+          {
+            name: "PM2.5 A",
+            type: "line" as const,
+            smooth: true,
+            data: series.points.map((p) => p.pm25A),
+            color: ct.colors[0],
+            symbol: "none" as const,
+            markLine: buildAqiMarkLines(ct.axis),
+            markArea: buildAqiMarkAreas(),
+          },
+          { name: "PM2.5 B", type: "line" as const, smooth: true, data: series.points.map((p) => p.pm25B), color: ct.colors[2], symbol: "none" as const },
+        ]
+      : [
+          {
+            name: parameterView === "humidity" ? "Humidity" : parameterView === "temperature" ? "Temperature" : "Pressure",
+            type: "line" as const,
+            smooth: true,
+            data: series.points.map((p) => p[parameterView]),
+            color: ct.colors[1],
+            symbol: "none" as const,
+          },
+        ];
 
-    if (rollingMeanEnabled && rollingMean) {
+    if (parameterView === "pm25" && rollingMeanEnabled && rollingMean) {
       baseSeries.push(
         {
           name: "PM2.5 A (rolling)",
@@ -175,11 +206,19 @@ export default function SensorDetailPage() {
         borderColor: ct.tooltipBorder,
         textStyle: { color: ct.tooltipText }
       },
-      legend: { top: 0, textStyle: { color: ct.text } },
+      legend: { show: showLegend, top: 0, textStyle: { color: ct.text } },
       grid: { top: 30, right: 16, bottom: 24, left: 48 },
       xAxis: {
         type: "category" as const,
-        data: series.points.map((p) => p.timestamp.slice(11, 16)),
+        data: series.points.map((p) =>
+          new Date(p.timestamp).toLocaleString("en", {
+            timeZone: series.meta.timezone,
+            month: "short",
+            day: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+          }),
+        ),
         axisLabel: { color: ct.axis },
         axisLine: { lineStyle: { color: ct.grid } },
         splitLine: { lineStyle: { color: ct.grid } }
@@ -191,7 +230,42 @@ export default function SensorDetailPage() {
       },
       series: baseSeries
     };
-  }, [series, ct, rollingMeanEnabled, rollingMean]);
+  }, [series, ct, rollingMeanEnabled, rollingMean, parameterView, showLegend]);
+
+  const dailyAqiOption = useMemo(() => {
+    if (!series) return null;
+    const daily = computeDailySummaries(series, { minValidPmHours: 18, dayBoundary: "LST" });
+    return {
+      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
+      tooltip: {
+        trigger: "axis" as const,
+        backgroundColor: ct.tooltipBg,
+        borderColor: ct.tooltipBorder,
+        textStyle: { color: ct.tooltipText }
+      },
+      grid: { top: 18, right: 16, bottom: 28, left: 48 },
+      xAxis: {
+        type: "category" as const,
+        data: daily.map((day) => day.date.slice(5)),
+        axisLabel: { color: ct.axis },
+        axisLine: { lineStyle: { color: ct.grid } },
+      },
+      yAxis: {
+        type: "value" as const,
+        name: "ug/m3",
+        axisLabel: { color: ct.axis },
+        splitLine: { lineStyle: { color: ct.grid } },
+      },
+      series: [
+        {
+          name: "Daily PM2.5",
+          type: "bar" as const,
+          data: daily.map((day) => colorDailyPm25Bar(day.meetsMinValidPmHours ? day.fullDay.mean : null)),
+          markLine: buildAqiMarkLines(ct.axis),
+        },
+      ],
+    };
+  }, [series, ct]);
 
   const sohOption = useMemo(() => {
     if (!soh) return null;
@@ -225,7 +299,7 @@ export default function SensorDetailPage() {
     };
   }, [soh, ct]);
 
-  if (!sensor || !series || !qc || !soh || !chartOption || !sohOption) {
+  if (!sensor || !series || !qc || !soh || !chartOption || !sohOption || !dailyAqiOption || !currentStatus) {
     return <Loader message="Loading sensor detail..." />;
   }
 
@@ -256,6 +330,8 @@ export default function SensorDetailPage() {
         <StatCard label="QC flagged points" value={`${qc.flaggedPoints}`} tone={qc.flaggedPoints ? "warn" : "good"} />
         <StatCard label="Sensor health" value={health?.level ?? "Loading"} tone={healthTone} />
         <StatCard label="NowCast" value={nowCast?.aqi === null || nowCast?.aqi === undefined ? "..." : `AQI ${nowCast.aqi}`} tone={nowCastTone} />
+        <StatCard label="Data status" value={currentStatus.status} tone={currentStatus.status === "current" ? "good" : "warn"} />
+        <StatCard label="Latency" value={currentStatus.latencyMinutes === null ? "Unavailable" : `${currentStatus.latencyMinutes.toFixed(0)} min`} tone={currentStatus.status === "current" ? "good" : "warn"} />
         <StatCard label="SoH index" value={`${soh.index}`} tone={soh.status === "excellent" ? "good" : "warn"} />
       </div>
 
@@ -270,6 +346,11 @@ export default function SensorDetailPage() {
             <span className={styles.provenanceLabel}>NowCast completeness</span>
             <strong>{nowCast?.status ?? "Loading"}</strong>
             <small>{nowCast ? `${nowCast.hoursUsed}/${nowCast.hoursRequired} hourly buckets used.` : "Waiting for hourly PM2.5 history."}</small>
+          </div>
+          <div>
+            <span className={styles.provenanceLabel}>Current status</span>
+            <strong>{currentStatus.lastValidLocalTime ?? "No valid PM2.5"}</strong>
+            <small>{currentStatus.yesterdayMeanPm25 === null ? "Yesterday average unavailable." : `Yesterday average ${currentStatus.yesterdayMeanPm25.toFixed(1)} ug/m3.`}</small>
           </div>
           <div>
             <span className={styles.provenanceLabel}>Health profile</span>
@@ -294,10 +375,41 @@ export default function SensorDetailPage() {
       <div className={styles.chartGrid}>
         <Card title="Timeseries">
           <div className={styles.chartActions}>
+            <select
+              className={styles.control}
+              aria-label="Timeseries parameter"
+              value={parameterView}
+              onChange={(event) => setParameterView(event.target.value as typeof parameterView)}
+            >
+              <option value="pm25">PM2.5 channels</option>
+              <option value="humidity">Humidity</option>
+              <option value="temperature">Temperature</option>
+              <option value="pressure">Pressure</option>
+            </select>
+            <select
+              className={styles.control}
+              aria-label="Rolling mean window"
+              value={rollingWindow}
+              onChange={(event) => {
+                setRollingWindow(Number(event.target.value));
+                setRollingMean(null);
+                setRollingMeanEnabled(false);
+              }}
+            >
+              <option value={3}>3-point roller</option>
+              <option value={5}>5-point roller</option>
+              <option value={9}>9-point roller</option>
+              <option value={15}>15-point roller</option>
+            </select>
+            <label className={styles.checkboxControl}>
+              <input type="checkbox" checked={showLegend} onChange={() => setShowLegend((value) => !value)} />
+              Legend
+            </label>
             <Button
               variant="secondary"
               size="small"
               onClick={toggleRollingMean}
+              disabled={parameterView !== "pm25"}
             >
               {rollingMeanLoading ? "Loading..." : "Toggle Rolling Mean"}
             </Button>
@@ -306,6 +418,9 @@ export default function SensorDetailPage() {
         </Card>
         <Card title="Daily state of health">
           <EChart option={sohOption} zoomable />
+        </Card>
+        <Card title="Daily AQI bars">
+          <EChart option={dailyAqiOption} zoomable />
         </Card>
       </div>
 

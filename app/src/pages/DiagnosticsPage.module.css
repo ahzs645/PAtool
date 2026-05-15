@@ -28,6 +28,25 @@
   margin-bottom: var(--spacing-2);
 }
 
+.control {
+  min-height: 32px;
+  padding: 0 var(--spacing-2);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+}
+
+.checkboxControl {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
 .multiPanelStack {
   display: flex;
   flex-direction: column;
