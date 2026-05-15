@@ -71,4 +71,22 @@ describe("weather normalization", () => {
       expect(point.normalized).toBeGreaterThanOrEqual(0);
     }
   });
+
+  it("defaults to meteorology-only shuffling but supports broader covariate sets", () => {
+    const metOnly = runWeatherNormalization(series(48), {
+      seed: 12,
+      normalizationSamples: 2,
+      randomForest: { numTrees: 6 },
+    });
+    expect(metOnly.config.shuffledFeatureNames).toEqual(["humidity", "temperature", "pressure"]);
+
+    const broad = runWeatherNormalization(series(48), {
+      seed: 12,
+      covariateSet: "meteorology-seasonality",
+      normalizationSamples: 2,
+      randomForest: { numTrees: 6 },
+    });
+    expect(broad.config.shuffledFeatureNames).toContain("hourSin");
+    expect(broad.config.shuffledFeatureNames).not.toContain("trend");
+  });
 });

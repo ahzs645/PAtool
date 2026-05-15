@@ -3,8 +3,11 @@ import { useQuery } from "@tanstack/react-query";
 import type { EChartsCoreOption } from "echarts/core";
 
 import {
+  aqiCategoryStatistics,
+  aqiConfusionMatrix,
   pm25ToAqi,
   pm25ToAqiBand,
+  type AqiCategoryStatistic,
   type ComparisonResult,
   type PatSeries,
   type ReferenceObservationSeries,
@@ -14,6 +17,7 @@ import { Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard } from "
 import type { Column } from "../components";
 import { EChart } from "../components/EChart";
 import { getJson } from "../lib/api";
+import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./ComparisonPage.module.css";
 
@@ -81,6 +85,14 @@ function aqiVariant(value: number | null | undefined): "default" | "success" | "
   if (value <= 100) return "warning";
   if (value <= 150) return "accent";
   return "danger";
+}
+
+function chipVariant(label: string): "default" | "success" | "warning" | "danger" | "accent" {
+  if (label === "Good") return "success";
+  if (label === "Moderate") return "warning";
+  if (label.includes("Unhealthy")) return "accent";
+  if (label === "Hazardous") return "danger";
+  return "default";
 }
 
 function referenceSourceName(referenceOrSource: ReferenceObservationSeries | ReferenceObservationSeries["source"] | null | undefined): string {
@@ -164,6 +176,45 @@ const pairColumns: Column<PairRow>[] = [
   },
 ];
 
+const aqiStatsColumns: Column<AqiCategoryStatistic>[] = [
+  {
+    key: "category",
+    header: "Reference AQI",
+    width: 150,
+    render: (row) => <Chip variant={chipVariant(row.label)}>{row.label}</Chip>,
+  },
+  {
+    key: "count",
+    header: "Pairs",
+    width: 80,
+    render: (row) => String(row.count),
+  },
+  {
+    key: "mbe",
+    header: "MBE",
+    width: 100,
+    render: (row) => formatSignedPm25(row.mbe),
+  },
+  {
+    key: "nmbe",
+    header: "NMBE",
+    width: 100,
+    render: (row) => (isFiniteNumber(row.nmbe) ? `${row.nmbe.toFixed(1)}%` : "Unavailable"),
+  },
+  {
+    key: "rmse",
+    header: "RMSE",
+    width: 100,
+    render: (row) => (isFiniteNumber(row.rmse) ? `${row.rmse.toFixed(2)} ug/m3` : "Unavailable"),
+  },
+  {
+    key: "nrmse",
+    header: "NRMSE",
+    width: 100,
+    render: (row) => (isFiniteNumber(row.nrmse) ? `${row.nrmse.toFixed(1)}%` : "Unavailable"),
+  },
+];
+
 export default function ComparisonPage() {
   const ct = useChartTheme();
   const [referenceSource, setReferenceSource] = useState<ReferenceSourceOption>("airnow");
@@ -190,6 +241,12 @@ export default function ComparisonPage() {
 
   const pairs = useMemo(() => comparison?.pairs ?? [], [comparison]);
   const concentrationPairs = useMemo(() => pairs.filter(hasReferencePm25), [pairs]);
+  const aqiStats = useMemo(() => aqiCategoryStatistics(
+    concentrationPairs.map((pair) => ({ reference: pair.referencePm25, sensor: pair.sensorPm25Mean })),
+  ), [concentrationPairs]);
+  const aqiConfusion = useMemo(() => aqiConfusionMatrix(
+    concentrationPairs.map((pair) => ({ reference: pair.referencePm25, sensor: pair.sensorPm25Mean })),
+  ), [concentrationPairs]);
   const recentPairs = useMemo(() => pairs.slice(-12).reverse(), [pairs]);
   const latestPair = useMemo(() => (
     [...pairs].reverse().find((pair) => (
@@ -272,6 +329,64 @@ export default function ComparisonPage() {
       ],
     };
   }, [comparison, concentrationPairs, ct]);
+
+  const aqiConfusionOption = useMemo<EChartsCoreOption | null>(() => {
+    if (aqiConfusion.length === 0) return null;
+    const referenceCategories = [...new Set(aqiConfusion.map((cell) => cell.referenceCategory))];
+    const sensorCategories = [...new Set(aqiConfusion.map((cell) => cell.sensorCategory))];
+    return {
+      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
+      tooltip: {
+        backgroundColor: ct.tooltipBg,
+        borderColor: ct.tooltipBorder,
+        textStyle: { color: ct.tooltipText },
+        formatter: (params: { data?: unknown }) => {
+          const point = params.data as [number, number, number, number] | undefined;
+          if (!Array.isArray(point)) return "";
+          return [
+            `Reference: ${referenceCategories[point[1]]}`,
+            `Sensor: ${sensorCategories[point[0]]}`,
+            `Pairs: ${point[2]}`,
+            `Reference share: ${point[3].toFixed(1)}%`,
+          ].join("<br/>");
+        },
+      },
+      grid: { top: 24, right: 20, bottom: 64, left: 88 },
+      xAxis: {
+        type: "category" as const,
+        name: "Sensor category",
+        data: sensorCategories,
+        axisLabel: { color: ct.axis, fontSize: 9, interval: 0, rotate: 25 },
+        splitArea: { show: true },
+      },
+      yAxis: {
+        type: "category" as const,
+        name: "Reference category",
+        data: referenceCategories,
+        axisLabel: { color: ct.axis, fontSize: 9 },
+        splitArea: { show: true },
+      },
+      visualMap: {
+        min: 0,
+        max: Math.max(1, ...aqiConfusion.map((cell) => cell.count)),
+        calculable: true,
+        orient: "horizontal",
+        left: "center",
+        bottom: 4,
+        textStyle: { color: ct.axis, fontSize: 10 },
+        inRange: { color: ["#e8f4f8", ct.colors[1], ct.colors[3]] },
+      },
+      series: [{
+        type: "heatmap" as const,
+        data: aqiConfusion.map((cell): [number, number, number, number] => [
+          sensorCategories.indexOf(cell.sensorCategory),
+          referenceCategories.indexOf(cell.referenceCategory),
+          cell.count,
+          cell.percentOfReference,
+        ]),
+      }],
+    };
+  }, [aqiConfusion, ct]);
 
   if (seriesIsError || comparisonIsError) {
     return (
@@ -452,6 +567,47 @@ export default function ComparisonPage() {
           </div>
         </Card>
       )}
+
+      <Card title="AQI category diagnostics">
+        {aqiStats.some((row) => row.count > 0) ? (
+          <>
+            <div className={styles.fitSummary}>
+              <span>Category metrics are grouped by the reference PM2.5 AQI band.</span>
+              <button
+                type="button"
+                className={styles.inlineAction}
+                onClick={() => downloadCsv(
+                  suggestFilename(`comparison-aqi-category-${referenceSource}`, "csv"),
+                  objectsToCsv(aqiStats.map((row) => ({
+                    category: row.label,
+                    upperLimit: row.upperLimit,
+                    count: row.count,
+                    mbe: row.mbe,
+                    nmbe: row.nmbe,
+                    rmse: row.rmse,
+                    nrmse: row.nrmse,
+                  }))),
+                )}
+              >
+                Download CSV
+              </button>
+            </div>
+            <div className={styles.aqiDiagnosticsGrid}>
+              <div className={styles.tableWrap}>
+                <DataTable
+                  columns={aqiStatsColumns}
+                  data={aqiStats}
+                  rowKey={(row) => row.category}
+                  emptyMessage="No AQI category statistics"
+                />
+              </div>
+              {aqiConfusionOption ? <EChart option={aqiConfusionOption} height={320} /> : null}
+            </div>
+          </>
+        ) : (
+          <p className={styles.empty}>No paired PM2.5 concentrations are available for AQI category diagnostics.</p>
+        )}
+      </Card>
 
       <Card title="Recent paired observations">
         <div className={styles.tableWrap}>

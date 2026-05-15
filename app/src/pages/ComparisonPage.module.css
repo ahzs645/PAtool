@@ -148,12 +148,37 @@
 
 .fitSummary {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: var(--spacing-3);
   margin-bottom: var(--spacing-2);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
   line-height: var(--line-height-md);
+}
+
+.inlineAction {
+  flex: 0 0 auto;
+  padding: var(--spacing-1) var(--spacing-2);
+  border: 1px solid var(--border-medium);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
+}
+
+.inlineAction:hover {
+  border-color: var(--accent-bg-strong);
+  color: var(--accent-text);
+}
+
+.aqiDiagnosticsGrid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(320px, 0.9fr);
+  gap: var(--spacing-3);
+  align-items: start;
 }
 
 .validationGrid {
@@ -217,6 +242,10 @@
   }
 
   .summaryGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .aqiDiagnosticsGrid {
     grid-template-columns: 1fr;
   }
 

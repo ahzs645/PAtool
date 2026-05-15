@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   aggregateSentinelRecords,
@@ -9,8 +9,10 @@ import {
   inferSentinelColumnMapping,
   normalizeSentinelRows,
   parseSentinelCsv,
+  renderSentinelQaReportHtml,
   summarizeSentinelQa,
   summarizeSentinelSensors,
+  type SourceDirectionStatistic,
   type SentinelAggregatedRecord,
   type SentinelCanonicalField,
   type SentinelColumnMapping,
@@ -58,6 +60,20 @@ function shortTime(value: string | null) {
   return value ? new Date(value).toLocaleString() : "-";
 }
 
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.style.display = "none";
+  document.body.append(link);
+  link.click();
+  window.setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 1000);
+}
+
 export default function SentinelLabPage() {
   const ct = useChartTheme();
   const [csvText, setCsvText] = useState(SAMPLE_CSV);
@@ -65,6 +81,8 @@ export default function SentinelLabPage() {
   const [windSpeedUnit, setWindSpeedUnit] = useState<"m/s" | "mph">("m/s");
   const [qaPassOnly, setQaPassOnly] = useState(false);
   const [minWind, setMinWind] = useState(0);
+  const [sourceStatistic, setSourceStatistic] = useState<SourceDirectionStatistic>("median");
+  const [activeSensorId, setActiveSensorId] = useState("");
   const [mappingOverrides, setMappingOverrides] = useState<SentinelColumnMapping>({});
 
   const rows = useMemo(() => parseSentinelCsv(csvText, { skipRows }), [csvText, skipRows]);
@@ -91,10 +109,11 @@ export default function SentinelLabPage() {
   );
   const qaSummary = useMemo(() => summarizeSentinelQa(normalized), [normalized]);
   const sensorSummaries = useMemo(() => summarizeSentinelSensors(aggregated), [aggregated]);
-  const activeSensorId = sensorSummaries[0]?.sensorId;
+  const sensorIds = useMemo(() => sensorSummaries.map((summary) => summary.sensorId), [sensorSummaries]);
+  const resolvedActiveSensorId = activeSensorId || sensorIds[0] || "";
   const activeRows = useMemo(
-    () => filteredAggregated.filter((row) => !activeSensorId || row.sensorId === activeSensorId),
-    [filteredAggregated, activeSensorId],
+    () => filteredAggregated.filter((row) => !resolvedActiveSensorId || row.sensorId === resolvedActiveSensorId),
+    [filteredAggregated, resolvedActiveSensorId],
   );
   const qaTable = useMemo(() => buildSentinelQaTable(activeRows), [activeRows]);
   const collocationTable = useMemo(() => {
@@ -105,7 +124,15 @@ export default function SentinelLabPage() {
       filteredAggregated.filter((row) => row.sensorId === b),
     );
   }, [filteredAggregated, sensorSummaries]);
-  const sourceBins = useMemo(() => buildSourceDirectionBins(activeRows, { minWindSpeed: minWind }), [activeRows, minWind]);
+  const sourceBins = useMemo(
+    () => buildSourceDirectionBins(activeRows, { minWindSpeed: minWind, statistic: sourceStatistic }),
+    [activeRows, minWind, sourceStatistic],
+  );
+
+  useEffect(() => {
+    if (activeSensorId && sensorIds.includes(activeSensorId)) return;
+    setActiveSensorId(sensorIds[0] ?? "");
+  }, [activeSensorId, sensorIds]);
 
   const baselineOption = useMemo(() => ({
     textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
@@ -128,14 +155,50 @@ export default function SentinelLabPage() {
       backgroundColor: ct.tooltipBg,
       borderColor: ct.tooltipBorder,
       textStyle: { color: ct.tooltipText },
-      formatter: (p: { value: number[] }) => `Direction: ${p.value[0].toFixed(0)} deg<br/>Speed bin: ${p.value[1]}<br/>Signal: ${p.value[2].toFixed(1)}`,
+      formatter: (p: { value: Array<number | string> }) => `Direction: ${Number(p.value[0]).toFixed(0)} deg<br/>Speed bin: ${p.value[1]}<br/>${sourceStatistic}: ${Number(p.value[2]).toFixed(1)}`,
     },
     angleAxis: { type: "value" as const, min: 0, max: 360, interval: 45, startAngle: 90, axisLabel: { color: ct.text, fontSize: 9 }, splitLine: { lineStyle: { color: ct.grid } } },
     radiusAxis: { type: "category" as const, data: ["0-1", "1-2", "2-4", "4-6", "6+"], axisLabel: { color: ct.axis, fontSize: 9 }, splitLine: { lineStyle: { color: ct.grid } } },
     polar: {},
     visualMap: { min: 0, max: Math.max(1, ...sourceBins.map((bin) => bin.value)), dimension: 2, right: 4, top: "middle", itemWidth: 10, textStyle: { color: ct.text, fontSize: 9 }, inRange: { color: ["#2f8f83", "#e7c24f", "#d96f32", "#bd3b43"] } },
     series: [{ type: "scatter" as const, coordinateSystem: "polar" as const, data: sourceBins.filter((bin) => bin.count > 0).map((bin) => [bin.directionDeg, bin.speedBin, bin.value]), symbolSize: (value: number[]) => Math.max(5, Math.min(22, value[2] / 3)) }],
-  }), [ct, sourceBins]);
+  }), [ct, sourceBins, sourceStatistic]);
+
+  const frequencyOption = useMemo(() => {
+    const byDirection = new Map<string, number>();
+    for (const bin of sourceBins) byDirection.set(bin.direction, (byDirection.get(bin.direction) ?? 0) + bin.count);
+    const directions = [...byDirection.keys()];
+    return {
+      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
+      tooltip: { trigger: "axis" as const, backgroundColor: ct.tooltipBg, borderColor: ct.tooltipBorder, textStyle: { color: ct.tooltipText } },
+      grid: { top: 16, right: 12, bottom: 32, left: 38 },
+      xAxis: { type: "category" as const, data: directions, axisLabel: { color: ct.axis, fontSize: 9 }, axisLine: { lineStyle: { color: ct.grid } } },
+      yAxis: { type: "value" as const, name: "Count", axisLabel: { color: ct.axis, fontSize: 9 }, splitLine: { lineStyle: { color: ct.grid } } },
+      series: [{ name: "Frequency", type: "bar" as const, data: directions.map((direction) => byDirection.get(direction) ?? 0), color: ct.colors[1] }],
+    };
+  }, [ct, sourceBins]);
+
+  const eventOption = useMemo(() => {
+    const times = activeRows.map((row) => new Date(row.timestamp).toLocaleTimeString());
+    return {
+      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
+      tooltip: { trigger: "axis" as const, backgroundColor: ct.tooltipBg, borderColor: ct.tooltipBorder, textStyle: { color: ct.tooltipText } },
+      legend: { top: 0, textStyle: { color: ct.text, fontSize: 10 } },
+      grid: { top: 30, right: 18, bottom: 34, left: 46 },
+      xAxis: { type: "category" as const, data: times, axisLabel: { color: ct.axis, fontSize: 9 }, axisLine: { lineStyle: { color: ct.grid } } },
+      yAxis: { type: "value" as const, name: "Signal", axisLabel: { color: ct.axis, fontSize: 9 }, splitLine: { lineStyle: { color: ct.grid } } },
+      series: [
+        { name: "Signal", type: "line" as const, data: activeRows.map((row) => row.signal), color: ct.colors[0], symbol: "none" },
+        {
+          name: "QA / events",
+          type: "scatter" as const,
+          data: activeRows.map((row) => (row.qaFlags.length || row.canister ? row.signal : null)),
+          itemStyle: { color: ct.colors[3] },
+          symbolSize: 8,
+        },
+      ],
+    };
+  }, [activeRows, ct]);
 
   const sensorColumns: Column<SentinelSensorSummary>[] = [
     { key: "sensor", header: "Sensor", render: (row) => row.sensorId, sortable: true },
@@ -182,6 +245,21 @@ export default function SentinelLabPage() {
         <Card title="Import and mapping">
           <div className={styles.controls}>
             <label className={styles.field}>
+              CSV file
+              <input
+                type="file"
+                accept=".csv,text/csv,text/plain"
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  if (!file) return;
+                  file.text().then((text) => {
+                    setCsvText(text);
+                    setMappingOverrides({});
+                  });
+                }}
+              />
+            </label>
+            <label className={styles.field}>
               CSV data
               <textarea value={csvText} onChange={(event) => setCsvText(event.target.value)} spellCheck={false} />
             </label>
@@ -208,6 +286,23 @@ export default function SentinelLabPage() {
                 <select value={qaPassOnly ? "pass" : "all"} onChange={(event) => setQaPassOnly(event.target.value === "pass")}>
                   <option value="all">All rows</option>
                   <option value="pass">QA pass only</option>
+                </select>
+              </label>
+            </div>
+            <div className={styles.controlRow}>
+              <label className={styles.field}>
+                Active sensor
+                <select value={resolvedActiveSensorId} onChange={(event) => setActiveSensorId(event.target.value)}>
+                  {sensorIds.map((id) => <option key={id} value={id}>{id}</option>)}
+                </select>
+              </label>
+              <label className={styles.field}>
+                Source statistic
+                <select value={sourceStatistic} onChange={(event) => setSourceStatistic(event.target.value as SourceDirectionStatistic)}>
+                  <option value="median">Median</option>
+                  <option value="mean">Mean</option>
+                  <option value="max">Maximum</option>
+                  <option value="frequency">Frequency</option>
                 </select>
               </label>
             </div>
@@ -245,6 +340,23 @@ export default function SentinelLabPage() {
               >
                 QA table CSV
               </Button>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => {
+                  const html = renderSentinelQaReportHtml({
+                    title: "SENTINEL QA report",
+                    sensorId: resolvedActiveSensorId,
+                    sensorSummaries,
+                    qaTable,
+                    collocationTable,
+                  });
+                  downloadBlob(new Blob([html], { type: "text/html" }), suggestFilename("sentinel-qa-report", "html"));
+                }}
+                disabled={!qaTable.length}
+              >
+                HTML report
+              </Button>
             </div>
           </div>
         </Card>
@@ -256,6 +368,12 @@ export default function SentinelLabPage() {
           <Card title="Source direction indicator">
             {sourceBins.some((bin) => bin.count > 0) ? <EChart option={sourceOption} height={300} /> : <p className={styles.muted}>Mapped wind direction, wind speed, and signal are required.</p>}
           </Card>
+          <Card title="Wind frequency">
+            {sourceBins.some((bin) => bin.count > 0) ? <EChart option={frequencyOption} height={240} /> : <p className={styles.muted}>Mapped wind data is required.</p>}
+          </Card>
+          <Card title="QA and event markers">
+            {activeRows.length ? <EChart option={eventOption} height={240} zoomable /> : <p className={styles.muted}>Processed rows are required.</p>}
+          </Card>
         </div>
       </div>
 
@@ -263,7 +381,7 @@ export default function SentinelLabPage() {
         <Card title="Sensor check summary">
           <DataTable columns={sensorColumns} data={sensorSummaries} rowKey={(row) => row.sensorId} pageSize={6} />
         </Card>
-        <Card title={`Single-node QA table${activeSensorId ? `: ${activeSensorId}` : ""}`}>
+        <Card title={`Single-node QA table${resolvedActiveSensorId ? `: ${resolvedActiveSensorId}` : ""}`}>
           <DataTable columns={qaColumns} data={qaTable} rowKey={(row) => row.variable} />
         </Card>
         <Card title="Processed 5-minute data">

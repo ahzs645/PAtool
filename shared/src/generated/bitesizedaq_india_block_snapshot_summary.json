@@ -1,0 +1,352 @@
+[
+  {
+    "state": "nct of delhi",
+    "subdistrictCount": 27,
+    "population": 19268440,
+    "populationWeightedPm25": 95.94280048031118,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 1,
+    "minPm25": 89.32197354052506,
+    "maxPm25": 101.15168886540776
+  },
+  {
+    "state": "uttar pradesh",
+    "subdistrictCount": 312,
+    "population": 232632826,
+    "populationWeightedPm25": 77.96726334067121,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 1,
+    "minPm25": 42.50455275408568,
+    "maxPm25": 94.0199862274381
+  },
+  {
+    "state": "haryana",
+    "subdistrictCount": 74,
+    "population": 29632140,
+    "populationWeightedPm25": 70.2218600432626,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 1,
+    "minPm25": 40.393431227437155,
+    "maxPm25": 83.83577585974545
+  },
+  {
+    "state": "bihar",
+    "subdistrictCount": 534,
+    "population": 124833916,
+    "populationWeightedPm25": 67.34134091385671,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.9853844286996493,
+    "minPm25": 32.09863511635132,
+    "maxPm25": 92.49985997463271
+  },
+  {
+    "state": "punjab",
+    "subdistrictCount": 77,
+    "population": 31015461,
+    "populationWeightedPm25": 66.28231472267753,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.9824652614384807,
+    "minPm25": 37.0502144653122,
+    "maxPm25": 75.56557200818015
+  },
+  {
+    "state": "tripura",
+    "subdistrictCount": 40,
+    "population": 4094671,
+    "populationWeightedPm25": 57.34333435222082,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.9747203133047808,
+    "minPm25": 27.03989848417836,
+    "maxPm25": 70.76817624156506
+  },
+  {
+    "state": "jharkhand",
+    "subdistrictCount": 259,
+    "population": 38916263,
+    "populationWeightedPm25": 55.95036953933939,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.9989313208208095,
+    "minPm25": 37.36109760488272,
+    "maxPm25": 72.17607954302638
+  },
+  {
+    "state": "rajasthan",
+    "subdistrictCount": 244,
+    "population": 80257452,
+    "populationWeightedPm25": 55.3806965281668,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.9979773217819076,
+    "minPm25": 38.00151057471568,
+    "maxPm25": 80.82937298983006
+  },
+  {
+    "state": "chhattisgarh",
+    "subdistrictCount": 149,
+    "population": 30232553,
+    "populationWeightedPm25": 52.966196775957116,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.8566983410233333,
+    "minPm25": 29.43980964060629,
+    "maxPm25": 85.17718602671735
+  },
+  {
+    "state": "chandigarh",
+    "subdistrictCount": 1,
+    "population": 1195856,
+    "populationWeightedPm25": 49.24877979170632,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 1,
+    "minPm25": 49.24877979170632,
+    "maxPm25": 49.24877979170632
+  },
+  {
+    "state": "gujarat",
+    "subdistrictCount": 226,
+    "population": 69993580,
+    "populationWeightedPm25": 46.48454167155663,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.8499154779624074,
+    "minPm25": 34.72990777965188,
+    "maxPm25": 73.34778910751362
+  },
+  {
+    "state": "west bengal",
+    "subdistrictCount": 344,
+    "population": 102191262,
+    "populationWeightedPm25": 46.2426360219884,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.8497602857668985,
+    "minPm25": 17.76721113689642,
+    "maxPm25": 69.68396806774163
+  },
+  {
+    "state": "madhya pradesh",
+    "subdistrictCount": 342,
+    "population": 84811288,
+    "populationWeightedPm25": 44.70659400058743,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.7281229828746381,
+    "minPm25": 32.07415169445995,
+    "maxPm25": 77.22702172546802
+  },
+  {
+    "state": "uttarakhand",
+    "subdistrictCount": 78,
+    "population": 11615885,
+    "populationWeightedPm25": 44.18716520244204,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.6378243241905374,
+    "minPm25": 25.334021856076873,
+    "maxPm25": 64.16138843540342
+  },
+  {
+    "state": "daman diu",
+    "subdistrictCount": 2,
+    "population": 327009,
+    "populationWeightedPm25": 42.15891239363144,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.7807308055741585,
+    "minPm25": 34.52894847071692,
+    "maxPm25": 44.30179702291841
+  },
+  {
+    "state": "maharashtra",
+    "subdistrictCount": 357,
+    "population": 127366886,
+    "populationWeightedPm25": 41.477861667143635,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.6259967131488164,
+    "minPm25": 24.50875963832203,
+    "maxPm25": 58.74268836817479
+  },
+  {
+    "state": "sikkim",
+    "subdistrictCount": 9,
+    "population": 634412,
+    "populationWeightedPm25": 40.67558954452505,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.3838530797021494,
+    "minPm25": 29.550821960698407,
+    "maxPm25": 55.01196360824424
+  },
+  {
+    "state": "odisha",
+    "subdistrictCount": 477,
+    "population": 47036021.8718759,
+    "populationWeightedPm25": 38.760651048950194,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.3489097365568829,
+    "minPm25": 26.826912506022644,
+    "maxPm25": 66.6565921954278
+  },
+  {
+    "state": "dadra nagar haveli",
+    "subdistrictCount": 1,
+    "population": 464664,
+    "populationWeightedPm25": 37.81058104893995,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 37.81058104893995,
+    "maxPm25": 37.81058104893995
+  },
+  {
+    "state": "himachal pradesh",
+    "subdistrictCount": 117,
+    "population": 7614997,
+    "populationWeightedPm25": 37.32533716693864,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.44711770733461875,
+    "minPm25": 21.379207909486244,
+    "maxPm25": 54.33338350234904
+  },
+  {
+    "state": "andhra pradesh",
+    "subdistrictCount": 1128,
+    "population": 92884500,
+    "populationWeightedPm25": 33.54689216328289,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.10992235518304992,
+    "minPm25": 23.087640670270684,
+    "maxPm25": 47.83040088594588
+  },
+  {
+    "state": "jammu kashmir",
+    "subdistrictCount": 83,
+    "population": 17707067,
+    "populationWeightedPm25": 32.333985513683906,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.2003153882006546,
+    "minPm25": 8.387771063148653,
+    "maxPm25": 51.180864003774744
+  },
+  {
+    "state": "goa",
+    "subdistrictCount": 11,
+    "population": 1548738,
+    "populationWeightedPm25": 31.87696428171815,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 27.93688342842619,
+    "maxPm25": 33.69786855065764
+  },
+  {
+    "state": "karnataka",
+    "subdistrictCount": 179,
+    "population": 69190299,
+    "populationWeightedPm25": 31.02809606366708,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 17.63802127026529,
+    "maxPm25": 37.81173177746744
+  },
+  {
+    "state": "tamil nadu",
+    "subdistrictCount": 216,
+    "population": 81525544,
+    "populationWeightedPm25": 31.02355782694068,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 16.31517616407081,
+    "maxPm25": 36.980545307446086
+  },
+  {
+    "state": "meghalaya",
+    "subdistrictCount": 39,
+    "population": 3596236,
+    "populationWeightedPm25": 30.525081295974722,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.17671142828223732,
+    "minPm25": 20.249675703747,
+    "maxPm25": 60.51174551578839
+  },
+  {
+    "state": "puducherry",
+    "subdistrictCount": 8,
+    "population": 1427836,
+    "populationWeightedPm25": 29.86623319513258,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 28.369449818678916,
+    "maxPm25": 34.01115511696635
+  },
+  {
+    "state": "manipur",
+    "subdistrictCount": 38,
+    "population": 3298164,
+    "populationWeightedPm25": 27.571051364596556,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 22.58170021228331,
+    "maxPm25": 33.86594392754298
+  },
+  {
+    "state": "nagaland",
+    "subdistrictCount": 114,
+    "population": 2010352,
+    "populationWeightedPm25": 27.41648073315261,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 19.325147988445565,
+    "maxPm25": 39.10112320890543
+  },
+  {
+    "state": "kerala",
+    "subdistrictCount": 63,
+    "population": 35038573,
+    "populationWeightedPm25": 26.764932650313735,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 17.194132048600217,
+    "maxPm25": 32.088417813191214
+  },
+  {
+    "state": "assam",
+    "subdistrictCount": 184,
+    "population": 35695398,
+    "populationWeightedPm25": 24.90788586921199,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0.007919480264654844,
+    "minPm25": 14.651482848654409,
+    "maxPm25": 53.04160989948008
+  },
+  {
+    "state": "mizoram",
+    "subdistrictCount": 29,
+    "population": 1270128,
+    "populationWeightedPm25": 22.404326853879567,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 19.565198623187644,
+    "maxPm25": 30.049773802981708
+  },
+  {
+    "state": "lakshadweep",
+    "subdistrictCount": 10,
+    "population": 47739.33730826958,
+    "populationWeightedPm25": 20.555565928965837,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 17.3791675272952,
+    "maxPm25": 25.513330459594727
+  },
+  {
+    "state": "arunachal pradesh",
+    "subdistrictCount": 188,
+    "population": 1607292,
+    "populationWeightedPm25": 19.908449670447528,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 12.814287494034804,
+    "maxPm25": 28.947173928398247
+  },
+  {
+    "state": "andaman nicobar islands",
+    "subdistrictCount": 9,
+    "population": 373075,
+    "populationWeightedPm25": 18.695906633397726,
+    "aboveWhoPopulationFraction": 1,
+    "aboveIndiaStandardPopulationFraction": 0,
+    "minPm25": 10.810587541900768,
+    "maxPm25": 19.926011293970586
+  }
+]

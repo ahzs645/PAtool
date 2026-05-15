@@ -1,10 +1,12 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 
 import {
   aggregateMobilePoints,
   buildHistogram,
   buildMobileCalendar,
   buildRouteSegments,
+  cleanMobilePoints,
   findNearestReferenceMonitor,
   findReferenceMonitorsWithinRadius,
   parseAirBeamCsv,
@@ -12,17 +14,26 @@ import {
   summarizeMobileCampaign,
   temporallyAdjustMobilePoints,
   type MobileAggregation,
-  type MobileSensingPoint,
   type MobileSessionSummary,
+  type PasCollection,
+  type PatSeries,
   type ReferenceMonitorMatch,
   type RouteSegmentSummary,
 } from "@patool/shared";
 
 import { Button, Card, CellStack, DataTable, PageHeader, StatCard, type Column } from "../components";
 import { EChart } from "../components/EChart";
+import { getJson } from "../lib/api";
 import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import { calendarOption, campaignTimeSeriesOption, histogramOption, segmentOption } from "./mobileCampaigns/chartOptions";
-import { SAMPLE_AIRBEAM_CSV, SAMPLE_REFERENCE_MONITORS, SAMPLE_REFERENCE_OBSERVATIONS } from "./mobileCampaigns/sampleData";
+import { RouteMap } from "./mobileCampaigns/RouteMap";
+import {
+  buildSnapshotReferenceObservations,
+  hasTemporalOverlap,
+  pasCollectionToReferenceMonitors,
+  patSeriesToReferenceObservations,
+} from "./mobileCampaigns/referenceAdapters";
+import { loadBundledCampaignCsv, SAMPLE_AIRBEAM_CSV, SAMPLE_REFERENCE_MONITORS, SAMPLE_REFERENCE_OBSERVATIONS } from "./mobileCampaigns/sampleData";
 import styles from "./MobileCampaignsPage.module.css";
 
 const AGGREGATIONS: MobileAggregation[] = ["raw", "1min", "1hr", "1day"];
@@ -54,21 +65,50 @@ export default function MobileCampaignsPage() {
   const [sourceId, setSourceId] = useState("demo-airbeam");
   const [selectedSession, setSelectedSession] = useState("All");
   const [aggregation, setAggregation] = useState<MobileAggregation>("1min");
+  const [qcEnabled, setQcEnabled] = useState(true);
+  const [maxGpsAccuracy, setMaxGpsAccuracy] = useState(100);
+  const [maxSpeed, setMaxSpeed] = useState(45);
+
+  const { data: pasCollection } = useQuery({
+    queryKey: ["mobile-campaign-reference-monitors"],
+    queryFn: () => getJson<PasCollection>("/api/pas"),
+  });
 
   const rawPoints = useMemo(() => parseAirBeamCsv(csvText, { sourceId, fallbackSessionId: sourceId }), [csvText, sourceId]);
+  const qcResult = useMemo(
+    () => cleanMobilePoints(rawPoints, { maxGpsAccuracyMeters: maxGpsAccuracy, maxSpeedMetersPerSecond: maxSpeed }),
+    [rawPoints, maxGpsAccuracy, maxSpeed],
+  );
+  const cleanRawPoints = qcEnabled ? qcResult.cleanedPoints : rawPoints;
   const sessions = useMemo(() => ["All", ...new Set(rawPoints.map((point) => point.sessionId))], [rawPoints]);
   const selectedRawPoints = useMemo(
-    () => selectedSession === "All" ? rawPoints : rawPoints.filter((point) => point.sessionId === selectedSession),
-    [rawPoints, selectedSession],
+    () => selectedSession === "All" ? cleanRawPoints : cleanRawPoints.filter((point) => point.sessionId === selectedSession),
+    [cleanRawPoints, selectedSession],
   );
   const points = useMemo(() => aggregateMobilePoints(selectedRawPoints, aggregation), [selectedRawPoints, aggregation]);
   const summary = useMemo(() => summarizeMobileCampaign(points), [points]);
   const distribution = useMemo(() => summarizeDistribution(points.map((point) => point.pm25)), [points]);
   const histogram = useMemo(() => buildHistogram(points.map((point) => point.pm25), 10), [points]);
   const calendar = useMemo(() => buildMobileCalendar(points), [points]);
-  const nearestMonitor = useMemo(() => findNearestReferenceMonitor(points, SAMPLE_REFERENCE_MONITORS), [points]);
-  const nearbyMonitors = useMemo(() => findReferenceMonitorsWithinRadius(points, SAMPLE_REFERENCE_MONITORS, 20), [points]);
-  const adjusted = useMemo(() => temporallyAdjustMobilePoints(points, SAMPLE_REFERENCE_OBSERVATIONS, "1hr"), [points]);
+  const referenceMonitors = useMemo(
+    () => pasCollection ? pasCollectionToReferenceMonitors(pasCollection) : SAMPLE_REFERENCE_MONITORS,
+    [pasCollection],
+  );
+  const nearestMonitor = useMemo(() => findNearestReferenceMonitor(points, referenceMonitors), [points, referenceMonitors]);
+  const nearbyMonitors = useMemo(() => findReferenceMonitorsWithinRadius(points, referenceMonitors, 20), [points, referenceMonitors]);
+  const { data: nearestReferenceSeries } = useQuery({
+    queryKey: ["mobile-campaign-reference-series", nearestMonitor?.monitor.id],
+    queryFn: () => getJson<PatSeries>(`/api/pat?id=${encodeURIComponent(nearestMonitor!.monitor.id)}&aggregate=hourly`),
+    enabled: Boolean(nearestMonitor?.monitor.id),
+  });
+  const referenceObservations = useMemo(() => {
+    const fromSeries = nearestReferenceSeries ? patSeriesToReferenceObservations(nearestReferenceSeries) : [];
+    if (hasTemporalOverlap(points, fromSeries)) return fromSeries;
+    const snapshotRows = buildSnapshotReferenceObservations(points, nearestMonitor?.monitor ?? null);
+    if (snapshotRows.length) return snapshotRows;
+    return SAMPLE_REFERENCE_OBSERVATIONS;
+  }, [nearestMonitor, nearestReferenceSeries, points]);
+  const adjusted = useMemo(() => temporallyAdjustMobilePoints(points, referenceObservations, "1hr"), [points, referenceObservations]);
   const segments = useMemo(() => buildRouteSegments(points, { targetDistanceKm: 0.12 }), [points]);
 
   return (
@@ -86,6 +126,7 @@ export default function MobileCampaignsPage() {
         <StatCard label="P95 PM2.5" value={formatNumber(summary.pm25P95)} />
         <StatCard label="Route distance" value={`${summary.distanceKm.toFixed(2)} km`} />
         <StatCard label="Nearest monitor" value={nearestMonitor ? `${nearestMonitor.distanceKm.toFixed(1)} km` : "None"} />
+        <StatCard label="QC removed" value={`${qcEnabled ? qcResult.removedPoints : 0}`} tone={qcResult.removedPoints > 0 ? "warn" : "good"} />
       </div>
 
       <Card title="Campaign input">
@@ -118,15 +159,30 @@ export default function MobileCampaignsPage() {
           </label>
           <Button
             variant="secondary"
-            onClick={() => {
+            onClick={async () => {
               setSourceId("demo-airbeam");
               setSelectedSession("All");
               setAggregation("1min");
-              setCsvText(SAMPLE_AIRBEAM_CSV);
+              setCsvText(await loadBundledCampaignCsv());
             }}
           >
             Load demo
           </Button>
+          <label className={styles.field}>
+            <span>QC</span>
+            <select value={qcEnabled ? "on" : "off"} onChange={(event) => setQcEnabled(event.target.value === "on")}>
+              <option value="on">On</option>
+              <option value="off">Off</option>
+            </select>
+          </label>
+          <label className={styles.field}>
+            <span>Max GPS accuracy (m)</span>
+            <input type="number" min={1} value={maxGpsAccuracy} onChange={(event) => setMaxGpsAccuracy(Math.max(1, Number(event.target.value) || 100))} />
+          </label>
+          <label className={styles.field}>
+            <span>Max speed (m/s)</span>
+            <input type="number" min={1} value={maxSpeed} onChange={(event) => setMaxSpeed(Math.max(1, Number(event.target.value) || 45))} />
+          </label>
           <Button
             variant="secondary"
             disabled={points.length === 0}
@@ -142,13 +198,20 @@ export default function MobileCampaignsPage() {
             Export adjusted
           </Button>
         </div>
+        {qcEnabled && qcResult.issues.length > 0 && (
+          <div className={styles.issueList}>
+            {qcResult.issues.map((issue) => (
+              <span className={styles.issue} key={issue.code}>{issue.count} {issue.message}</span>
+            ))}
+          </div>
+        )}
       </Card>
 
       <div className={styles.split}>
         <Card title="Route map">
           <RouteMap points={points} monitors={nearbyMonitors} />
           <p className={styles.note}>
-            The route layer uses the normalized mobile schema, so AirBeam, OpenAQ walks, vehicle transects, or future PurpleAir mobile data can share this view.
+            The MapLibre route layer uses the normalized mobile schema, so AirBeam, OpenAQ walks, vehicle transects, or future PurpleAir mobile data can share this view.
           </p>
         </Card>
 
@@ -166,7 +229,7 @@ export default function MobileCampaignsPage() {
       <Card title="Sensor vs adjusted reference-normalized PM2.5">
         <EChart option={campaignTimeSeriesOption(points, adjusted)} height={340} zoomable />
         <p className={styles.note}>
-          The adjusted series follows the AirBeamR period-ratio method: reference period value divided by the reference period mean, then mobile PM2.5 divided by that ratio.
+          The adjusted series follows the AirBeamR period-ratio method. Reference observations come from the nearest loaded network monitor when available, with demo fallback rows for the bundled campaign.
         </p>
       </Card>
 
@@ -207,95 +270,6 @@ export default function MobileCampaignsPage() {
       </Card>
     </div>
   );
-}
-
-function RouteMap({ points, monitors }: { points: MobileSensingPoint[]; monitors: ReferenceMonitorMatch[] }) {
-  const bounds = getBounds(points, monitors);
-  const projected = points.map((point) => project(point.latitude, point.longitude, bounds));
-
-  return (
-    <div className={styles.mapPanel}>
-      <svg className={styles.routeSvg} viewBox="0 0 100 100" role="img" aria-label="Mobile route map">
-        {projected.slice(1).map((point, index) => {
-          const previous = projected[index];
-          const pm25 = points[index + 1].pm25;
-          return (
-            <line
-              key={`${points[index + 1].id}-line`}
-              x1={previous.x}
-              y1={previous.y}
-              x2={point.x}
-              y2={point.y}
-              stroke={pmColor(pm25)}
-              strokeWidth="1.8"
-              strokeLinecap="round"
-            />
-          );
-        })}
-        {projected.map((point, index) => (
-          <circle key={points[index].id} cx={point.x} cy={point.y} r="1.4" fill={pmColor(points[index].pm25)} />
-        ))}
-        {monitors.map((match) => {
-          const point = project(match.monitor.latitude, match.monitor.longitude, bounds);
-          const labelOnLeft = point.x > 74;
-          return (
-            <g key={match.monitor.id}>
-              <circle cx={point.x} cy={point.y} r="2.2" fill="var(--surface)" stroke="var(--text-primary)" strokeWidth="0.7" />
-              <text
-                x={labelOnLeft ? point.x - 2.8 : point.x + 2.8}
-                y={point.y + 1.2}
-                fontSize="3"
-                fill="var(--text-secondary)"
-                textAnchor={labelOnLeft ? "end" : "start"}
-              >
-                {shortLabel(match.monitor.name)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-      <div className={styles.mapLegend}>
-        <span className={styles.legendSwatch} />
-        <span>Lower to higher PM2.5</span>
-      </div>
-    </div>
-  );
-}
-
-function getBounds(points: MobileSensingPoint[], monitors: ReferenceMonitorMatch[]) {
-  const latitudes = [...points.map((point) => point.latitude), ...monitors.map((match) => match.monitor.latitude)];
-  const longitudes = [...points.map((point) => point.longitude), ...monitors.map((match) => match.monitor.longitude)];
-  const minLat = Math.min(...latitudes);
-  const maxLat = Math.max(...latitudes);
-  const minLon = Math.min(...longitudes);
-  const maxLon = Math.max(...longitudes);
-  return {
-    minLat: Number.isFinite(minLat) ? minLat : 0,
-    maxLat: Number.isFinite(maxLat) ? maxLat : 1,
-    minLon: Number.isFinite(minLon) ? minLon : 0,
-    maxLon: Number.isFinite(maxLon) ? maxLon : 1,
-  };
-}
-
-function project(latitude: number, longitude: number, bounds: ReturnType<typeof getBounds>) {
-  const xRange = Math.max(0.000001, bounds.maxLon - bounds.minLon);
-  const yRange = Math.max(0.000001, bounds.maxLat - bounds.minLat);
-  return {
-    x: 6 + ((longitude - bounds.minLon) / xRange) * 88,
-    y: 94 - ((latitude - bounds.minLat) / yRange) * 88,
-  };
-}
-
-function pmColor(pm25: number) {
-  if (pm25 <= 12) return "#3aa76d";
-  if (pm25 <= 35) return "#d6a100";
-  if (pm25 <= 55) return "#d96c2c";
-  if (pm25 <= 150) return "#cf3f4b";
-  return "#7c4bb7";
-}
-
-function shortLabel(label: string): string {
-  return label.length > 18 ? `${label.slice(0, 17)}...` : label;
 }
 
 function formatNumber(value: number | null | undefined): string {

@@ -1,8 +1,8 @@
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import type { InterpolationMethod } from "@patool/shared";
+import type { InterpolationMethod, PasPm25Slice } from "@patool/shared";
 
-import type { InterpolationMeta, MapMode, OverlayLayer, Pm25Window } from "./types";
-import { pm25WindowOptions } from "./types";
+import type { InterpolationMeta, MapMode, OverlayLayer, Pm25Window, SensorMapMetric } from "./types";
+import { pm25WindowOptions, sensorMapMetricOptions } from "./types";
 import styles from "../MapPage.module.css";
 
 type MapToolbarProps = {
@@ -26,6 +26,10 @@ type MapToolbarProps = {
   setQuery: Dispatch<SetStateAction<string>>;
   pm25Window: Pm25Window;
   setPm25Window: Dispatch<SetStateAction<Pm25Window>>;
+  pm25Slice: PasPm25Slice;
+  setPm25Slice: Dispatch<SetStateAction<PasPm25Slice>>;
+  sensorMetric: SensorMapMetric;
+  setSensorMetric: Dispatch<SetStateAction<SensorMapMetric>>;
   outsideOnly: boolean;
   setOutsideOnly: Dispatch<SetStateAction<boolean>>;
   overlayInputRef: RefObject<HTMLInputElement | null>;
@@ -59,6 +63,10 @@ export function MapToolbar({
   setQuery,
   pm25Window,
   setPm25Window,
+  pm25Slice,
+  setPm25Slice,
+  sensorMetric,
+  setSensorMetric,
   outsideOnly,
   setOutsideOnly,
   overlayInputRef,
@@ -198,16 +206,41 @@ export function MapToolbar({
         onChange={(e) => setQuery(e.target.value)}
       />
       <select
+        aria-label="Marker metric"
+        className={styles.select}
+        value={sensorMetric}
+        onChange={(e) => setSensorMetric(e.target.value as SensorMapMetric)}
+      >
+        {sensorMapMetricOptions.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            Markers: {opt.label}
+          </option>
+        ))}
+      </select>
+      <select
         aria-label="PM2.5 time window"
         className={styles.select}
         value={pm25Window}
         onChange={(e) => setPm25Window(e.target.value as Pm25Window)}
+        disabled={sensorMetric !== "pm25"}
       >
         {pm25WindowOptions.map((opt) => (
           <option key={opt.value} value={opt.value}>
             PM2.5 {opt.label}
           </option>
         ))}
+      </select>
+      <select
+        aria-label="PM2.5 slice"
+        className={styles.select}
+        value={pm25Slice}
+        onChange={(e) => setPm25Slice(e.target.value as PasPm25Slice)}
+        disabled={sensorMetric !== "pm25"}
+      >
+        <option value="current">Selected window</option>
+        <option value="mean">Mean windows</option>
+        <option value="max">Max window</option>
+        <option value="min">Min window</option>
       </select>
       <label className={styles.toggle}>
         <input

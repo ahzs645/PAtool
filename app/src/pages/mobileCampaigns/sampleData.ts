@@ -32,3 +32,13 @@ export const SAMPLE_REFERENCE_OBSERVATIONS: ReferenceObservation[] = [
   { timestamp: "2024-06-02T15:00:00Z", pm25: 18.8, monitorId: "ref-school" },
   { timestamp: "2024-06-03T18:00:00Z", pm25: 28.2, monitorId: "ref-port" },
 ];
+
+export async function loadBundledCampaignCsv(): Promise<string> {
+  try {
+    const response = await fetch(new URL("examples/mobile-campaign-airbeam.csv", document.baseURI));
+    if (response.ok) return response.text();
+  } catch {
+    // Fall through to the inline fixture so the demo remains usable in tests.
+  }
+  return SAMPLE_AIRBEAM_CSV;
+}

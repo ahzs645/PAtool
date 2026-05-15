@@ -103,6 +103,8 @@ export function aggregateMeasurements(
     .sort((a, b) => a.id.localeCompare(b.id) || a.bucket.localeCompare(b.bucket));
 }
 
+export const aggregateStandardMeasurements = aggregateMeasurements;
+
 export function summarizeSites(rows: readonly MeasurementRow[]): SiteSummaryRow[] {
   const groups = new Map<string, MeasurementRow[]>();
   for (const row of rows) {

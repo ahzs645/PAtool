@@ -62,6 +62,11 @@
   display: block;
 }
 
+.mapCanvas {
+  width: 100%;
+  height: 360px;
+}
+
 .mapLegend {
   position: absolute;
   left: 12px;
@@ -100,6 +105,22 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--spacing-2);
+}
+
+.issueList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: var(--spacing-2);
+}
+
+.issue {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  padding: 6px 8px;
 }
 
 @media (max-width: 900px) {

@@ -4,6 +4,7 @@ import maplibregl from "maplibre-gl";
 
 import {
   pasFilter,
+  type PasPm25Slice,
   pm25ToAqiBand,
   type PasCollection,
   type InterpolationGrid,
@@ -51,7 +52,7 @@ import { createInterpolationWorker } from "./map/interpolationWorker";
 import { HeatmapLegend } from "./map/HeatmapLegend";
 import { MapToolbar } from "./map/MapToolbar";
 import { parseOverlayGeoJson } from "./map/overlays";
-import { buildGeoJson, buildSensorPopupHtml, getPm25ValueForWindow } from "./map/sensors";
+import { buildGeoJson, buildSensorPopupHtml, getPm25ValueForSlice } from "./map/sensors";
 import {
   pm25WindowOptions,
   type HeatmapDebugState,
@@ -61,6 +62,7 @@ import {
   type OverlayLayer,
   type PatoolDebugWindow,
   type Pm25Window,
+  type SensorMapMetric,
 } from "./map/types";
 import styles from "./MapPage.module.css";
 
@@ -89,6 +91,16 @@ export default function MapPage() {
       "pm25_1hr",
     ),
     "pm25_1hr",
+  );
+  const [pm25Slice, setPm25Slice] = useUrlState<PasPm25Slice>(
+    "slice",
+    urlCodec.enum<PasPm25Slice>(["current", "mean", "max", "min"], "current"),
+    "current",
+  );
+  const [sensorMetric, setSensorMetric] = useUrlState<SensorMapMetric>(
+    "metric",
+    urlCodec.enum<SensorMapMetric>(["pm25", "humidity", "temperature"], "pm25"),
+    "pm25",
   );
   const [mapMode, setMapMode] = useUrlState<MapMode>(
     "mode",
@@ -148,8 +160,8 @@ export default function MapPage() {
 
   const geojson = useMemo<GeoJSON.FeatureCollection>(() => {
     if (!filtered) return { type: "FeatureCollection", features: [] };
-    return buildGeoJson(filtered.records, pm25Window);
-  }, [filtered, pm25Window]);
+    return buildGeoJson(filtered.records, pm25Window, sensorMetric, pm25Slice);
+  }, [filtered, pm25Window, sensorMetric, pm25Slice]);
 
   // Stable ref for the latest geojson so the callbacks inside map.on("load") always see current data
   const geojsonRef = useRef(geojson);
@@ -159,7 +171,7 @@ export default function MapPage() {
     if (!filtered) return [];
 
     return filtered.records.flatMap((record): InterpolationPoint[] => {
-      const pm25 = getPm25ValueForWindow(record, pm25Window);
+      const pm25 = getPm25ValueForSlice(record, pm25Window, pm25Slice);
       if (
         pm25 == null
         || !Number.isFinite(record.longitude)
@@ -175,7 +187,7 @@ export default function MapPage() {
         value: pm25,
       }];
     });
-  }, [filtered, pm25Window]);
+  }, [filtered, pm25Window, pm25Slice]);
 
   const interpolationWorkload = useMemo(() => {
     if (mapMode !== "heatmap" || interpolationPoints.length < MIN_INTERPOLATION_POINTS) return null;
@@ -857,6 +869,7 @@ export default function MapPage() {
   }, [mapMode, followView, syncViewState]);
 
   const windowLabel = pm25WindowOptions.find((o) => o.value === pm25Window)?.label ?? "1hr";
+  const sliceLabel = pm25Slice === "current" ? windowLabel : pm25Slice;
   const averagePm = filtered
     ? interpolationPoints.reduce((sum, point) => sum + point.value, 0) / Math.max(interpolationPoints.length, 1)
     : 0;
@@ -943,6 +956,10 @@ export default function MapPage() {
         setQuery={setQuery}
         pm25Window={pm25Window}
         setPm25Window={setPm25Window}
+        pm25Slice={pm25Slice}
+        setPm25Slice={setPm25Slice}
+        sensorMetric={sensorMetric}
+        setSensorMetric={setSensorMetric}
         outsideOnly={outsideOnly}
         setOutsideOnly={setOutsideOnly}
         overlayInputRef={overlayInputRef}
@@ -958,11 +975,15 @@ export default function MapPage() {
       <div className={styles.stats}>
         <StatCard label="Sensors" value={filtered ? `${filtered.records.length}` : "..."} />
         <StatCard
-          label={`Mean PM2.5 (${windowLabel})`}
+          label={`Mean PM2.5 (${sliceLabel})`}
           value={filtered ? `${averagePm.toFixed(1)}` : "..."}
           tone={meanBand.label === "Good" ? "good" : "warn"}
         />
         <StatCard label="AQI" value={filtered ? meanBand.label : "..."} />
+        <StatCard
+          label="Marker metric"
+          value={sensorMetric === "pm25" ? `PM2.5 ${sliceLabel}` : sensorMetric === "humidity" ? "Humidity" : "Temperature"}
+        />
         <div className={styles.exportButtons}>
           <Button
             variant="secondary"
@@ -975,12 +996,12 @@ export default function MapPage() {
                 latitude: record.latitude,
                 longitude: record.longitude,
                 locationType: record.locationType,
-                pm25: getPm25ValueForWindow(record, pm25Window) ?? null,
+                pm25: getPm25ValueForSlice(record, pm25Window, pm25Slice) ?? null,
                 pm25Current: record.pm25Current ?? null,
                 humidity: record.humidity ?? null,
                 temperature: record.temperature ?? null,
               }));
-              downloadCsv(suggestFilename(`map-${pm25Window}`, "csv"), objectsToCsv(rows));
+              downloadCsv(suggestFilename(`map-${pm25Window}-${pm25Slice}`, "csv"), objectsToCsv(rows));
             }}
           >
             CSV (filtered sensors)

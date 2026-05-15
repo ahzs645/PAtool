@@ -4,7 +4,9 @@ import { Link, useParams } from "react-router-dom";
 
 import {
   applyPurpleAirCorrection,
+  buildMonitorMatrix,
   computeDailySummaries,
+  monitorMatrixToCsvBundle,
   summarizePatCurrentStatus,
   type NowCastResult,
   type PatSeries,
@@ -18,6 +20,7 @@ import { Loader, PageHeader, StatCard, Card, DataTable, Chip, Button } from "../
 import { EChart } from "../components/EChart";
 import type { Column } from "../components";
 import { getJson, postJson } from "../lib/api";
+import { downloadCsv, suggestFilename } from "../lib/exporters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import { buildAqiMarkAreas, buildAqiMarkLines, colorDailyPm25Bar } from "./chart/aqiEcharts";
 import styles from "./SensorDetailPage.module.css";
@@ -322,6 +325,18 @@ export default function SensorDetailPage() {
         <Link to={`/health/${id}`}>
           <Button variant="secondary" size="small">Health</Button>
         </Link>
+        <Button
+          variant="secondary"
+          size="small"
+          onClick={() => {
+            downloadCsv(
+              suggestFilename(`sensor-${id}-monitor-bundle`, "csv"),
+              monitorMatrixToCsvBundle(buildMonitorMatrix([series])),
+            );
+          }}
+        >
+          Monitor CSV
+        </Button>
       </div>
 
       <div className={styles.stats}>

@@ -1,21 +1,25 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EChartsCoreOption } from "echarts/core";
 
 import {
   aqiComposition,
+  aggregateStandardMeasurements,
   autoQaQcFlags,
   computeDailySummaries,
+  parseStandardMeasurementTable,
   pm25ToAqiBand,
+  summarizeSites,
   type PasCollection,
   type PasRecord,
   type PatSeries,
 } from "@patool/shared";
 
-import { Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard } from "../components";
+import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard } from "../components";
 import type { Column } from "../components";
 import { EChart } from "../components/EChart";
 import { getJson } from "../lib/api";
+import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./NetworkSummaryPage.module.css";
 
@@ -25,10 +29,12 @@ type RankedSensor = {
   id: string;
   label: string;
   pm25: number;
-  aqiLabel: string;
+  aqiLabel: ReturnType<typeof pm25ToAqiBand>["label"];
   latitude: number;
   longitude: number;
 };
+
+type ImportedSummaryRow = ReturnType<typeof summarizeSites>[number];
 
 function finiteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
@@ -85,8 +91,48 @@ const columns: Column<RankedSensor>[] = [
   },
 ];
 
+const importedSummaryColumns: Column<ImportedSummaryRow>[] = [
+  {
+    key: "site",
+    header: "Site",
+    width: 140,
+    render: (row) => row.id,
+  },
+  {
+    key: "count",
+    header: "Count",
+    width: 80,
+    render: (row) => String(row.count),
+  },
+  {
+    key: "missing",
+    header: "Missing",
+    width: 100,
+    render: (row) => `${row.missingPercent.toFixed(1)}%`,
+  },
+  {
+    key: "mean",
+    header: "Mean",
+    width: 100,
+    render: (row) => fmt(row.mean),
+  },
+  {
+    key: "median",
+    header: "Median",
+    width: 100,
+    render: (row) => fmt(row.median),
+  },
+  {
+    key: "range",
+    header: "Range",
+    width: 130,
+    render: (row) => `${fmt(row.min)} - ${fmt(row.max)}`,
+  },
+];
+
 export default function NetworkSummaryPage() {
   const ct = useChartTheme();
+  const [standardTableText, setStandardTableText] = useState("");
   const { data: collection } = useQuery({
     queryKey: ["network-summary-pas"],
     queryFn: () => getJson<PasCollection>("/api/pas"),
@@ -106,7 +152,7 @@ export default function NetworkSummaryPage() {
           id: record.id,
           label: record.label,
           pm25,
-          aqiLabel: String(band.label),
+          aqiLabel: band.label,
           latitude: record.latitude,
           longitude: record.longitude,
         });
@@ -115,6 +161,17 @@ export default function NetworkSummaryPage() {
   }, [collection]);
 
   const composition = useMemo(() => aqiComposition(ranked.map((row) => row.pm25)), [ranked]);
+  const parsedStandardTable = useMemo(() => (
+    standardTableText.trim()
+      ? parseStandardMeasurementTable(standardTableText, { valueColumn: undefined })
+      : null
+  ), [standardTableText]);
+  const importedSummaries = useMemo(() => (
+    parsedStandardTable ? summarizeSites(parsedStandardTable.rows) : []
+  ), [parsedStandardTable]);
+  const importedDaily = useMemo(() => (
+    parsedStandardTable ? aggregateStandardMeasurements(parsedStandardTable.rows, "day") : []
+  ), [parsedStandardTable]);
   const dailySummaries = useMemo(() => (series ? computeDailySummaries(series) : []), [series]);
   const qaFlags = useMemo(() => {
     if (!series) return [];
@@ -271,6 +328,41 @@ export default function NetworkSummaryPage() {
       </Card>
 
       <Card title="Ranked sensor table">
+        <div className={styles.actions}>
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={() => downloadCsv(
+              suggestFilename("network-summary-ranked-sensors", "csv"),
+              objectsToCsv(ranked.map((row) => ({
+                id: row.id,
+                label: row.label,
+                pm25: row.pm25,
+                aqiBand: row.aqiLabel,
+                latitude: row.latitude,
+                longitude: row.longitude,
+              }))),
+            )}
+            disabled={ranked.length === 0}
+          >
+            Ranked CSV
+          </Button>
+          <Button
+            size="small"
+            variant="secondary"
+            onClick={() => downloadCsv(
+              suggestFilename("network-summary-aqi-composition", "csv"),
+              objectsToCsv(composition.map((row) => ({
+                category: row.label,
+                count: row.count,
+                percent: row.percent,
+              }))),
+            )}
+            disabled={composition.length === 0}
+          >
+            AQI CSV
+          </Button>
+        </div>
         <div className={styles.tableWrap}>
           <DataTable
             columns={columns}
@@ -280,6 +372,61 @@ export default function NetworkSummaryPage() {
             footer={<span>Showing top {Math.min(40, ranked.length)} of {ranked.length} sensors</span>}
           />
         </div>
+      </Card>
+
+      <Card title="Standard table import">
+        <textarea
+          className={styles.importBox}
+          value={standardTableText}
+          onChange={(event) => setStandardTableText(event.target.value)}
+          placeholder={"Paste ASNAT-style tabular data with timestamp(UTC), id(-), longitude(deg), latitude(deg), and a measurement column."}
+          rows={7}
+        />
+        {parsedStandardTable ? (
+          <>
+            <div className={styles.compactMeta}>
+              <span>{parsedStandardTable.rows.length} parsed rows</span>
+              <span>{importedSummaries.length} sites</span>
+              <span>{importedDaily.length} daily site buckets</span>
+              {parsedStandardTable.warnings.map((warning) => <span key={warning}>{warning}</span>)}
+            </div>
+            <div className={styles.actions}>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => downloadCsv(
+                  suggestFilename("standard-table-site-summary", "csv"),
+                  objectsToCsv(importedSummaries),
+                )}
+                disabled={importedSummaries.length === 0}
+              >
+                Summary CSV
+              </Button>
+              <Button
+                size="small"
+                variant="secondary"
+                onClick={() => downloadCsv(
+                  suggestFilename("standard-table-daily-aggregation", "csv"),
+                  objectsToCsv(importedDaily),
+                )}
+                disabled={importedDaily.length === 0}
+              >
+                Daily CSV
+              </Button>
+            </div>
+            <div className={styles.tableWrap}>
+              <DataTable
+                columns={importedSummaryColumns}
+                data={importedSummaries}
+                rowKey={(row) => row.id}
+                emptyMessage="No site summaries parsed"
+                footer={<span>{importedSummaries.length} imported site summaries</span>}
+              />
+            </div>
+          </>
+        ) : (
+          <p className={styles.empty}>Paste a standard table to preview site summaries and daily aggregations locally.</p>
+        )}
       </Card>
     </div>
   );

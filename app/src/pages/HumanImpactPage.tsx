@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import type { EChartsCoreOption } from "echarts/core";
 
 import {
+  bitesizedIndiaPm25Trends,
   computeHumanImpactMetrics,
   estimatePm25LifeExpectancyImpact,
   PM25_STANDARDS,
@@ -17,15 +18,18 @@ import { useChartTheme } from "../hooks/useChartTheme";
 import styles from "./HumanImpactPage.module.css";
 
 const regions = [
-  { name: "Delhi", baseline: 92, seasonal: 24, trend: -1.2, population: 32_000_000 },
-  { name: "Punjab", baseline: 58, seasonal: 18, trend: -0.6, population: 30_000_000 },
-  { name: "Uttar Pradesh", baseline: 66, seasonal: 22, trend: 0.3, population: 241_000_000 },
-  { name: "Kerala", baseline: 24, seasonal: 8, trend: 0.2, population: 36_000_000 },
-  { name: "Karnataka", baseline: 31, seasonal: 10, trend: 0.4, population: 68_000_000 },
-  { name: "Lakshadweep", baseline: 15, seasonal: 5, trend: 0.1, population: 70_000 },
+  { name: "Delhi", seasonal: 24, population: 32_000_000 },
+  { name: "Punjab", seasonal: 18, population: 30_000_000 },
+  { name: "Uttar Pradesh", seasonal: 22, population: 241_000_000 },
+  { name: "Kerala", seasonal: 8, population: 36_000_000 },
+  { name: "Karnataka", seasonal: 10, population: 68_000_000 },
+  { name: "Lakshadweep", seasonal: 5, population: 70_000 },
 ];
 
-const years = Array.from({ length: 8 }, (_, index) => 2017 + index);
+const selectedStates = new Set(regions.map((region) => region.name));
+const trendRows = bitesizedIndiaPm25Trends.filter((row) => selectedStates.has(row.state));
+const years = [...new Set(trendRows.map((row) => row.year))].sort((a, b) => a - b).slice(-8);
+const trendByStateYear = new Map(trendRows.map((row) => [`${row.state}:${row.year}`, row]));
 
 const lifeBands: LifeTableAgeBand[] = [
   { ageStart: 0, ageEnd: 5, mortalityProbability: 0.018 },
@@ -90,7 +94,7 @@ export default function HumanImpactPage() {
       type: "line",
       smooth: true,
       symbolSize: 5,
-      data: years.map((year) => annualPm25(region.baseline, region.trend, year)),
+      data: years.map((year) => annualPm25(region.name, year)),
       markLine: {
         symbol: "none",
         label: { color: chartTheme.text },
@@ -126,7 +130,7 @@ export default function HumanImpactPage() {
       <PageHeader
         eyebrow="Human Impact"
         title="Turn PM2.5 into compliance, life years, and health capacity"
-        subtitle="Inspired by biteSizedAQ compliance stripes, life-table walkthroughs, and human-centric air-quality metrics. The demo data is synthetic, so the page can run without the R geospatial stack."
+        subtitle="Inspired by biteSizedAQ compliance stripes, life-table walkthroughs, and human-centric air-quality metrics. Annual state trends come from the imported biteSizedAQ India PM2.5 dataset; monthly stripes are derived from those annual values."
       />
 
       <div className={styles.stats}>
@@ -223,7 +227,7 @@ function buildSampleUnits(): MonthlyExposureUnit[] {
             region: region.name,
             year,
             month,
-            pm25: monthlyPm25(region.baseline, region.seasonal, region.trend, year, month, unit),
+            pm25: monthlyPm25(region.name, region.seasonal, year, month, unit),
             population: region.population * populationShare,
           });
         }
@@ -233,14 +237,13 @@ function buildSampleUnits(): MonthlyExposureUnit[] {
   return rows;
 }
 
-function annualPm25(baseline: number, trend: number, year: number): number {
-  return Math.max(3, baseline + trend * (year - 2017));
+function annualPm25(region: string, year: number): number {
+  return Math.max(3, trendByStateYear.get(`${region}:${year}`)?.avgPm25 ?? 0);
 }
 
 function monthlyPm25(
-  baseline: number,
+  region: string,
   seasonal: number,
-  trend: number,
   year: number,
   month: number,
   unit: number,
@@ -248,7 +251,7 @@ function monthlyPm25(
   const winterLift = Math.cos(((month - 1) / 12) * Math.PI * 2) * seasonal;
   const monsoonRelief = month >= 7 && month <= 9 ? seasonal * 0.65 : 0;
   const localSpread = (unit - 2.5) * 2.4;
-  return Math.max(2, annualPm25(baseline, trend, year) + winterLift - monsoonRelief + localSpread);
+  return Math.max(2, annualPm25(region, year) + winterLift - monsoonRelief + localSpread);
 }
 
 function complianceColor(rate: number): string {

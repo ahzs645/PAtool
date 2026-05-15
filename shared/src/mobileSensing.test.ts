@@ -4,6 +4,7 @@ import {
   aggregateMobilePoints,
   buildMobileCalendar,
   buildRouteSegments,
+  cleanMobilePoints,
   findNearestReferenceMonitor,
   parseAirBeamCsv,
   summarizeDistribution,
@@ -85,6 +86,25 @@ describe("mobile campaign analytics", () => {
     expect(calendar[0].aqiCategory).toBe("moderate");
     expect(distribution.q3).toBeCloseTo(22.5, 3);
     expect(segments.length).toBeGreaterThan(0);
+  });
+
+  it("filters mobile GPS, speed, duplicate, and PM range problems", () => {
+    const dirty = [
+      ...points,
+      { ...points[0], id: "dup" },
+      { ...points[0], id: "bad-pm", timestamp: "2024-06-01T08:10:00Z", pm25: -1 },
+      { ...points[0], id: "bad-gps", timestamp: "2024-06-01T08:11:00Z", gpsAccuracyMeters: 500 },
+      { ...points[0], id: "jump", timestamp: "2024-06-01T08:12:00Z", latitude: 50.5 },
+    ];
+
+    const result = cleanMobilePoints(dirty, { maxGpsAccuracyMeters: 100, maxSpeedMetersPerSecond: 35 });
+
+    expect(result.totalPoints).toBe(dirty.length);
+    expect(result.removedPoints).toBeGreaterThanOrEqual(4);
+    expect(result.issues.map((issue) => issue.code)).toContain("duplicate-timestamp");
+    expect(result.issues.map((issue) => issue.code)).toContain("pm25-range");
+    expect(result.issues.map((issue) => issue.code)).toContain("gps-accuracy");
+    expect(result.issues.map((issue) => issue.code)).toContain("impossible-speed");
   });
 });
 

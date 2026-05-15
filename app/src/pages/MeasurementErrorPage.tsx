@@ -1,408 +1,182 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import {
-  applyLinearBiasCorrection,
-  blandAltman,
-  densityPoints,
-  linearFit,
-  relativeExpandedUncertainty,
-  type LinearFit,
-  type MeasurementPair,
-} from "@patool/shared";
 
-import { Card, Loader, PageHeader, StatCard } from "../components";
+import { Button, Card, Loader, PageHeader, StatCard } from "../components";
 import { EChart } from "../components/EChart";
 import { useChartTheme } from "../hooks/useChartTheme";
+import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import { formatMetric } from "./toolsetUtils";
+import {
+  buildBlandAltmanOption,
+  buildReuOption,
+  buildScatterOption,
+  buildTimeSeriesOption,
+  formatEquation,
+} from "./measurementError/chartOptions";
+import { inferMeasurementColumns, loadCsv, readUploadedCsv, rowsToPairs, type UploadedMeasurementFile } from "./measurementError/csv";
+import { MEASUREMENT_ERROR_EXAMPLES } from "./measurementError/examples";
+import { analyzeMeasurements } from "./measurementError/summary";
 import styles from "./ToolsetPage.module.css";
 
-type CsvRow = Record<string, string>;
-
-type ExampleDataset = {
-  id: string;
-  label: string;
-  pollutant: string;
-  units: string;
-  path: string;
-  reference: string;
-  sensor: string;
-  dqObjective?: number;
-  limitValue?: number;
-  corrected?: {
-    path: string;
-    reference: string;
-    sensor: string;
-  };
-};
-
-const DATASETS: ExampleDataset[] = [
-  {
-    id: "no2-lcs",
-    label: "NO2 low-cost sensor",
-    pollutant: "NO2",
-    units: "ppb",
-    path: "/examples/measurement-errors/Fig5.csv",
-    reference: "NO2",
-    sensor: "LCS1",
-    dqObjective: 25,
-  },
-  {
-    id: "o3-lcs",
-    label: "O3 low-cost sensor",
-    pollutant: "O3",
-    units: "ppb",
-    path: "/examples/measurement-errors/Fig5.csv",
-    reference: "O3",
-    sensor: "LCS2",
-    dqObjective: 30,
-  },
-  {
-    id: "pm25-transfer",
-    label: "PM2.5 transfer correction",
-    pollutant: "PM2.5",
-    units: "ug/m3",
-    path: "/examples/measurement-errors/Fig6b.csv",
-    reference: "PM2.5_Fidas200",
-    sensor: "LCS3",
-    dqObjective: 50,
-    corrected: {
-      path: "/examples/measurement-errors/FigS2_b.csv",
-      reference: "PM2.5_Fidas200",
-      sensor: "LCS3*",
-    },
-  },
-  {
-    id: "no2-reference",
-    label: "NO2 reference-vs-reference",
-    pollutant: "NO2",
-    units: "ppb",
-    path: "/examples/measurement-errors/Fig7_panel_b.csv",
-    reference: "NO2_T500",
-    sensor: "T200U(b)",
-    dqObjective: 15,
-  },
-  {
-    id: "o3-reference",
-    label: "O3 reference-vs-reference",
-    pollutant: "O3",
-    units: "ppb",
-    path: "/examples/measurement-errors/FigS3_panel_b.csv",
-    reference: "O3_49i",
-    sensor: "2B",
-    dqObjective: 15,
-  },
-];
-
-function parseCsv(text: string): CsvRow[] {
-  const lines = text.trim().split(/\r?\n/);
-  const headers = lines[0]?.split(",") ?? [];
-  return lines.slice(1).map((line) => {
-    const values = line.split(",");
-    const row: CsvRow = {};
-    headers.forEach((header, index) => {
-      row[header] = values[index] ?? "";
-    });
-    return row;
-  });
-}
-
-async function loadCsv(path: string): Promise<CsvRow[]> {
-  const response = await fetch(path);
-  if (!response.ok) throw new Error(`Unable to load ${path}`);
-  return parseCsv(await response.text());
-}
-
-function rowsToPairs(rows: CsvRow[], dataset: Pick<ExampleDataset, "reference" | "sensor">): MeasurementPair[] {
-  return rows.map((row) => ({
-    time: row.Timestamp,
-    reference: Number(row[dataset.reference]),
-    sensor: Number(row[dataset.sensor]),
-  }));
-}
-
-function formatEquation(fit: LinearFit): string {
-  const sign = fit.intercept >= 0 ? "+" : "-";
-  return `y = ${fit.slope.toFixed(2)}x ${sign} ${Math.abs(fit.intercept).toFixed(2)}`;
-}
-
-function lineEndpoints(maxValue: number, fit: LinearFit) {
-  return [
-    [0, fit.intercept],
-    [maxValue, fit.intercept + fit.slope * maxValue],
-  ];
-}
+const DEFAULT_EXAMPLE = "pm25-transfer";
 
 export default function MeasurementErrorPage() {
-  const ct = useChartTheme();
-  const [datasetId, setDatasetId] = useState(DATASETS[2].id);
+  const chartTheme = useChartTheme();
+  const [datasetId, setDatasetId] = useState(DEFAULT_EXAMPLE);
+  const [uploaded, setUploaded] = useState<UploadedMeasurementFile | null>(null);
+  const [customColumns, setCustomColumns] = useState({ time: "", reference: "", sensor: "" });
+  const [customPollutant, setCustomPollutant] = useState("Custom");
+  const [customUnits, setCustomUnits] = useState("units");
   const [showCorrected, setShowCorrected] = useState(true);
-  const dataset = DATASETS.find((item) => item.id === datasetId) ?? DATASETS[0];
+
+  const example = MEASUREMENT_ERROR_EXAMPLES.find((item) => item.id === datasetId) ?? MEASUREMENT_ERROR_EXAMPLES[0];
+  const activeCustom = uploaded !== null;
 
   const { data: rawRows, isLoading } = useQuery({
-    queryKey: ["measurement-error-csv", dataset.path],
-    queryFn: () => loadCsv(dataset.path),
+    queryKey: ["measurement-error-csv", example.path],
+    queryFn: () => loadCsv(example.path),
+    enabled: !activeCustom,
   });
   const { data: correctedRows } = useQuery({
-    queryKey: ["measurement-error-csv", dataset.corrected?.path],
-    queryFn: () => dataset.corrected ? loadCsv(dataset.corrected.path) : Promise.resolve([]),
-    enabled: Boolean(dataset.corrected),
+    queryKey: ["measurement-error-csv", example.corrected?.path],
+    queryFn: () => example.corrected ? loadCsv(example.corrected.path) : Promise.resolve([]),
+    enabled: !activeCustom && Boolean(example.corrected),
   });
 
-  const pairs = useMemo(() => rowsToPairs(rawRows ?? [], dataset), [dataset, rawRows]);
-  const correctedPairs = useMemo(() => {
-    if (dataset.corrected && correctedRows) return rowsToPairs(correctedRows, dataset.corrected);
-    if (!dataset.corrected && showCorrected) return applyLinearBiasCorrection(pairs).pairs;
-    return [];
-  }, [correctedRows, dataset.corrected, pairs, showCorrected]);
+  const pairs = useMemo(() => {
+    if (uploaded) return rowsToPairs(uploaded.rows, customColumns);
+    return rowsToPairs(rawRows ?? [], example);
+  }, [customColumns, example, rawRows, uploaded]);
 
-  const fit = useMemo(() => linearFit(pairs), [pairs]);
-  const correctedFit = useMemo(() => linearFit(correctedPairs), [correctedPairs]);
-  const agreement = useMemo(() => blandAltman(pairs), [pairs]);
-  const reu = useMemo(() => relativeExpandedUncertainty(pairs, { k: 2, minSamples: 10 }), [pairs]);
+  const shippedCorrectedPairs = useMemo(() => {
+    if (uploaded || !example.corrected || !correctedRows) return [];
+    return rowsToPairs(correctedRows, example.corrected);
+  }, [correctedRows, example.corrected, uploaded]);
 
-  const finitePairs = useMemo(
-    () => pairs.filter((pair) => Number.isFinite(pair.reference) && Number.isFinite(pair.sensor)),
-    [pairs],
+  const analysis = useMemo(
+    () => analyzeMeasurements(pairs, showCorrected ? shippedCorrectedPairs : [], showCorrected),
+    [pairs, shippedCorrectedPairs, showCorrected],
   );
-  const maxValue = useMemo(() => {
-    const values = finitePairs.flatMap((pair) => [pair.reference, pair.sensor]);
-    return values.length ? Math.ceil(Math.max(...values) * 1.05) : 1;
-  }, [finitePairs]);
 
-  const scatterOption = useMemo(() => {
-    const density = densityPoints(finitePairs.map((pair) => ({ x: pair.reference, y: pair.sensor })));
-    const correctedDensity = densityPoints(correctedPairs.map((pair) => ({ x: pair.reference, y: pair.sensor })));
-    return {
-      textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
-      tooltip: {
-        trigger: "item",
-        backgroundColor: ct.tooltipBg,
-        borderColor: ct.tooltipBorder,
-        textStyle: { color: ct.tooltipText },
-      },
-      legend: { top: 0, textStyle: { color: ct.text } },
-      grid: { top: 42, right: 22, bottom: 42, left: 56 },
-      xAxis: {
-        type: "value",
-        name: `Reference (${dataset.units})`,
-        min: 0,
-        max: maxValue,
-        axisLabel: { color: ct.axis },
-        splitLine: { lineStyle: { color: ct.grid } },
-      },
-      yAxis: {
-        type: "value",
-        name: `Candidate (${dataset.units})`,
-        min: 0,
-        max: maxValue,
-        axisLabel: { color: ct.axis },
-        splitLine: { lineStyle: { color: ct.grid } },
-      },
-      visualMap: {
-        show: false,
-        min: 1,
-        max: Math.max(1, ...density.map((point) => point.value)),
-        inRange: { color: [ct.colors[1], ct.colors[0], ct.colors[2]] },
-      },
-      series: [
-        {
-          name: "Observed",
-          type: "scatter",
-          symbolSize: 5,
-          data: density.map((point) => [point.x, point.y, point.value]),
-        },
-        ...(showCorrected && correctedDensity.length ? [{
-          name: "Corrected",
-          type: "scatter",
-          symbolSize: 4,
-          itemStyle: { color: ct.colors[1], opacity: 0.55 },
-          data: correctedDensity.map((point) => [point.x, point.y]),
-        }] : []),
-        {
-          name: "1:1",
-          type: "line",
-          symbol: "none",
-          lineStyle: { color: ct.text, width: 1.5 },
-          data: [[0, 0], [maxValue, maxValue]],
-        },
-        {
-          name: "OLS",
-          type: "line",
-          symbol: "none",
-          lineStyle: { color: ct.colors[2], width: 2, type: "dashed" },
-          data: lineEndpoints(maxValue, fit),
-        },
-      ],
-    };
-  }, [correctedPairs, ct, dataset.units, finitePairs, fit, maxValue, showCorrected]);
+  const pollutant = uploaded ? customPollutant : example.pollutant;
+  const units = uploaded ? customUnits : example.units;
+  const chartContext = {
+    theme: chartTheme,
+    pollutant,
+    units,
+    maxValue: analysis.maxValue,
+  };
 
-  const blandAltmanOption = useMemo(() => ({
-    textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
-    tooltip: {
-      trigger: "item",
-      backgroundColor: ct.tooltipBg,
-      borderColor: ct.tooltipBorder,
-      textStyle: { color: ct.tooltipText },
-    },
-    grid: { top: 18, right: 18, bottom: 42, left: 58 },
-    xAxis: {
-      type: "value",
-      name: `Average (${dataset.units})`,
-      axisLabel: { color: ct.axis },
-      splitLine: { lineStyle: { color: ct.grid } },
-    },
-    yAxis: {
-      type: "value",
-      name: "Sensor - reference",
-      axisLabel: { color: ct.axis },
-      splitLine: { lineStyle: { color: ct.grid } },
-    },
-    series: [
-      {
-        name: "Agreement",
-        type: "scatter",
-        symbolSize: 5,
-        itemStyle: { color: ct.colors[0], opacity: 0.7 },
-        data: agreement.points.map((point) => [point.average, point.difference]),
-      },
-      ...[
-        ["Mean", agreement.meanDifference, ct.colors[1]],
-        ["Upper", agreement.upperLimit, ct.colors[2]],
-        ["Lower", agreement.lowerLimit, ct.colors[2]],
-      ].map(([name, value, color]) => ({
-        name,
-        type: "line",
-        symbol: "none",
-        lineStyle: { color, width: 1.5, type: name === "Mean" ? "solid" : "dashed" },
-        data: [[0, value], [maxValue, value]],
-      })),
-    ],
-  }), [agreement, ct, dataset.units, maxValue]);
+  const scatterOption = useMemo(
+    () => buildScatterOption(analysis.finitePairs, showCorrected ? analysis.correctedPairs : [], analysis.fit, chartContext),
+    [analysis.correctedPairs, analysis.finitePairs, analysis.fit, chartContext, showCorrected],
+  );
+  const timeSeriesOption = useMemo(
+    () => buildTimeSeriesOption(analysis.finitePairs, chartContext),
+    [analysis.finitePairs, chartContext],
+  );
+  const blandAltmanOption = useMemo(
+    () => buildBlandAltmanOption(analysis.agreement, chartContext),
+    [analysis.agreement, chartContext],
+  );
+  const reuOption = useMemo(
+    () => buildReuOption(analysis.reu, {
+      ...chartContext,
+      dqObjective: uploaded ? undefined : example.dqObjective,
+      limitValue: uploaded ? undefined : example.limitValue,
+    }),
+    [analysis.reu, chartContext, example.dqObjective, example.limitValue, uploaded],
+  );
 
-  const reuOption = useMemo(() => ({
-    textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
-    tooltip: {
-      trigger: "item",
-      backgroundColor: ct.tooltipBg,
-      borderColor: ct.tooltipBorder,
-      textStyle: { color: ct.tooltipText },
-    },
-    grid: { top: 18, right: 18, bottom: 42, left: 58 },
-    xAxis: {
-      type: "value",
-      name: `Reference (${dataset.units})`,
-      axisLabel: { color: ct.axis },
-      splitLine: { lineStyle: { color: ct.grid } },
-    },
-    yAxis: {
-      type: "value",
-      name: "REU (%)",
-      min: 0,
-      max: 200,
-      axisLabel: { color: ct.axis },
-      splitLine: { lineStyle: { color: ct.grid } },
-    },
-    series: [
-      {
-        name: "REU",
-        type: "scatter",
-        symbolSize: 5,
-        itemStyle: { color: ct.colors[3], opacity: 0.7 },
-        data: reu.points.map((point) => [point.reference, point.reu]),
-      },
-      ...(dataset.dqObjective ? [{
-        name: "DQO",
-        type: "line",
-        symbol: "none",
-        lineStyle: { color: ct.colors[1], width: 2, type: "dashed" },
-        data: [[0, dataset.dqObjective], [maxValue, dataset.dqObjective]],
-      }] : []),
-      ...(dataset.limitValue ? [{
-        name: "Limit value",
-        type: "line",
-        symbol: "none",
-        lineStyle: { color: ct.colors[2], width: 2, type: "dashed" },
-        data: [[dataset.limitValue, 0], [dataset.limitValue, 200]],
-      }] : []),
-    ],
-  }), [ct, dataset.dqObjective, dataset.limitValue, dataset.units, maxValue, reu.points]);
+  async function handleUpload(file: File | undefined) {
+    if (!file) return;
+    const next = await readUploadedCsv(file);
+    const inferred = inferMeasurementColumns(next.columns);
+    setUploaded(next);
+    setCustomColumns(inferred);
+    setCustomPollutant(file.name.replace(/\.[^.]+$/, "") || "Custom");
+  }
 
-  const timeSeriesOption = useMemo(() => ({
-    textStyle: { fontFamily: "Inter, sans-serif", color: ct.text },
-    tooltip: {
-      trigger: "axis",
-      backgroundColor: ct.tooltipBg,
-      borderColor: ct.tooltipBorder,
-      textStyle: { color: ct.tooltipText },
-    },
-    legend: { top: 0, textStyle: { color: ct.text } },
-    grid: { top: 42, right: 18, bottom: 42, left: 56 },
-    xAxis: {
-      type: "category",
-      data: finitePairs.map((pair) => String(pair.time ?? pair.reference)),
-      axisLabel: { color: ct.axis },
-      axisLine: { lineStyle: { color: ct.grid } },
-    },
-    yAxis: {
-      type: "value",
-      name: `${dataset.pollutant} (${dataset.units})`,
-      axisLabel: { color: ct.axis },
-      splitLine: { lineStyle: { color: ct.grid } },
-    },
-    series: [
-      {
-        name: "Reference",
-        type: "line",
-        symbol: "none",
-        lineStyle: { color: ct.text, width: 1.5 },
-        data: finitePairs.map((pair) => pair.reference),
-      },
-      {
-        name: "Candidate",
-        type: "line",
-        symbol: "none",
-        lineStyle: { color: ct.colors[2], width: 1.2, opacity: 0.75 },
-        data: finitePairs.map((pair) => pair.sensor),
-      },
-    ],
-  }), [ct, dataset.pollutant, dataset.units, finitePairs]);
-
-  if (isLoading) return <Loader message="Loading measurement examples..." />;
+  if (isLoading && !uploaded) return <Loader message="Loading measurement examples..." />;
 
   return (
     <div className={styles.layout}>
       <PageHeader
         eyebrow="Measurement Error"
         title="Instrument validation workbench"
-        subtitle="Reference-vs-candidate QA for low-cost sensors, regulatory monitors, and corrected calibration runs."
+        subtitle="Reference-vs-candidate QA for low-cost sensors, regulatory monitors, uploaded CSVs, and corrected calibration runs."
       />
 
       <div className={styles.stats}>
-        <StatCard label="Pairs" value={String(fit.n)} />
-        <StatCard label="R2" value={formatMetric(fit.r2, 3)} />
-        <StatCard label="RMSE" value={formatMetric(fit.rmse, 2)} />
-        <StatCard label="MAE" value={formatMetric(fit.mae, 2)} />
-        <StatCard label="Mean bias" value={formatMetric(fit.bias, 2)} tone={Math.abs(fit.bias) < fit.mae ? "good" : "warn"} />
-        <StatCard label="Median REU" value={formatMetric([...reu.points].sort((a, b) => a.reu - b.reu)[Math.floor(reu.points.length / 2)]?.reu, 1)} />
+        <StatCard label="Pairs" value={String(analysis.fit.n)} />
+        <StatCard label="R2" value={formatMetric(analysis.fit.r2, 3)} />
+        <StatCard label="RMSE" value={formatMetric(analysis.fit.rmse, 2)} />
+        <StatCard label="MAE" value={formatMetric(analysis.fit.mae, 2)} />
+        <StatCard label="Mean bias" value={formatMetric(analysis.fit.bias, 2)} tone={Math.abs(analysis.fit.bias) < analysis.fit.mae ? "good" : "warn"} />
+        <StatCard label="Median REU" value={formatMetric(analysis.medianReu, 1)} />
       </div>
 
-      <Card title="Configuration">
+      <Card title="Data source">
         <div className={styles.controls}>
           <label className={styles.field}>
             <span>Example dataset</span>
-            <select value={datasetId} onChange={(event) => setDatasetId(event.target.value)}>
-              {DATASETS.map((item) => (
+            <select
+              value={datasetId}
+              disabled={activeCustom}
+              onChange={(event) => setDatasetId(event.target.value)}
+            >
+              {MEASUREMENT_ERROR_EXAMPLES.map((item) => (
                 <option key={item.id} value={item.id}>{item.label}</option>
               ))}
             </select>
           </label>
           <label className={styles.field}>
+            <span>Upload CSV</span>
+            <input type="file" accept=".csv,text/csv" onChange={(event) => void handleUpload(event.target.files?.[0])} />
+          </label>
+          <label className={styles.field}>
+            <span>Pollutant</span>
+            <input value={pollutant} onChange={(event) => setCustomPollutant(event.target.value)} readOnly={!activeCustom} />
+          </label>
+          <label className={styles.field}>
+            <span>Units</span>
+            <input value={units} onChange={(event) => setCustomUnits(event.target.value)} readOnly={!activeCustom} />
+          </label>
+        </div>
+        {activeCustom && (
+          <div className={styles.controls}>
+            <label className={styles.field}>
+              <span>Timestamp column</span>
+              <select value={customColumns.time} onChange={(event) => setCustomColumns((current) => ({ ...current, time: event.target.value }))}>
+                {uploaded.columns.map((column) => <option key={column} value={column}>{column}</option>)}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span>Reference column</span>
+              <select value={customColumns.reference} onChange={(event) => setCustomColumns((current) => ({ ...current, reference: event.target.value }))}>
+                {uploaded.columns.map((column) => <option key={column} value={column}>{column}</option>)}
+              </select>
+            </label>
+            <label className={styles.field}>
+              <span>Candidate column</span>
+              <select value={customColumns.sensor} onChange={(event) => setCustomColumns((current) => ({ ...current, sensor: event.target.value }))}>
+                {uploaded.columns.map((column) => <option key={column} value={column}>{column}</option>)}
+              </select>
+            </label>
+            <Button variant="secondary" onClick={() => setUploaded(null)}>Return to examples</Button>
+          </div>
+        )}
+      </Card>
+
+      <Card title="Configuration">
+        <div className={styles.controls}>
+          <label className={styles.field}>
             <span>Reference</span>
-            <input value={dataset.reference} readOnly />
+            <input value={activeCustom ? customColumns.reference : example.reference} readOnly />
           </label>
           <label className={styles.field}>
             <span>Candidate</span>
-            <input value={dataset.sensor} readOnly />
+            <input value={activeCustom ? customColumns.sensor : example.sensor} readOnly />
           </label>
           <label className={styles.checkbox}>
             <input type="checkbox" checked={showCorrected} onChange={(event) => setShowCorrected(event.target.checked)} />
@@ -411,11 +185,34 @@ export default function MeasurementErrorPage() {
               Use shipped corrected examples when available, otherwise apply inverse OLS correction.
             </span>
           </label>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              const summary = [{
+                source: uploaded?.name ?? example.label,
+                reference: activeCustom ? customColumns.reference : example.reference,
+                candidate: activeCustom ? customColumns.sensor : example.sensor,
+                n: analysis.fit.n,
+                slope: analysis.fit.slope,
+                intercept: analysis.fit.intercept,
+                r2: analysis.fit.r2,
+                rmse: analysis.fit.rmse,
+                mae: analysis.fit.mae,
+                bias: analysis.fit.bias,
+                medianReu: analysis.medianReu ?? "",
+                agreementLower: analysis.agreement.lowerLimit,
+                agreementUpper: analysis.agreement.upperLimit,
+              }];
+              downloadCsv(suggestFilename("measurement-error-summary", "csv"), objectsToCsv(summary));
+            }}
+          >
+            Download summary CSV
+          </Button>
         </div>
       </Card>
 
       <div className={styles.splitGrid}>
-        <Card title={`Scatter: ${formatEquation(fit)}`}>
+        <Card title={`Scatter: ${formatEquation(analysis.fit)}`}>
           <EChart option={scatterOption} height={340} />
         </Card>
         <Card title="Paired time series">
@@ -434,12 +231,12 @@ export default function MeasurementErrorPage() {
 
       <Card title="Correction readout">
         <div className={styles.metricGrid}>
-          <div className={styles.metricRow}><span>Raw RMSE</span><strong>{formatMetric(fit.rmse, 2)}</strong></div>
-          <div className={styles.metricRow}><span>Corrected RMSE</span><strong>{correctedPairs.length ? formatMetric(correctedFit.rmse, 2) : "-"}</strong></div>
-          <div className={styles.metricRow}><span>Raw MAE</span><strong>{formatMetric(fit.mae, 2)}</strong></div>
-          <div className={styles.metricRow}><span>Corrected MAE</span><strong>{correctedPairs.length ? formatMetric(correctedFit.mae, 2) : "-"}</strong></div>
-          <div className={styles.metricRow}><span>Agreement limits</span><strong>{formatMetric(agreement.lowerLimit, 1)} to {formatMetric(agreement.upperLimit, 1)}</strong></div>
-          <div className={styles.metricRow}><span>REU regression</span><strong>{formatEquation({ ...fit, slope: reu.slope, intercept: reu.intercept })}</strong></div>
+          <div className={styles.metricRow}><span>Raw RMSE</span><strong>{formatMetric(analysis.fit.rmse, 2)}</strong></div>
+          <div className={styles.metricRow}><span>Corrected RMSE</span><strong>{analysis.correctedPairs.length ? formatMetric(analysis.correctedFit.rmse, 2) : "-"}</strong></div>
+          <div className={styles.metricRow}><span>Raw MAE</span><strong>{formatMetric(analysis.fit.mae, 2)}</strong></div>
+          <div className={styles.metricRow}><span>Corrected MAE</span><strong>{analysis.correctedPairs.length ? formatMetric(analysis.correctedFit.mae, 2) : "-"}</strong></div>
+          <div className={styles.metricRow}><span>Agreement limits</span><strong>{formatMetric(analysis.agreement.lowerLimit, 1)} to {formatMetric(analysis.agreement.upperLimit, 1)}</strong></div>
+          <div className={styles.metricRow}><span>REU regression</span><strong>{formatEquation({ slope: analysis.reu.slope, intercept: analysis.reu.intercept })}</strong></div>
         </div>
       </Card>
     </div>

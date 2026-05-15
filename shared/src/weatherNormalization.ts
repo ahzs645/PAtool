@@ -65,6 +65,15 @@ export type WeatherVariableImportance = {
   importance: number;
 };
 
+export type WeatherNormalizationCovariateSet = "meteorology" | "meteorology-seasonality" | "custom";
+
+export type WeatherNormalizationRunConfig = {
+  featureNames: WeatherNormalizationFeatureName[];
+  shuffledFeatureNames: WeatherNormalizationFeatureName[];
+  partialDependenceFeatureNames: WeatherNormalizationFeatureName[];
+  covariateSet: WeatherNormalizationCovariateSet;
+};
+
 export type WeatherModelDiagnostics = {
   metrics: RegressionMetrics & {
     pearsonR: number | null;
@@ -81,6 +90,7 @@ export type WeatherModelDiagnostics = {
 
 export type WeatherNormalizationResult = WeatherNormalizationPrepared & {
   model: RandomForestModel;
+  config: WeatherNormalizationRunConfig;
   diagnostics: WeatherModelDiagnostics;
 };
 
@@ -89,6 +99,9 @@ export type WeatherNormalizationOptions = {
   seed?: number;
   normalizationSamples?: number;
   partialDependenceResolution?: number;
+  covariateSet?: WeatherNormalizationCovariateSet;
+  shuffledFeatureNames?: WeatherNormalizationFeatureName[];
+  partialDependenceFeatureNames?: WeatherNormalizationFeatureName[];
   randomForest?: RandomForestFitOptions;
 };
 
@@ -104,15 +117,18 @@ const FEATURE_NAMES: WeatherNormalizationFeatureName[] = [
   "pressure",
 ];
 
-const SHUFFLED_WEATHER_FEATURES: WeatherNormalizationFeatureName[] = [
-  "hourSin",
-  "hourCos",
-  "dayOfYearSin",
-  "dayOfYearCos",
-  "weekday",
+export const WEATHER_NORMALIZATION_FEATURE_GROUPS = {
+  meteorology: ["humidity", "temperature", "pressure"],
+  seasonality: ["hourSin", "hourCos", "dayOfYearSin", "dayOfYearCos", "weekday"],
+  trend: ["trend"],
+} as const satisfies Record<string, readonly WeatherNormalizationFeatureName[]>;
+
+const DEFAULT_PARTIAL_DEPENDENCE_FEATURES: WeatherNormalizationFeatureName[] = [
   "humidity",
   "temperature",
   "pressure",
+  "hourSin",
+  "dayOfYearSin",
 ];
 
 export function runWeatherNormalization(
@@ -123,6 +139,7 @@ export function runWeatherNormalization(
   if (prepared.rows.length < 12) {
     throw new Error("Weather normalization needs at least 12 valid PM2.5 observations.");
   }
+  const config = resolveWeatherNormalizationConfig(options);
 
   const featureMatrix = prepared.rows.map((row) => featureVector(row));
   const target = prepared.rows.map((row) => row.observed);
@@ -155,18 +172,20 @@ export function runWeatherNormalization(
     partialDependence: partialDependence(
       model,
       prepared.rows,
-      ["humidity", "temperature", "pressure", "hourSin", "dayOfYearSin"],
+      config.partialDependenceFeatureNames,
       options.partialDependenceResolution ?? 12,
     ),
     normalized: normalizeWeather(model, prepared.rows, {
       nSamples: options.normalizationSamples ?? 40,
       seed: (options.seed ?? 31) + 101,
+      shuffledFeatureNames: config.shuffledFeatureNames,
     }),
   };
 
   return {
     ...prepared,
     model,
+    config,
     diagnostics,
   };
 }
@@ -246,11 +265,11 @@ export function prepareWeatherNormalizationRows(
 function normalizeWeather(
   model: RandomForestModel,
   rows: WeatherNormalizationRow[],
-  options: { nSamples: number; seed: number },
+  options: { nSamples: number; seed: number; shuffledFeatureNames: WeatherNormalizationFeatureName[] },
 ): WeatherNormalizedPoint[] {
   const rng = mulberry32(options.seed);
   const pools = new Map<WeatherNormalizationFeatureName, number[]>();
-  for (const feature of SHUFFLED_WEATHER_FEATURES) {
+  for (const feature of options.shuffledFeatureNames) {
     pools.set(feature, rows.map((row) => row[feature]));
   }
 
@@ -258,7 +277,7 @@ function normalizeWeather(
     const predictions: number[] = [];
     for (let sample = 0; sample < Math.max(1, options.nSamples); sample += 1) {
       const sampled = { ...row };
-      for (const feature of SHUFFLED_WEATHER_FEATURES) {
+      for (const feature of options.shuffledFeatureNames) {
         const values = pools.get(feature) ?? [];
         sampled[feature] = values[Math.floor(rng() * values.length)] ?? sampled[feature];
       }
@@ -274,6 +293,29 @@ function normalizeWeather(
       set: row.set,
     };
   });
+}
+
+function resolveWeatherNormalizationConfig(options: WeatherNormalizationOptions): WeatherNormalizationRunConfig {
+  const covariateSet = options.covariateSet ?? (options.shuffledFeatureNames ? "custom" : "meteorology");
+  const shuffledFeatureNames = uniqueFeatures(options.shuffledFeatureNames ?? (
+    covariateSet === "meteorology-seasonality"
+      ? [...WEATHER_NORMALIZATION_FEATURE_GROUPS.meteorology, ...WEATHER_NORMALIZATION_FEATURE_GROUPS.seasonality]
+      : WEATHER_NORMALIZATION_FEATURE_GROUPS.meteorology
+  ));
+  const partialDependenceFeatureNames = uniqueFeatures(
+    options.partialDependenceFeatureNames ?? DEFAULT_PARTIAL_DEPENDENCE_FEATURES,
+  );
+
+  return {
+    featureNames: FEATURE_NAMES,
+    shuffledFeatureNames,
+    partialDependenceFeatureNames,
+    covariateSet,
+  };
+}
+
+function uniqueFeatures(features: readonly WeatherNormalizationFeatureName[]): WeatherNormalizationFeatureName[] {
+  return [...new Set(features)].filter((feature) => FEATURE_NAMES.includes(feature));
 }
 
 function partialDependence(

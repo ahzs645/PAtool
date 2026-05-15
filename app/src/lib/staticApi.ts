@@ -378,7 +378,11 @@ export async function postStaticJson<T>(path: string, body: unknown): Promise<T>
         samplingIntervalSeconds: typeof payload.samplingIntervalSeconds === "number" ? payload.samplingIntervalSeconds : undefined,
       }) as T;
     case "/api/scatter-matrix":
-      return patScatterMatrix(series!, Number(payload.sampleSize ?? 500)) as T;
+      return patScatterMatrix(
+        series!,
+        Number(payload.sampleSize ?? 500),
+        Array.isArray(payload.fields) ? payload.fields as Parameters<typeof patScatterMatrix>[2] : undefined,
+      ) as T;
     case "/api/wind-rose": {
       const wind = generateSyntheticWindData(series!);
       const rose = computeWindRose(wind, {

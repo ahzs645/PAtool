@@ -112,7 +112,8 @@ export function autoQaQcFlags(
 
     const previousValue = index > 0 ? points[index - 1]?.value : null;
     if (finiteValue(point.value) && finiteValue(previousValue)) {
-      const delta = point.value - previousValue;
+      const currentValue = point.value;
+      const delta = currentValue - previousValue;
       if (delta > spikeThreshold) {
         pushFlag(flags, "sudden-spike", point, index, "Value increased faster than the configured threshold.");
       }

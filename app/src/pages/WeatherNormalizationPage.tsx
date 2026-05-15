@@ -5,6 +5,7 @@ import type { EChartsCoreOption } from "echarts/core";
 import {
   runWeatherNormalization,
   type PatSeries,
+  type WeatherNormalizationCovariateSet,
   type WeatherModelDiagnostics,
 } from "@patool/shared";
 
@@ -14,11 +15,16 @@ import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import styles from "./WeatherNormalizationPage.module.css";
 
 const DEFAULT_SENSOR_ID = "1001";
+const COVARIATE_SET_OPTIONS: Array<{ value: WeatherNormalizationCovariateSet; label: string }> = [
+  { value: "meteorology", label: "Meteorology only" },
+  { value: "meteorology-seasonality", label: "Meteorology + seasonality" },
+];
 
 export default function WeatherNormalizationPage() {
   const [sensorId, setSensorId] = useState(DEFAULT_SENSOR_ID);
   const [normalizationSamples, setNormalizationSamples] = useState(30);
   const [trees, setTrees] = useState(50);
+  const [covariateSet, setCovariateSet] = useState<WeatherNormalizationCovariateSet>("meteorology");
 
   const { data: series, isLoading } = useQuery({
     queryKey: ["weather-normalization-series", sensorId],
@@ -32,6 +38,7 @@ export default function WeatherNormalizationPage() {
         ok: true as const,
         value: runWeatherNormalization(series, {
           seed: 29,
+          covariateSet,
           normalizationSamples,
           partialDependenceResolution: 14,
           randomForest: { numTrees: trees },
@@ -43,7 +50,7 @@ export default function WeatherNormalizationPage() {
         error: err instanceof Error ? err.message : "Could not run normalization.",
       };
     }
-  }, [normalizationSamples, series, trees]);
+  }, [covariateSet, normalizationSamples, series, trees]);
 
   const metrics = result?.ok ? result.value.diagnostics.metrics : null;
   const normalized = result?.ok ? result.value.diagnostics.normalized : [];
@@ -70,6 +77,7 @@ export default function WeatherNormalizationPage() {
         <StatCard label="Rows" value={result?.ok ? String(result.value.rows.length) : "--"} />
         <StatCard label="Trees" value={String(trees)} />
         <StatCard label="Weather samples" value={String(normalizationSamples)} />
+        <StatCard label="Shuffled" value={result?.ok ? String(result.value.config.shuffledFeatureNames.length) : "--"} />
       </div>
 
       <Card title="Configuration">
@@ -97,6 +105,17 @@ export default function WeatherNormalizationPage() {
               value={normalizationSamples}
               onChange={(event) => setNormalizationSamples(clamp(Number(event.target.value) || 30, 1, 200))}
             />
+          </label>
+          <label className={styles.field}>
+            <span>Counterfactual covariates</span>
+            <select
+              value={covariateSet}
+              onChange={(event) => setCovariateSet(event.target.value as WeatherNormalizationCovariateSet)}
+            >
+              {COVARIATE_SET_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
           </label>
           <Button
             variant="secondary"
@@ -155,7 +174,7 @@ export default function WeatherNormalizationPage() {
               {result.value.imputed.temperature.toFixed(1)}, pressure {result.value.imputed.pressure.toFixed(1)}.
               Dropped {result.value.dropped.missingPm25} rows without PM2.5 and{" "}
               {result.value.dropped.missingTimestamp} rows without timestamps. The trend feature is kept fixed during
-              weather normalization.
+              weather normalization. Shuffled covariates: {result.value.config.shuffledFeatureNames.join(", ")}.
             </p>
           </Card>
 

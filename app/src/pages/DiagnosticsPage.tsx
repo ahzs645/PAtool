@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useParams } from "react-router-dom";
 
 import {
+  computePolarPlot,
+  computeWindRose,
   type PatSeries,
   type OutlierResult,
   type LinearFitResult,
@@ -10,6 +12,7 @@ import {
   type QcResult,
   type WindRoseData,
   type PolarPlotData,
+  type WindDataPoint,
 } from "@patool/shared";
 
 import {
@@ -36,10 +39,58 @@ function fmtDate(ts: string, total: number): string {
   return `${mo} ${day} ${hh}:${mm}`;
 }
 
+function csvRows(text: string): string[][] {
+  return text.trim().split(/\r?\n/).map((line) => line.split(",").map((cell) => cell.trim().replace(/^"|"$/g, "")));
+}
+
+function parseObservedWindCsv(text: string, series: PatSeries): WindDataPoint[] {
+  const rows = csvRows(text);
+  const headers = rows[0]?.map((header) => header.toLowerCase()) ?? [];
+  const index = (...names: string[]) => names.map((name) => headers.indexOf(name)).find((value) => value >= 0) ?? -1;
+  const tsIndex = index("timestamp", "datetime", "date", "time");
+  const wdIndex = index("wd", "winddirection", "wind_direction", "direction");
+  const wsIndex = index("ws", "windspeed", "wind_speed", "speed");
+  const pmIndex = index("pm25", "pm2.5", "pm_25");
+  if (tsIndex < 0 || wdIndex < 0 || wsIndex < 0) return [];
+
+  const seriesPm = series.points
+    .map((point) => {
+      const pm25 = point.pm25A !== null && point.pm25B !== null ? (point.pm25A + point.pm25B) / 2 : point.pm25A ?? point.pm25B;
+      const time = new Date(point.timestamp).getTime();
+      return typeof pm25 === "number" && Number.isFinite(time) ? { time, pm25 } : null;
+    })
+    .filter((point): point is { time: number; pm25: number } => point !== null);
+
+  const nearestPm25 = (time: number): number | null => {
+    let best: { delta: number; pm25: number } | null = null;
+    for (const point of seriesPm) {
+      const delta = Math.abs(point.time - time);
+      if (!best || delta < best.delta) best = { delta, pm25: point.pm25 };
+    }
+    return best && best.delta <= 60 * 60 * 1000 ? best.pm25 : null;
+  };
+
+  return rows.slice(1).flatMap((row) => {
+    const time = new Date(row[tsIndex]).getTime();
+    const windDirection = Number(row[wdIndex]);
+    const windSpeed = Number(row[wsIndex]);
+    const explicitPm25 = pmIndex >= 0 ? Number(row[pmIndex]) : NaN;
+    const pm25 = Number.isFinite(explicitPm25) ? explicitPm25 : nearestPm25(time);
+    if (!Number.isFinite(time) || !Number.isFinite(windDirection) || !Number.isFinite(windSpeed) || pm25 === null) return [];
+    return [{
+      timestamp: new Date(time).toISOString(),
+      windDirection: ((windDirection % 360) + 360) % 360,
+      windSpeed,
+      pm25,
+    }];
+  });
+}
+
 export default function DiagnosticsPage() {
   const { id: routeId } = useParams();
   const sensorId = routeId ?? "1001";
   const ct = useChartTheme();
+  const windFileRef = useRef<HTMLInputElement | null>(null);
   const [replaceMode, setReplaceMode] = useState(false);
   const [qcProfile, setQcProfile] = useState<"advanced" | "AB_00" | "AB_01" | "AB_02" | "AB_03">("AB_03");
   const [multiPanelPreset, setMultiPanelPreset] = useState<"all" | "pm25" | "aux">("all");
@@ -71,10 +122,18 @@ export default function DiagnosticsPage() {
   /* on-demand sections */
   const [scatterMatrix, setScatterMatrix] = useState<ScatterMatrixData | null>(null);
   const [scatterLoading, setScatterLoading] = useState(false);
+  const [scatterFields, setScatterFields] = useState<Array<"pm25A" | "pm25B" | "humidity" | "temperature" | "pressure">>([
+    "pm25A",
+    "pm25B",
+    "humidity",
+    "temperature",
+    "pressure",
+  ]);
   const [qcResult, setQcResult] = useState<QcResult | null>(null);
   const [qcLoading, setQcLoading] = useState(false);
   const [windRose, setWindRose] = useState<WindRoseData | null>(null);
   const [polarPlot, setPolarPlot] = useState<PolarPlotData | null>(null);
+  const [observedWind, setObservedWind] = useState<WindDataPoint[]>([]);
   const [windLoading, setWindLoading] = useState(false);
 
   /* ── Shared axis helper ── */
@@ -336,6 +395,28 @@ export default function DiagnosticsPage() {
       <div className={styles.dashRow}>
         <Card title="QC Validation">
           <div className={styles.actions}>
+            <input
+              ref={windFileRef}
+              type="file"
+              accept=".csv,text/csv"
+              style={{ display: "none" }}
+              onChange={async (event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (!file || !series) return;
+                const wind = parseObservedWindCsv(await file.text(), series);
+                setObservedWind(wind);
+                if (wind.length) {
+                  const r = computeWindRose(wind, { statistic: windStatistic, normalize: windNormalize });
+                  const p = computePolarPlot(wind, { statistic: polarStatistic, normalize: windNormalize });
+                  setWindRose({ ...r, sensorId: series.meta.sensorId, source: "observed", sourceLabel: `${file.name} (${wind.length} rows)` });
+                  setPolarPlot({ ...p, sensorId: series.meta.sensorId, source: "observed", sourceLabel: `${file.name} (${wind.length} rows)` });
+                }
+              }}
+            />
+            <Button size="small" variant="secondary" onClick={() => windFileRef.current?.click()}>
+              Upload wind CSV
+            </Button>
             <select
               className={styles.control}
               aria-label="QC profile"
@@ -387,9 +468,14 @@ export default function DiagnosticsPage() {
               <input type="checkbox" checked={windNormalize} onChange={() => setWindNormalize((value) => !value)} />
               Normalize
             </label>
-            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setWindLoading(true); try { const [r, p] = await Promise.all([postJson<WindRoseData>("/api/wind-rose", { series, statistic: windStatistic, normalize: windNormalize }), postJson<PolarPlotData>("/api/polar-plot", { series, statistic: polarStatistic, normalize: windNormalize })]); setWindRose(r); setPolarPlot(p); } finally { setWindLoading(false); } }}>
+            <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setWindLoading(true); try { if (observedWind.length) { const r = computeWindRose(observedWind, { statistic: windStatistic, normalize: windNormalize }); const p = computePolarPlot(observedWind, { statistic: polarStatistic, normalize: windNormalize }); setWindRose({ ...r, sensorId: series.meta.sensorId, source: "observed", sourceLabel: `Observed wind CSV (${observedWind.length} rows)` }); setPolarPlot({ ...p, sensorId: series.meta.sensorId, source: "observed", sourceLabel: `Observed wind CSV (${observedWind.length} rows)` }); } else { const [r, p] = await Promise.all([postJson<WindRoseData>("/api/wind-rose", { series, statistic: windStatistic, normalize: windNormalize }), postJson<PolarPlotData>("/api/polar-plot", { series, statistic: polarStatistic, normalize: windNormalize })]); setWindRose(r); setPolarPlot(p); } } finally { setWindLoading(false); } }}>
               {windLoading ? "Generating wind..." : "Generate wind"}
             </Button>
+            {observedWind.length > 0 && (
+              <Button size="small" variant="secondary" onClick={() => { setObservedWind([]); setWindRose(null); setPolarPlot(null); }}>
+                Clear observed wind
+              </Button>
+            )}
           </div>
           {(windRoseOption || polarPlotOption) ? (
             <div className={styles.windCharts}>
@@ -473,7 +559,21 @@ export default function DiagnosticsPage() {
             <option value={500}>500 samples</option>
             <option value={1000}>1000 samples</option>
           </select>
-          <Button size="small" variant="secondary" onClick={async () => { if (!series) return; setScatterLoading(true); try { setScatterMatrix(await postJson<ScatterMatrixData>("/api/scatter-matrix", { series, sampleSize: scatterSampleSize })); } finally { setScatterLoading(false); } }}>
+          {(["pm25A", "pm25B", "humidity", "temperature", "pressure"] as const).map((field) => (
+            <label key={field} className={styles.checkboxControl}>
+              <input
+                type="checkbox"
+                checked={scatterFields.includes(field)}
+                onChange={() => setScatterFields((current) =>
+                  current.includes(field)
+                    ? current.filter((value) => value !== field)
+                    : [...current, field],
+                )}
+              />
+              {field}
+            </label>
+          ))}
+          <Button size="small" variant="secondary" disabled={scatterFields.length < 2} onClick={async () => { if (!series) return; setScatterLoading(true); try { setScatterMatrix(await postJson<ScatterMatrixData>("/api/scatter-matrix", { series, sampleSize: scatterSampleSize, fields: scatterFields })); } finally { setScatterLoading(false); } }}>
             {scatterLoading ? "Generating scatter..." : "Generate scatter matrix"}
           </Button>
         </div>

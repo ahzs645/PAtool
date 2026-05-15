@@ -19,6 +19,14 @@ export const pm25WindowOptions: { value: Pm25Window; label: string }[] = [
   { value: "pm25_1week", label: "1week" },
 ];
 
+export type SensorMapMetric = "pm25" | "humidity" | "temperature";
+
+export const sensorMapMetricOptions: { value: SensorMapMetric; label: string }[] = [
+  { value: "pm25", label: "PM2.5" },
+  { value: "humidity", label: "Humidity" },
+  { value: "temperature", label: "Temperature" },
+];
+
 export type MapMode = "markers" | "heatmap";
 
 export type MapSize = {

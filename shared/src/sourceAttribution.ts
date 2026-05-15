@@ -45,10 +45,10 @@ export function buildSourceDirectionBins(
   for (const record of records) {
     if (record.windDirection === null || record.windSpeed === null || record.signal === null) continue;
     const windSpeed = record.windSpeed;
-    if (options.minWindSpeed !== undefined && windSpeed < options.minWindSpeed) continue;
-    if (options.maxWindSpeed !== undefined && windSpeed > options.maxWindSpeed) continue;
     const windDirection = record.windDirection;
     const signal = record.signal;
+    if (options.minWindSpeed !== undefined && windSpeed < options.minWindSpeed) continue;
+    if (options.maxWindSpeed !== undefined && windSpeed > options.maxWindSpeed) continue;
     const directionIndex = Math.round(windDirection / sectorSize) % DIRECTIONS.length;
     const speedBin = SPEED_BINS.find((bin) => windSpeed >= bin.min && windSpeed < bin.max);
     if (!speedBin) continue;

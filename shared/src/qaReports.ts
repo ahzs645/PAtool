@@ -30,6 +30,15 @@ export type SentinelCollocationRow = {
   medianDelta: number | null;
 };
 
+export type SentinelHtmlReportInput = {
+  title?: string;
+  generatedAt?: string;
+  sensorId?: string;
+  sensorSummaries: readonly SentinelSensorSummary[];
+  qaTable: readonly SentinelVariableStat[];
+  collocationTable?: readonly SentinelCollocationRow[];
+};
+
 const VARIABLE_ACCESSORS = {
   signal: (record: SentinelAggregatedRecord) => record.signal,
   windSpeed: (record: SentinelAggregatedRecord) => record.windSpeed,
@@ -112,3 +121,77 @@ export function buildSentinelCollocationTable(
   });
 }
 
+function escapeHtml(value: unknown): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function display(value: number | string | null | undefined): string {
+  if (typeof value === "number") return Number.isFinite(value) ? value.toFixed(2) : "-";
+  return value ? String(value) : "-";
+}
+
+function table(headers: string[], rows: unknown[][]): string {
+  return `<table><thead><tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr></thead><tbody>${rows
+    .map((row) => `<tr>${row.map((cell) => `<td>${escapeHtml(display(cell as string | number | null | undefined))}</td>`).join("")}</tr>`)
+    .join("")}</tbody></table>`;
+}
+
+export function renderSentinelQaReportHtml(input: SentinelHtmlReportInput): string {
+  const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const summaryRows = input.sensorSummaries.map((summary) => [
+    summary.sensorId,
+    summary.startTime,
+    summary.endTime,
+    summary.count,
+    summary.qaFlags.join(", ") || "None",
+    summary.canisters.join(", ") || "-",
+  ]);
+  const qaRows = input.qaTable.map((row) => [
+    row.variable,
+    row.mean,
+    row.std,
+    row.median,
+    row.min,
+    row.max,
+    row.count,
+    `${row.completeness.toFixed(1)}%`,
+  ]);
+  const collocationRows = (input.collocationTable ?? []).map((row) => [
+    row.variable,
+    row.sensorA.mean,
+    row.sensorB.mean,
+    row.meanDelta,
+    row.sensorA.median,
+    row.sensorB.median,
+    row.medianDelta,
+  ]);
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>${escapeHtml(input.title ?? "SENTINEL QA report")}</title>
+<style>
+body{font-family:Inter,Arial,sans-serif;margin:32px;color:#172033;line-height:1.45}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:16px;margin:28px 0 10px}
+.meta{color:#667085;font-size:13px;margin-bottom:18px}
+table{border-collapse:collapse;width:100%;font-size:12px;margin-bottom:18px}
+th,td{border:1px solid #d9dee8;padding:7px 8px;text-align:left}
+th{background:#f4f6fa;color:#495166}
+</style>
+</head>
+<body>
+<h1>${escapeHtml(input.title ?? "SENTINEL QA report")}</h1>
+<div class="meta">Generated ${escapeHtml(generatedAt)}${input.sensorId ? ` for ${escapeHtml(input.sensorId)}` : ""}</div>
+<h2>Sensor Check Summary</h2>
+${table(["Sensor", "Start", "End", "5-min bins", "QA flags", "Canisters"], summaryRows)}
+<h2>Single-Node QA Table</h2>
+${table(["Variable", "Mean", "SD", "Median", "Min", "Max", "Count", "% Complete"], qaRows)}
+${collocationRows.length ? `<h2>Collocated-Node Comparison</h2>${table(["Variable", "A mean", "B mean", "Mean delta", "A median", "B median", "Median delta"], collocationRows)}` : ""}
+</body>
+</html>`;
+}

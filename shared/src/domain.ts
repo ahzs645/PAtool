@@ -2728,27 +2728,34 @@ export function patRollingMean(series: PatSeries, windowSize = 5): PatSeries {
 // patScatterMatrix – Prepare scatter matrix data
 // ---------------------------------------------------------------------------
 
-export function patScatterMatrix(series: PatSeries, sampleSize = 500): ScatterMatrixData {
-  const sampled = sampleSize < series.points.length ? patSample(series, sampleSize) : series;
-  const variables = ["pm25A", "pm25B", "humidity", "temperature", "pressure"] as const;
-
-  const extract = (v: typeof variables[number]) =>
-    sampled.points.map((p) => p[v]).filter((val): val is number => val !== null && val !== undefined);
+export function patScatterMatrix(
+  series: PatSeries,
+  sampleSize = 500,
+  fields: readonly PatModelingFieldKey[] = ["pm25A", "pm25B", "humidity", "temperature", "pressure"],
+): ScatterMatrixData {
+  const sampledSeries = sampleSize < series.points.length ? patSample(series, sampleSize) : series;
+  const variables = [...fields];
 
   const pairs: ScatterMatrixData["pairs"] = [];
   for (let i = 0; i < variables.length; i++) {
     for (let j = i + 1; j < variables.length; j++) {
-      const xData = extract(variables[i]);
-      const yData = extract(variables[j]);
-      // Align arrays to same length
-      const len = Math.min(xData.length, yData.length);
-      const x = xData.slice(0, len);
-      const y = yData.slice(0, len);
+      const aligned = sampledSeries.points
+        .map((point): [number, number] | null => {
+          const xValue = point[variables[i]];
+          const yValue = point[variables[j]];
+          return typeof xValue === "number" && Number.isFinite(xValue) &&
+            typeof yValue === "number" && Number.isFinite(yValue)
+            ? [xValue, yValue]
+            : null;
+        })
+        .filter((point): point is [number, number] => point !== null);
+      const x = aligned.map((point) => point[0]);
+      const y = aligned.map((point) => point[1]);
       pairs.push({
         xVar: variables[i],
         yVar: variables[j],
-        points: x.map((val, k) => [val, y[k]]),
-        correlation: pearsonCorrelation(x, y)
+        points: aligned,
+        correlation: aligned.length >= 2 ? pearsonCorrelation(x, y) : 0
       });
     }
   }

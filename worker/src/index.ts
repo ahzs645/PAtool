@@ -98,6 +98,26 @@ const externalFitRequestSchema = z.object({
 const scatterMatrixRequestSchema = z.object({
   series: patSeriesSchema,
   sampleSize: z.number().optional(),
+  fields: z.array(z.enum([
+    "pm25A",
+    "pm25B",
+    "pm25Cf1A",
+    "pm25Cf1B",
+    "pm25AtmA",
+    "pm25AtmB",
+    "pm25AltA",
+    "pm25AltB",
+    "particleCount03umA",
+    "particleCount03umB",
+    "confidence",
+    "channelFlags",
+    "humidity",
+    "temperature",
+    "adjustedHumidity",
+    "adjustedTemperature",
+    "dewpoint",
+    "pressure",
+  ])).optional(),
 });
 
 const rollingMeanRequestSchema = z.object({
@@ -398,7 +418,7 @@ export function createApp() {
 
   app.post("/api/scatter-matrix", async (c) => {
     const parsed = scatterMatrixRequestSchema.parse(await c.req.json());
-    return c.json(patScatterMatrix(parsed.series, parsed.sampleSize));
+    return c.json(patScatterMatrix(parsed.series, parsed.sampleSize, parsed.fields));
   });
 
   app.post("/api/rolling-mean", async (c) => {

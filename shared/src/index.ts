@@ -4,6 +4,7 @@ export * from "./airSensorCompat";
 export * from "./aqi";
 export * from "./aqiStatistics";
 export * from "./baseline";
+export * from "./bitesizedFixtures";
 export * from "./conformal";
 export * from "./covariateLayers";
 export * from "./correctionBenchmark";
@@ -24,6 +25,7 @@ export {
   buildHistogram,
   buildMobileCalendar,
   buildRouteSegments,
+  cleanMobilePoints,
   findNearestReferenceMonitor,
   findReferenceMonitorsWithinRadius,
   parseAirBeamCsv,
@@ -38,6 +40,9 @@ export {
   type MobileAggregation,
   type MobileCalendarCell,
   type MobileCampaignSummary,
+  type MobileQcIssue,
+  type MobileQcOptions,
+  type MobileQcResult,
   type MobileSensingPoint,
   type MobileSessionSummary,
   type MobileSourceKind,
@@ -64,14 +69,20 @@ export * from "./sensorReliability";
 export * from "./sentinelIngest";
 export * from "./sourceAttribution";
 export * from "./spaceTimeKriging";
-export { summarizeSites } from "./standardAggregation";
-export type { AggregatedMeasurementRow, SiteSummaryRow, TimeBucket } from "./standardAggregation";
+export { aggregateMeasurements, aggregateStandardMeasurements, summarizeSites } from "./standardAggregation";
+export type { AggregatedMeasurementRow, MeasurementRow, SiteSummaryRow, TimeBucket } from "./standardAggregation";
 export * from "./standardsCoverage";
 export * from "./standardTable";
 export * from "./summaries";
 export * from "./timeSeriesQuality";
 export * from "./studyArea";
-export * from "./timeAggregation";
+export {
+  aggregateSentinelRecords,
+  type MeasurementAggregate,
+  type MeasurementAggregatePeriod,
+  type SentinelAggregatedRecord,
+  type SentinelAggregationOptions,
+} from "./timeAggregation";
 export * from "./validationWorkbench";
 export * from "./weatherNormalization";
 export * from "./wind";

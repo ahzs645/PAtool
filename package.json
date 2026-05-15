@@ -14,6 +14,7 @@
     "build": "npm run build --workspaces --if-present",
     "build:pages": "npm run prepare:static-data && npm run build --workspace app",
     "fixtures:convert": "python3.13 scripts/convert_rda_fixtures.py",
+    "fixtures:import-bitesizedaq": "node scripts/import_bitesizedaq_data.mjs",
     "prepare:static-data": "node scripts/prepare_static_data.mjs",
     "test": "npm run test --workspaces --if-present",
     "test:heatmap-browser": "node scripts/check_heatmap_flicker.mjs",

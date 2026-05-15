@@ -116,6 +116,27 @@ export type RouteSegmentSummary = {
   longitudeMean: number;
 };
 
+export type MobileQcOptions = {
+  maxGpsAccuracyMeters?: number;
+  maxSpeedMetersPerSecond?: number;
+  minPm25?: number;
+  maxPm25?: number;
+};
+
+export type MobileQcIssue = {
+  code: "gps-accuracy" | "impossible-speed" | "pm25-range" | "duplicate-timestamp" | "invalid-coordinate";
+  message: string;
+  count: number;
+};
+
+export type MobileQcResult = {
+  totalPoints: number;
+  keptPoints: number;
+  removedPoints: number;
+  issues: MobileQcIssue[];
+  cleanedPoints: MobileSensingPoint[];
+};
+
 const MS_PER_MINUTE = 60_000;
 const MS_PER_HOUR = 60 * MS_PER_MINUTE;
 const MS_PER_DAY = 24 * MS_PER_HOUR;
@@ -209,6 +230,60 @@ export function aggregateMobilePoints(
       sampleCount: group.reduce((sum, point) => sum + (point.sampleCount ?? 1), 0),
     };
   }).sort(comparePoints);
+}
+
+export function cleanMobilePoints(
+  points: ReadonlyArray<MobileSensingPoint>,
+  options: MobileQcOptions = {},
+): MobileQcResult {
+  const maxGpsAccuracyMeters = options.maxGpsAccuracyMeters ?? 100;
+  const maxSpeedMetersPerSecond = options.maxSpeedMetersPerSecond ?? 45;
+  const minPm25 = options.minPm25 ?? 0;
+  const maxPm25 = options.maxPm25 ?? 1000;
+  const issueCounts = new Map<MobileQcIssue["code"], number>();
+  const seenTimestampBySession = new Set<string>();
+  const kept: MobileSensingPoint[] = [];
+  let previousBySession = new Map<string, MobileSensingPoint>();
+
+  const addIssue = (code: MobileQcIssue["code"]) => {
+    issueCounts.set(code, (issueCounts.get(code) ?? 0) + 1);
+  };
+
+  for (const point of [...points].sort(comparePoints)) {
+    const duplicateKey = `${point.sessionId}\u0000${point.timestamp}`;
+    const invalidCoordinate = !Number.isFinite(point.latitude)
+      || !Number.isFinite(point.longitude)
+      || Math.abs(point.latitude) > 90
+      || Math.abs(point.longitude) > 180;
+    const poorGps = typeof point.gpsAccuracyMeters === "number"
+      && Number.isFinite(point.gpsAccuracyMeters)
+      && point.gpsAccuracyMeters > maxGpsAccuracyMeters;
+    const invalidPm = !Number.isFinite(point.pm25) || point.pm25 < minPm25 || point.pm25 > maxPm25;
+    const duplicate = seenTimestampBySession.has(duplicateKey);
+    const previous = previousBySession.get(point.sessionId);
+    const speed = previous ? inferredSpeedMetersPerSecond(previous, point) : point.speedMetersPerSecond ?? 0;
+    const impossibleSpeed = speed > maxSpeedMetersPerSecond;
+
+    seenTimestampBySession.add(duplicateKey);
+    previousBySession.set(point.sessionId, point);
+
+    if (invalidCoordinate) addIssue("invalid-coordinate");
+    if (poorGps) addIssue("gps-accuracy");
+    if (invalidPm) addIssue("pm25-range");
+    if (duplicate) addIssue("duplicate-timestamp");
+    if (impossibleSpeed) addIssue("impossible-speed");
+
+    if (invalidCoordinate || poorGps || invalidPm || duplicate || impossibleSpeed) continue;
+    kept.push({ ...point, speedMetersPerSecond: point.speedMetersPerSecond ?? (previous ? speed : point.speedMetersPerSecond) });
+  }
+
+  return {
+    totalPoints: points.length,
+    keptPoints: kept.length,
+    removedPoints: points.length - kept.length,
+    issues: [...issueCounts.entries()].map(([code, count]) => ({ code, count, message: qcMessage(code) })),
+    cleanedPoints: kept,
+  };
 }
 
 export function summarizeMobileCampaign(points: ReadonlyArray<MobileSensingPoint>): MobileCampaignSummary {
@@ -490,6 +565,27 @@ function routeDistanceKm(points: ReadonlyArray<MobileSensingPoint>): number {
     distance += haversineKm(points[i - 1].latitude, points[i - 1].longitude, points[i].latitude, points[i].longitude);
   }
   return distance;
+}
+
+function inferredSpeedMetersPerSecond(previous: MobileSensingPoint, current: MobileSensingPoint): number {
+  const elapsedSeconds = (Date.parse(current.timestamp) - Date.parse(previous.timestamp)) / 1000;
+  if (!Number.isFinite(elapsedSeconds) || elapsedSeconds <= 0) return 0;
+  return (haversineKm(previous.latitude, previous.longitude, current.latitude, current.longitude) * 1000) / elapsedSeconds;
+}
+
+function qcMessage(code: MobileQcIssue["code"]): string {
+  switch (code) {
+    case "gps-accuracy":
+      return "GPS accuracy exceeded the configured threshold.";
+    case "impossible-speed":
+      return "Consecutive points imply movement faster than the configured threshold.";
+    case "pm25-range":
+      return "PM2.5 fell outside the configured physical range.";
+    case "duplicate-timestamp":
+      return "A session contained duplicate timestamps.";
+    case "invalid-coordinate":
+      return "Latitude or longitude was missing or outside valid bounds.";
+  }
 }
 
 function floorTimestamp(timestamp: string, aggregation: MobileAggregation): string | null {

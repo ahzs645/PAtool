@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  aggregateMeasurements,
+  aggregateStandardMeasurements,
   aqiCategoryStatistics,
   aqiComposition,
   autoQaQcFlags,
@@ -38,7 +38,7 @@ describe("ASNAT-inspired modular imports", () => {
       { id: "a", timestamp: "2026-01-01T00:35:00Z", value: 14, flagged: true },
       { id: "a", timestamp: "2026-01-01T01:05:00Z", value: null },
     ];
-    expect(aggregateMeasurements(rows, "hour")).toMatchObject([
+    expect(aggregateStandardMeasurements(rows, "hour")).toMatchObject([
       { id: "a", bucket: "2026-01-01T00", count: 2, flagged: 1, mean: 12 },
       { id: "a", bucket: "2026-01-01T01", count: 0, missing: 1, mean: null },
     ]);

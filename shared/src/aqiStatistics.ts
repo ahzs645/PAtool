@@ -45,7 +45,7 @@ function round(value: number | null, digits = 4): number | null {
   return Number(value.toFixed(digits));
 }
 
-function categoryLabel(category: AqiCategory | undefined): AqiCategory | "Unavailable" {
+function categoryLabel(category: AqiCategory | undefined): string {
   return category ?? "Unavailable";
 }
 
@@ -91,8 +91,17 @@ export function aqiCategoryStatistics(
   pairs: readonly AqiPairedValue[],
   profile: AqiProfile = EPA_PM25_AQI_PROFILE,
 ): AqiCategoryStatistic[] {
-  return profile.breakpoints.filter((breakpoint) => breakpoint.category).map((breakpoint) => {
-    const category = breakpoint.category!;
+  const categories = new Map<AqiCategory, { label: AqiCategory; upperLimit: number }>();
+  for (const breakpoint of profile.breakpoints) {
+    const category = breakpoint.category;
+    if (!category) continue;
+    categories.set(category, {
+      label: categoryLabel(category) as AqiCategory,
+      upperLimit: breakpoint.concentrationHigh ?? breakpoint.concHigh ?? Number.POSITIVE_INFINITY,
+    });
+  }
+
+  return [...categories.entries()].map(([category, meta]) => {
     const categoryPairs = pairs.filter((pair) => (
       finiteNumber(pair.reference)
       && finiteNumber(pair.sensor)
@@ -101,8 +110,8 @@ export function aqiCategoryStatistics(
     if (categoryPairs.length === 0) {
       return {
         category,
-        label: categoryLabel(category),
-        upperLimit: breakpoint.concentrationHigh ?? breakpoint.concHigh ?? Number.POSITIVE_INFINITY,
+        label: meta.label,
+        upperLimit: meta.upperLimit,
         count: 0,
         mbe: null,
         nmbe: null,
@@ -117,8 +126,8 @@ export function aqiCategoryStatistics(
     const rmse = Math.sqrt(errors.reduce((sum, error) => sum + error * error, 0) / errors.length);
     return {
       category,
-      label: categoryLabel(category),
-      upperLimit: breakpoint.concentrationHigh ?? breakpoint.concHigh ?? Number.POSITIVE_INFINITY,
+      label: meta.label,
+      upperLimit: meta.upperLimit,
       count: categoryPairs.length,
       mbe: round(mbe),
       nmbe: referenceMean !== 0 ? round((mbe / referenceMean) * 100) : null,
@@ -132,7 +141,7 @@ export function aqiConfusionMatrix(
   pairs: readonly AqiPairedValue[],
   profile: AqiProfile = EPA_PM25_AQI_PROFILE,
 ): AqiConfusionCell[] {
-  const categories = profile.breakpoints.map((breakpoint) => breakpoint.category);
+  const categories = [...new Set(profile.breakpoints.map((breakpoint) => breakpoint.category))];
   const usable = pairs
     .map((pair) => ({
       reference: finiteNumber(pair.reference) ? pm25ToAqiBand(pair.reference, profile).category ?? null : null,
