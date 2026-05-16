@@ -58,6 +58,7 @@ export * from "./monitorSelection";
 export * from "./monitorStatus";
 export * from "./neighborComparison";
 export * from "./purpleairLocal";
+export * from "./patSeriesOps";
 export * from "./qaqc";
 export * from "./qaFlags";
 export * from "./qaReports";

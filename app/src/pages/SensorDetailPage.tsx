@@ -10,6 +10,7 @@ import {
   computeDailySummaries,
   monitorMatrixToCsvBundle,
   runHourlyAbQc,
+  stitchPatArchiveMonths,
   summarizeSensorHealth,
   summarizePatCurrentStatus,
   type NowCastResult,
@@ -62,6 +63,20 @@ interface RollingMeanResult {
     pm25A: number | null;
     pm25B: number | null;
   }>;
+}
+
+function splitSeriesByUtcMonth(series: PatSeries): PatSeries[] {
+  const buckets = new Map<string, PatSeries["points"]>();
+  for (const point of series.points) {
+    const month = point.timestamp.slice(0, 7);
+    const bucket = buckets.get(month) ?? [];
+    bucket.push(point);
+    buckets.set(month, bucket);
+  }
+
+  return [...buckets.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([, points]) => ({ ...series, points }));
 }
 
 export default function SensorDetailPage() {
@@ -132,6 +147,11 @@ export default function SensorDetailPage() {
   const currentStatus = useMemo(() => {
     if (!series) return null;
     return summarizePatCurrentStatus(series);
+  }, [series]);
+
+  const archiveStitch = useMemo(() => {
+    if (!series) return null;
+    return stitchPatArchiveMonths(splitSeriesByUtcMonth(series));
   }, [series]);
 
   const toggleRollingMean = async () => {
@@ -307,7 +327,7 @@ export default function SensorDetailPage() {
     };
   }, [soh, ct]);
 
-  if (!sensor || !series || !qc || !soh || !chartOption || !sohOption || !dailyAqiOption || !currentStatus) {
+  if (!sensor || !series || !qc || !soh || !chartOption || !sohOption || !dailyAqiOption || !currentStatus || !archiveStitch) {
     return <Loader message="Loading sensor detail..." />;
   }
 
@@ -387,6 +407,38 @@ export default function SensorDetailPage() {
           <div className={styles.healthChips}>
             {health.issues.map((issue) => (
               <Chip key={issue.code} variant={issue.severity === "severe" ? "danger" : "warning"}>{issue.code}</Chip>
+            ))}
+          </div>
+        ) : null}
+      </Card>
+
+      <Card title="Archive stitch diagnostics">
+        <div className={styles.archiveGrid}>
+          <div>
+            <span className={styles.provenanceLabel}>Segments</span>
+            <strong>{archiveStitch.segments.length}</strong>
+            <small>UTC month chunks stitched with AirSensor-style overlap trimming.</small>
+          </div>
+          <div>
+            <span className={styles.provenanceLabel}>Merged points</span>
+            <strong>{archiveStitch.series.points.length}</strong>
+            <small>{archiveStitch.duplicateTimestampsRemoved} duplicate or overlapped timestamps removed.</small>
+          </div>
+          <div>
+            <span className={styles.provenanceLabel}>Interval</span>
+            <strong>{archiveStitch.inferredIntervalSeconds === null ? "Unknown" : `${archiveStitch.inferredIntervalSeconds}s`}</strong>
+            <small>{archiveStitch.gaps.length} detected gaps after stitching.</small>
+          </div>
+          <div>
+            <span className={styles.provenanceLabel}>Coverage</span>
+            <strong>{archiveStitch.series.points[0]?.timestamp.slice(0, 10)} to {archiveStitch.series.points.at(-1)?.timestamp.slice(0, 10)}</strong>
+            <small>Same shared operation is available through POST /api/pat/stitch.</small>
+          </div>
+        </div>
+        {archiveStitch.gaps.length ? (
+          <div className={styles.healthChips}>
+            {archiveStitch.gaps.slice(0, 8).map((gap) => (
+              <Chip key={`${gap.previous}-${gap.next}`} variant="warning">{gap.missingIntervals} missing intervals</Chip>
             ))}
           </div>
         ) : null}

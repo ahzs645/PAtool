@@ -25,6 +25,7 @@ import {
   runAdvancedHourlyAbQc,
   runAirSensorQc,
   runHourlyAbQc,
+  stitchPatArchiveMonths,
   summarizeSensorHealth,
 } from "@patool/shared";
 
@@ -123,6 +124,10 @@ const scatterMatrixRequestSchema = z.object({
 const rollingMeanRequestSchema = z.object({
   series: patSeriesSchema,
   windowSize: z.number().optional(),
+});
+
+const archiveStitchRequestSchema = z.object({
+  series: z.array(patSeriesSchema).min(1),
 });
 
 const airSensorSohRequestSchema = z.object({
@@ -425,6 +430,11 @@ export function createApp() {
   app.post("/api/rolling-mean", async (c) => {
     const parsed = rollingMeanRequestSchema.parse(await c.req.json());
     return c.json(patRollingMean(parsed.series, parsed.windowSize));
+  });
+
+  app.post("/api/pat/stitch", async (c) => {
+    const parsed = archiveStitchRequestSchema.parse(await c.req.json());
+    return c.json(stitchPatArchiveMonths(parsed.series));
   });
 
   app.post("/api/wind-rose", async (c) => {

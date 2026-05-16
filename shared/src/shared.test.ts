@@ -60,6 +60,7 @@ import {
   type InterpolationPoint,
   type InterpolationGrid,
 } from "./domain";
+import { stitchPatArchiveMonths } from "./patSeriesOps";
 import { samplePasCollection, samplePatSeries, samplePatFailureA } from "./fixtures";
 import {
   correctPurpleAirPm25,
@@ -455,6 +456,19 @@ describe("new analytics functions", () => {
     };
 
     expect(() => patJoin(samplePatSeries, other)).toThrow(/metadata/i);
+  });
+
+  it("stitches archive month chunks and reports trimmed duplicates", () => {
+    const first = { ...samplePatSeries, points: samplePatSeries.points.slice(0, 4) };
+    const second = { ...samplePatSeries, points: samplePatSeries.points.slice(2, 6) };
+    const stitched = stitchPatArchiveMonths([second, first]);
+
+    expect(stitched.series.points.map((point) => point.timestamp)).toEqual(
+      samplePatSeries.points.slice(0, 6).map((point) => point.timestamp),
+    );
+    expect(stitched.segments).toHaveLength(2);
+    expect(stitched.duplicateTimestampsRemoved).toBe(2);
+    expect(stitched.inferredIntervalSeconds).toBeGreaterThan(0);
   });
 
   it("detects outliers using Hampel filter", () => {

@@ -23,6 +23,7 @@ import {
   runAdvancedHourlyAbQc,
   runAirSensorQc,
   runHourlyAbQc,
+  stitchPatArchiveMonths,
   summarizeSensorHealth,
   type ComparisonResult,
   type ChannelQcProfileId,
@@ -37,6 +38,10 @@ import {
 } from "@patool/shared";
 
 const assetCache = new Map<string, Promise<unknown>>();
+
+export function clearStaticApiCache(): void {
+  assetCache.clear();
+}
 
 function assetUrl(file: string): string {
   return new URL(`data/${file}`, document.baseURI).toString();
@@ -313,7 +318,7 @@ export async function getStaticJson<T>(path: string): Promise<T> {
 
 export async function postStaticJson<T>(path: string, body: unknown): Promise<T> {
   const payload = body as Record<string, unknown>;
-  const series = payload.series ? patSeriesSchema.parse(payload.series) : undefined;
+  const series = payload.series && path !== "/api/pat/stitch" ? patSeriesSchema.parse(payload.series) : undefined;
 
   switch (path) {
     case "/api/correction/purpleair":
@@ -343,6 +348,10 @@ export async function postStaticJson<T>(path: string, body: unknown): Promise<T>
       return { sensorId: series!.meta.sensorId, metrics: calculateEnhancedSohIndex(series!).metrics } as T;
     case "/api/rolling-mean":
       return patRollingMean(series!, Number(payload.windowSize ?? 5)) as T;
+    case "/api/pat/stitch":
+      return stitchPatArchiveMonths(Array.isArray(payload.series)
+        ? payload.series.map((entry) => patSeriesSchema.parse(entry))
+        : []) as T;
     case "/api/aggregate/rich":
       return patRichAggregate(series!, Number(payload.intervalMinutes ?? 60)) as T;
     case "/api/outliers":

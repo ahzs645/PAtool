@@ -6,3 +6,7 @@ tmp/
 .DS_Store
 worker/.wrangler/
 *.log
+.playwright-mcp/
+/after*.png
+/dark-*.png
+/explorer-*.png

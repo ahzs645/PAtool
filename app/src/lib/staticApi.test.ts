@@ -3,11 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DataStatus, PasCollection, PatSeries } from "@patool/shared";
 import { samplePasCollection, samplePatSeries } from "@patool/shared/fixtures";
 
-import { getStaticJson } from "./staticApi";
+import { clearStaticApiCache, getStaticJson, postStaticJson } from "./staticApi";
 
 describe("static API adapter", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    clearStaticApiCache();
   });
 
   it("derives distinct deterministic PAT series for different sensors", async () => {
@@ -70,5 +71,16 @@ describe("static API adapter", () => {
     expect(status.mode).toBe("static");
     expect(status.collectionSource).toBe("fixture");
     expect(status.warnings[0]).toContain("Static mode");
+  });
+
+  it("stitches PAT archive chunks in static mode", async () => {
+    const first = { ...samplePatSeries, points: samplePatSeries.points.slice(0, 4) };
+    const second = { ...samplePatSeries, points: samplePatSeries.points.slice(2, 6) };
+    const stitched = await postStaticJson<{ series: PatSeries; duplicateTimestampsRemoved: number }>("/api/pat/stitch", {
+      series: [second, first],
+    });
+
+    expect(stitched.series.points).toHaveLength(6);
+    expect(stitched.duplicateTimestampsRemoved).toBe(2);
   });
 });

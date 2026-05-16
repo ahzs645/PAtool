@@ -37,6 +37,21 @@ describe("worker api", () => {
     expect(sohPayload.index).toBeGreaterThan(0);
   });
 
+  it("stitches PAT archive chunks", async () => {
+    const first = { ...samplePatSeries, points: samplePatSeries.points.slice(0, 4) };
+    const second = { ...samplePatSeries, points: samplePatSeries.points.slice(2, 6) };
+    const response = await app.request("/api/pat/stitch", {
+      method: "POST",
+      body: JSON.stringify({ series: [second, first] }),
+      headers: { "content-type": "application/json" },
+    });
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { series: { points: unknown[] }; duplicateTimestampsRemoved: number };
+    expect(payload.series.points).toHaveLength(6);
+    expect(payload.duplicateTimestampsRemoved).toBe(2);
+  });
+
   it("serves correction, visible health, and NowCast endpoints", async () => {
     const correctionResponse = await app.request("/api/correction/purpleair", {
       method: "POST",

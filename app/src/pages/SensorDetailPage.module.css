@@ -48,18 +48,27 @@
   gap: var(--spacing-3);
 }
 
-.provenanceGrid > div {
+.archiveGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--spacing-3);
+}
+
+.provenanceGrid > div,
+.archiveGrid > div {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.provenanceGrid strong {
+.provenanceGrid strong,
+.archiveGrid strong {
   color: var(--text-primary);
   font-size: 0.95rem;
 }
 
-.provenanceGrid small {
+.provenanceGrid small,
+.archiveGrid small {
   color: var(--text-secondary);
   line-height: 1.45;
 }
