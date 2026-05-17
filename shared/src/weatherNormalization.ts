@@ -86,6 +86,15 @@ export type WeatherModelDiagnostics = {
   importance: WeatherVariableImportance[];
   partialDependence: WeatherPartialDependencePoint[];
   normalized: WeatherNormalizedPoint[];
+  breakpoints: WeatherBreakpoint[];
+};
+
+export type WeatherBreakpoint = {
+  timestamp: string;
+  beforeMean: number;
+  afterMean: number;
+  difference: number;
+  score: number;
 };
 
 export type WeatherNormalizationResult = WeatherNormalizationPrepared & {
@@ -180,7 +189,9 @@ export function runWeatherNormalization(
       seed: (options.seed ?? 31) + 101,
       shuffledFeatureNames: config.shuffledFeatureNames,
     }),
+    breakpoints: [],
   };
+  diagnostics.breakpoints = detectWeatherBreakpoints(diagnostics.normalized);
 
   return {
     ...prepared,
@@ -188,6 +199,37 @@ export function runWeatherNormalization(
     config,
     diagnostics,
   };
+}
+
+export function detectWeatherBreakpoints(
+  rows: readonly WeatherNormalizedPoint[],
+  options: { window?: number; minGap?: number } = {},
+): WeatherBreakpoint[] {
+  const window = Math.max(3, options.window ?? 14);
+  const minGap = Math.max(window, options.minGap ?? window * 2);
+  const candidates: WeatherBreakpoint[] = [];
+  for (let index = window; index < rows.length - window; index += 1) {
+    const before = rows.slice(index - window, index).map((row) => row.normalized);
+    const after = rows.slice(index, index + window).map((row) => row.normalized);
+    const beforeMean = average(before);
+    const afterMean = average(after);
+    const pooled = stdDev([...before, ...after], average([...before, ...after])) || 1;
+    candidates.push({
+      timestamp: rows[index].timestamp,
+      beforeMean: round(beforeMean, 4),
+      afterMean: round(afterMean, 4),
+      difference: round(afterMean - beforeMean, 4),
+      score: round(Math.abs(afterMean - beforeMean) / pooled, 4),
+    });
+  }
+  const selected: WeatherBreakpoint[] = [];
+  for (const candidate of candidates.sort((a, b) => b.score - a.score)) {
+    const time = new Date(candidate.timestamp).getTime();
+    if (selected.some((item) => Math.abs(new Date(item.timestamp).getTime() - time) < minGap * 3_600_000)) continue;
+    selected.push(candidate);
+    if (selected.length >= 5) break;
+  }
+  return selected.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 export function prepareWeatherNormalizationRows(

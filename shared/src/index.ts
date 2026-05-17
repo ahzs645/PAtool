@@ -1,4 +1,5 @@
 export * from "./bayesianOutcomeModel";
+export * from "./analysisBundle";
 export * from "./airQualityMetrics";
 export * from "./airSensorCompat";
 export * from "./aqi";
@@ -11,15 +12,18 @@ export * from "./correctionBenchmark";
 export * from "./ejCoverage";
 export * from "./exposureModeling";
 export * from "./forecast";
+export * from "./epaEvaluation";
 export * from "./dataReadiness";
 export * from "./dayTypes";
 export * from "./domain";
 export * from "./geo";
 export * from "./hazards";
 export * from "./interpolationCv";
+export * from "./importMapping";
 export * from "./modeling";
 export * from "./modelZoo";
 export * from "./measurementError";
+export * from "./openairDirectional";
 export {
   aggregateMobilePoints,
   buildHistogram,
@@ -61,6 +65,7 @@ export * from "./purpleairLocal";
 export * from "./patSeriesOps";
 export * from "./qaqc";
 export * from "./qaFlags";
+export * from "./qcProfiles";
 export * from "./qaReports";
 export * from "./randomForest";
 export * from "./regimeSeparation";

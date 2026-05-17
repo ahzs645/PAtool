@@ -17,10 +17,13 @@ const navItems = [
   { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
   { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
   { to: "/measurement-error", label: "Measurement Error", icon: ErrorIcon },
+  { to: "/epa-evaluation", label: "EPA Evaluation", icon: ValidationIcon },
+  { to: "/directional-analysis", label: "Directional", icon: WindIcon },
   { to: "/regimes", label: "Regimes", icon: RegimeIcon },
   { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
   { to: "/reliability", label: "Reliability", icon: ShieldIcon },
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
+  { to: "/network-qa", label: "Network QA", icon: NetworkIcon },
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
   { to: "/poi", label: "Schools / POIs", icon: PinIcon },
@@ -50,6 +53,16 @@ function ForecastIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 17l4-6 4 4 5-7 5 9" />
       <path d="M3 21h18" />
+    </svg>
+  );
+}
+
+function WindIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 8h12a3 3 0 1 0-3-3" />
+      <path d="M3 13h16a3 3 0 1 1-3 3" />
+      <path d="M3 18h8" />
     </svg>
   );
 }

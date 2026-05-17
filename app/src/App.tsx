@@ -14,6 +14,9 @@ const ModelingPage = lazy(() => import("./pages/ModelingPage"));
 const ModelZooPage = lazy(() => import("./pages/ModelZooPage"));
 const ValidationLabPage = lazy(() => import("./pages/ValidationLabPage"));
 const MeasurementErrorPage = lazy(() => import("./pages/MeasurementErrorPage"));
+const EpaEvaluationPage = lazy(() => import("./pages/EpaEvaluationPage"));
+const DirectionalAnalysisPage = lazy(() => import("./pages/DirectionalAnalysisPage"));
+const NetworkQaPage = lazy(() => import("./pages/NetworkQaPage"));
 const RegimeWorkbenchPage = lazy(() => import("./pages/RegimeWorkbenchPage"));
 const CovariateLayersPage = lazy(() => import("./pages/CovariateLayersPage"));
 const ReliabilityReportsPage = lazy(() => import("./pages/ReliabilityReportsPage"));
@@ -53,6 +56,9 @@ function RoutesView() {
             <Route path="/model-zoo" element={<ModelZooPage />} />
             <Route path="/validation-lab" element={<ValidationLabPage />} />
             <Route path="/measurement-error" element={<MeasurementErrorPage />} />
+            <Route path="/epa-evaluation" element={<EpaEvaluationPage />} />
+            <Route path="/directional-analysis" element={<DirectionalAnalysisPage />} />
+            <Route path="/network-qa" element={<NetworkQaPage />} />
             <Route path="/regimes" element={<RegimeWorkbenchPage />} />
             <Route path="/covariates" element={<CovariateLayersPage />} />
             <Route path="/reliability" element={<ReliabilityReportsPage />} />
