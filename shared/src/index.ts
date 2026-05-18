@@ -37,6 +37,11 @@ export * from "./superPollutants";
 export * from "./splineQuantileBaseline";
 export * from "./warmupDetection";
 export * from "./purpleairGroups";
+export * from "./hysplitTrajectory";
+export * from "./gamCalibration";
+export * from "./popWeightedAggregator";
+export * from "./paleoclimateBaseline";
+export * from "./pollenInteraction";
 export {
   aggregateMobilePoints,
   buildHistogram,

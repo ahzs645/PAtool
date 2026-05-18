@@ -18,6 +18,12 @@ This backlog captures paper-grade QC, interpolation, validation, data-layer, and
 - [x] sensortoolkit warmup-event detection (`detectWarmupEvents`, `warmupIndexSet`) — restart-aware gap-based flagging. `shared/src/warmupDetection.ts`.
 - [x] AirSensor PA group/member management (`PurpleAirGroupClient` interface + `InMemoryPurpleAirGroupClient` for dry-run/preview) — `shared/src/purpleairGroups.ts`. Concrete fetch adapter against the PurpleAir API stays in `worker/src` when keys are wired.
 - [x] biteSizedAQ life-expectancy / YLL from PM2.5 — already covered by `estimatePm25LifeExpectancyImpact` in `shared/src/airQualityMetrics.ts`.
+- [x] HYSPLIT trajectory suite: `parseHysplitTdump` (tdump text-format parser), `clusterTrajectories` (k-means++ on resampled trajectory points), `trajectoryLevel` (lat/lon grid pollutant binning by trajectory passage) — `shared/src/hysplitTrajectory.ts`.
+- [x] GAM-style additive calibration: `fitAdditiveGam` with natural-cubic-spline smooth terms, second-difference penalty, GCV-selected smoothing parameter, block-coordinate descent — `shared/src/gamCalibration.ts`. Fills the rmweather / ASNAT temperature-RH GAM calibration gap.
+- [x] Population-weighted admin-unit aggregator (`aggregatePopulationWeightedPollutant`) — pure-TS over already-parsed grid + polygon inputs; NetCDF reader stays injectable. `shared/src/popWeightedAggregator.ts`.
+- [x] biteSizedAQ paleoclimate baseline + anomaly helpers (`PREINDUSTRIAL_PM25_BASELINE`, `paleoclimateAnomaly`, `preIndustrialPm25Anomaly`) — `shared/src/paleoclimateBaseline.ts`.
+- [x] biteSizedAQ pollen × PM2.5 interaction helper (`pollenPm25Interaction`) with paired-day Spearman correlation, contingency table, interaction score — `shared/src/pollenInteraction.ts`.
+- [x] Concrete AirMonitor source-loader adapters (AirNow / EPA AQS / OpenAQ v3) using native `fetch` — `worker/src/sourceLoaders.ts`. Throw `MissingApiKeyError` when keys aren't configured; otherwise return a `Monitor` ready for the chainable pipeline.
 - [ ] openair UI wiring: surface the new primitives in chart components (time-variation panel on the analytics page, calendar heatmap, Taylor diagram, correlation matrix, conditional-quantile panel on validation lab).
 - [ ] openair trajectory suite (`trajPlot/trajCluster/trajLevel/importTraj`) — out of scope until a back-trajectory source (HYSPLIT / hyspac) is wired up.
 
