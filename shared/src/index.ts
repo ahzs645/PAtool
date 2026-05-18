@@ -24,6 +24,8 @@ export * from "./modeling";
 export * from "./modelZoo";
 export * from "./measurementError";
 export * from "./openairDirectional";
+export * from "./openairStats";
+export * from "./openairSmoothers";
 export {
   aggregateMobilePoints,
   buildHistogram,

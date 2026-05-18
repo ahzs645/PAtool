@@ -4,6 +4,11 @@ This backlog captures paper-grade QC, interpolation, validation, data-layer, and
 
 ## Recent additions (May 2026 sweep)
 
+- [x] openair plot/stat gap (round 1): `modStats` (FAC2/MB/MGE/NMB/NMGE/RMSE/r/COE/IOA with Willmott-refined IOA), `taylorStats`, `timeVariation` (diurnal/DOW/monthly/hour-of-week panels), `calendarData` (year heatmap), `conditionalQuantile`, `correlationMatrix` (with optional single-linkage cluster ordering), `trendLevelData` — all in `shared/src/openairStats.ts`.
+- [x] openair smoother suite: `rollingMean` (centred / trailing, NA-aware), `gaussianSmooth`, `kzFilter` (Kolmogorov–Zurbenko), `whittakerSmooth` (Eilers 2003, banded LDLᵀ solver, NA imputation) in `shared/src/openairSmoothers.ts`.
+- [ ] openair UI wiring: surface the new primitives in chart components (time-variation panel on the analytics page, calendar heatmap, Taylor diagram, correlation matrix, conditional-quantile panel on validation lab).
+- [ ] openair trajectory suite (`trajPlot/trajCluster/trajLevel/importTraj`) — out of scope until a back-trajectory source (HYSPLIT / hyspac) is wired up.
+
 - [x] Ingestion-time temperature/RH sentinel filtering (`sanitizeTemperatureF`, `sanitizeHumidityPercent` in `shared/src/domain.ts`).
 - [x] Reduced-major-axis regression already in `shared/src/domain.ts`.
 - [x] ST-IDW LOOCV `C` tuner (`stIdwGridSearchTimeWeight` in `shared/src/domain.ts`).
