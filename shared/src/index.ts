@@ -34,6 +34,9 @@ export * from "./reuDecomposition";
 export * from "./airSensorPat";
 export * from "./metYearDecomposition";
 export * from "./superPollutants";
+export * from "./splineQuantileBaseline";
+export * from "./warmupDetection";
+export * from "./purpleairGroups";
 export {
   aggregateMobilePoints,
   buildHistogram,

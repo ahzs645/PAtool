@@ -13,6 +13,11 @@ This backlog captures paper-grade QC, interpolation, validation, data-layer, and
 - [x] quant-air-pollution REU decomposition (random / reference / systematic components, DQO threshold overlay support) + proper Gaussian KDE (Silverman bandwidth) for scatter density — `shared/src/reuDecomposition.ts`.
 - [x] AirSensor PAT helpers with rich `LinearFit` returns: `patChannelInternalFit` (A/B + mean abs %-diff) and `patChannelExternalFit` (PA vs federal) — complement existing `domain.ts` versions. `shared/src/airSensorPat.ts`.
 - [x] rmweather meteorology-year decomposition (`decomposeMetYears`) — predictor-agnostic resampling scaffold with `trainingOnly` guard (`guardTrainingOnly`) for partial-dependence extrapolation. `shared/src/metYearDecomposition.ts`.
+- [x] biteSizedAQ super-pollutant (SLCP) decomposition with AR6 GWP20/GWP100 totals (`decomposeSlcp`, `slcpShare`) — `shared/src/superPollutants.ts`.
+- [x] SENTINEL spline-based quantile-regression baseline (`fitSplineQuantile`) with duration-scaled natural-cubic basis + pinball-loss subgradient — `shared/src/splineQuantileBaseline.ts`.
+- [x] sensortoolkit warmup-event detection (`detectWarmupEvents`, `warmupIndexSet`) — restart-aware gap-based flagging. `shared/src/warmupDetection.ts`.
+- [x] AirSensor PA group/member management (`PurpleAirGroupClient` interface + `InMemoryPurpleAirGroupClient` for dry-run/preview) — `shared/src/purpleairGroups.ts`. Concrete fetch adapter against the PurpleAir API stays in `worker/src` when keys are wired.
+- [x] biteSizedAQ life-expectancy / YLL from PM2.5 — already covered by `estimatePm25LifeExpectancyImpact` in `shared/src/airQualityMetrics.ts`.
 - [ ] openair UI wiring: surface the new primitives in chart components (time-variation panel on the analytics page, calendar heatmap, Taylor diagram, correlation matrix, conditional-quantile panel on validation lab).
 - [ ] openair trajectory suite (`trajPlot/trajCluster/trajLevel/importTraj`) — out of scope until a back-trajectory source (HYSPLIT / hyspac) is wired up.
 
