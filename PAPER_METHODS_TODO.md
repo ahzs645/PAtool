@@ -4,6 +4,29 @@ This backlog captures paper-grade QC, interpolation, validation, data-layer, and
 
 ## Recent additions (May 2026 sweep)
 
+- [x] openair plot/stat gap (round 1): `modStats` (FAC2/MB/MGE/NMB/NMGE/RMSE/r/COE/IOA with Willmott-refined IOA), `taylorStats`, `timeVariation` (diurnal/DOW/monthly/hour-of-week panels), `calendarData` (year heatmap), `conditionalQuantile`, `correlationMatrix` (with optional single-linkage cluster ordering), `trendLevelData` — all in `shared/src/openairStats.ts`.
+- [x] openair smoother suite: `rollingMean` (centred / trailing, NA-aware), `gaussianSmooth`, `kzFilter` (Kolmogorov–Zurbenko), `whittakerSmooth` (Eilers 2003, banded LDLᵀ solver, NA imputation) in `shared/src/openairSmoothers.ts`.
+- [x] sensortoolkit primitives: `DeploymentRecord` zod schema (sensor / reference monitor / deploy_dict), `intraSensorCv` (precision of collocated identical units), `climateStratifiedEvaluation` (temp/RH bins), `SDFS_PARAMETERS` dictionary with AQS codes, `targetDiagram` (normalized bias + signed normalized centered RMSE) — `shared/src/sensortoolkit.ts`.
+- [x] AirMonitor `monitor_*` chainable pipeline (Monitor class with filterMeta/filterDate/collapse/select/combine + LST daily aggregation), OpenAQ metadata catalog types, source-loader interfaces — `shared/src/airMonitorPipeline.ts`.
+- [x] ASNAT polygon clipping: Liang–Barsky line clipping + Sutherland–Hodgman polygon-to-rect clipping in `shared/src/polygonClip.ts`.
+- [x] rmweather / strucchange-style breakpoint detection (Bai-Perron dynamic-program with BIC model selection) — `shared/src/breakpointDetection.ts`.
+- [x] quant-air-pollution REU decomposition (random / reference / systematic components, DQO threshold overlay support) + proper Gaussian KDE (Silverman bandwidth) for scatter density — `shared/src/reuDecomposition.ts`.
+- [x] AirSensor PAT helpers with rich `LinearFit` returns: `patChannelInternalFit` (A/B + mean abs %-diff) and `patChannelExternalFit` (PA vs federal) — complement existing `domain.ts` versions. `shared/src/airSensorPat.ts`.
+- [x] rmweather meteorology-year decomposition (`decomposeMetYears`) — predictor-agnostic resampling scaffold with `trainingOnly` guard (`guardTrainingOnly`) for partial-dependence extrapolation. `shared/src/metYearDecomposition.ts`.
+- [x] biteSizedAQ super-pollutant (SLCP) decomposition with AR6 GWP20/GWP100 totals (`decomposeSlcp`, `slcpShare`) — `shared/src/superPollutants.ts`.
+- [x] SENTINEL spline-based quantile-regression baseline (`fitSplineQuantile`) with duration-scaled natural-cubic basis + pinball-loss subgradient — `shared/src/splineQuantileBaseline.ts`.
+- [x] sensortoolkit warmup-event detection (`detectWarmupEvents`, `warmupIndexSet`) — restart-aware gap-based flagging. `shared/src/warmupDetection.ts`.
+- [x] AirSensor PA group/member management (`PurpleAirGroupClient` interface + `InMemoryPurpleAirGroupClient` for dry-run/preview) — `shared/src/purpleairGroups.ts`. Concrete fetch adapter against the PurpleAir API stays in `worker/src` when keys are wired.
+- [x] biteSizedAQ life-expectancy / YLL from PM2.5 — already covered by `estimatePm25LifeExpectancyImpact` in `shared/src/airQualityMetrics.ts`.
+- [x] HYSPLIT trajectory suite: `parseHysplitTdump` (tdump text-format parser), `clusterTrajectories` (k-means++ on resampled trajectory points), `trajectoryLevel` (lat/lon grid pollutant binning by trajectory passage) — `shared/src/hysplitTrajectory.ts`.
+- [x] GAM-style additive calibration: `fitAdditiveGam` with natural-cubic-spline smooth terms, second-difference penalty, GCV-selected smoothing parameter, block-coordinate descent — `shared/src/gamCalibration.ts`. Fills the rmweather / ASNAT temperature-RH GAM calibration gap.
+- [x] Population-weighted admin-unit aggregator (`aggregatePopulationWeightedPollutant`) — pure-TS over already-parsed grid + polygon inputs; NetCDF reader stays injectable. `shared/src/popWeightedAggregator.ts`.
+- [x] biteSizedAQ paleoclimate baseline + anomaly helpers (`PREINDUSTRIAL_PM25_BASELINE`, `paleoclimateAnomaly`, `preIndustrialPm25Anomaly`) — `shared/src/paleoclimateBaseline.ts`.
+- [x] biteSizedAQ pollen × PM2.5 interaction helper (`pollenPm25Interaction`) with paired-day Spearman correlation, contingency table, interaction score — `shared/src/pollenInteraction.ts`.
+- [x] Concrete AirMonitor source-loader adapters (AirNow / EPA AQS / OpenAQ v3) using native `fetch` — `worker/src/sourceLoaders.ts`. Throw `MissingApiKeyError` when keys aren't configured; otherwise return a `Monitor` ready for the chainable pipeline.
+- [ ] openair UI wiring: surface the new primitives in chart components (time-variation panel on the analytics page, calendar heatmap, Taylor diagram, correlation matrix, conditional-quantile panel on validation lab).
+- [ ] openair trajectory suite (`trajPlot/trajCluster/trajLevel/importTraj`) — out of scope until a back-trajectory source (HYSPLIT / hyspac) is wired up.
+
 - [x] Ingestion-time temperature/RH sentinel filtering (`sanitizeTemperatureF`, `sanitizeHumidityPercent` in `shared/src/domain.ts`).
 - [x] Reduced-major-axis regression already in `shared/src/domain.ts`.
 - [x] ST-IDW LOOCV `C` tuner (`stIdwGridSearchTimeWeight` in `shared/src/domain.ts`).
