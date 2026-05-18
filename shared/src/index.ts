@@ -26,6 +26,14 @@ export * from "./measurementError";
 export * from "./openairDirectional";
 export * from "./openairStats";
 export * from "./openairSmoothers";
+export * from "./sensortoolkit";
+export * from "./airMonitorPipeline";
+export * from "./polygonClip";
+export * from "./breakpointDetection";
+export * from "./reuDecomposition";
+export * from "./airSensorPat";
+export * from "./metYearDecomposition";
+export * from "./superPollutants";
 export {
   aggregateMobilePoints,
   buildHistogram,

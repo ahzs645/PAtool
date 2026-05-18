@@ -6,6 +6,13 @@ This backlog captures paper-grade QC, interpolation, validation, data-layer, and
 
 - [x] openair plot/stat gap (round 1): `modStats` (FAC2/MB/MGE/NMB/NMGE/RMSE/r/COE/IOA with Willmott-refined IOA), `taylorStats`, `timeVariation` (diurnal/DOW/monthly/hour-of-week panels), `calendarData` (year heatmap), `conditionalQuantile`, `correlationMatrix` (with optional single-linkage cluster ordering), `trendLevelData` — all in `shared/src/openairStats.ts`.
 - [x] openair smoother suite: `rollingMean` (centred / trailing, NA-aware), `gaussianSmooth`, `kzFilter` (Kolmogorov–Zurbenko), `whittakerSmooth` (Eilers 2003, banded LDLᵀ solver, NA imputation) in `shared/src/openairSmoothers.ts`.
+- [x] sensortoolkit primitives: `DeploymentRecord` zod schema (sensor / reference monitor / deploy_dict), `intraSensorCv` (precision of collocated identical units), `climateStratifiedEvaluation` (temp/RH bins), `SDFS_PARAMETERS` dictionary with AQS codes, `targetDiagram` (normalized bias + signed normalized centered RMSE) — `shared/src/sensortoolkit.ts`.
+- [x] AirMonitor `monitor_*` chainable pipeline (Monitor class with filterMeta/filterDate/collapse/select/combine + LST daily aggregation), OpenAQ metadata catalog types, source-loader interfaces — `shared/src/airMonitorPipeline.ts`.
+- [x] ASNAT polygon clipping: Liang–Barsky line clipping + Sutherland–Hodgman polygon-to-rect clipping in `shared/src/polygonClip.ts`.
+- [x] rmweather / strucchange-style breakpoint detection (Bai-Perron dynamic-program with BIC model selection) — `shared/src/breakpointDetection.ts`.
+- [x] quant-air-pollution REU decomposition (random / reference / systematic components, DQO threshold overlay support) + proper Gaussian KDE (Silverman bandwidth) for scatter density — `shared/src/reuDecomposition.ts`.
+- [x] AirSensor PAT helpers with rich `LinearFit` returns: `patChannelInternalFit` (A/B + mean abs %-diff) and `patChannelExternalFit` (PA vs federal) — complement existing `domain.ts` versions. `shared/src/airSensorPat.ts`.
+- [x] rmweather meteorology-year decomposition (`decomposeMetYears`) — predictor-agnostic resampling scaffold with `trainingOnly` guard (`guardTrainingOnly`) for partial-dependence extrapolation. `shared/src/metYearDecomposition.ts`.
 - [ ] openair UI wiring: surface the new primitives in chart components (time-variation panel on the analytics page, calendar heatmap, Taylor diagram, correlation matrix, conditional-quantile panel on validation lab).
 - [ ] openair trajectory suite (`trajPlot/trajCluster/trajLevel/importTraj`) — out of scope until a back-trajectory source (HYSPLIT / hyspac) is wired up.
 
