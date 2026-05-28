@@ -69,6 +69,7 @@ export default function MobileCampaignsPage() {
   const [qcEnabled, setQcEnabled] = useState(true);
   const [maxGpsAccuracy, setMaxGpsAccuracy] = useState(100);
   const [maxSpeed, setMaxSpeed] = useState(45);
+  const [deploymentMode, setDeploymentMode] = useState<"mobile" | "fixed">("mobile");
 
   const { data: pasCollection } = useQuery({
     queryKey: ["mobile-campaign-reference-monitors"],
@@ -110,7 +111,10 @@ export default function MobileCampaignsPage() {
     return SAMPLE_REFERENCE_OBSERVATIONS;
   }, [nearestMonitor, nearestReferenceSeries, points]);
   const adjusted = useMemo(() => temporallyAdjustMobilePoints(points, referenceObservations, "1hr"), [points, referenceObservations]);
-  const segments = useMemo(() => buildRouteSegments(points, { targetDistanceKm: 0.12 }), [points]);
+  const segments = useMemo(
+    () => deploymentMode === "fixed" ? [] : buildRouteSegments(points, { targetDistanceKm: 0.12 }),
+    [points, deploymentMode],
+  );
 
   return (
     <div className={styles.layout}>
@@ -169,6 +173,13 @@ export default function MobileCampaignsPage() {
           >
             Load demo
           </Button>
+          <label className={styles.field}>
+            <span>Mode</span>
+            <select value={deploymentMode} onChange={(event) => setDeploymentMode(event.target.value as "mobile" | "fixed")}>
+              <option value="mobile">Mobile (route-aware)</option>
+              <option value="fixed">Fixed (stationary)</option>
+            </select>
+          </label>
           <label className={styles.field}>
             <span>QC</span>
             <select value={qcEnabled ? "on" : "off"} onChange={(event) => setQcEnabled(event.target.value === "on")}>

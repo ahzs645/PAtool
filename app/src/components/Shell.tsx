@@ -34,6 +34,16 @@ const navItems = [
   { to: "/data-readiness", label: "Data Readiness", icon: DataReadinessIcon },
   { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
   { to: "/reports", label: "Reports", icon: ReportIcon },
+  { to: "/openair-panels", label: "Openair Panels", icon: ChartIcon },
+  { to: "/trajectories", label: "Trajectories", icon: WindIcon },
+  { to: "/nowcast", label: "NowCast", icon: ForecastIcon },
+  { to: "/sensor-evaluation", label: "Sensor Eval", icon: ShieldIcon },
+  { to: "/temp-calibration", label: "Temp Calibration", icon: WeatherNormIcon },
+  { to: "/bitesized-extensions", label: "Super Pollutants", icon: HumanImpactIcon },
+  { to: "/reu-decomposition", label: "REU Decomposition", icon: ErrorIcon },
+  { to: "/channel-fit", label: "Channel Fit", icon: CompareIcon },
+  { to: "/rmweather-counterfactual", label: "Met-Year Counterfactual", icon: WeatherNormIcon },
+  { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
 ];
 
 function ScaleIcon() {

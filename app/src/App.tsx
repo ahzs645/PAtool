@@ -35,6 +35,16 @@ const ForecastPage = lazy(() => import("./pages/ForecastPage"));
 const WeatherNormalizationPage = lazy(() => import("./pages/WeatherNormalizationPage"));
 const HumanImpactPage = lazy(() => import("./pages/HumanImpactPage"));
 const DataReadinessPage = lazy(() => import("./pages/DataReadinessPage"));
+const OpenairPanelPage = lazy(() => import("./pages/OpenairPanelPage"));
+const NowCastPage = lazy(() => import("./pages/NowCastPage"));
+const SensorEvaluationPage = lazy(() => import("./pages/SensorEvaluationPage"));
+const TempCalibrationPage = lazy(() => import("./pages/TempCalibrationPage"));
+const BiteSizedExtensionsPage = lazy(() => import("./pages/BiteSizedExtensionsPage"));
+const ReuDecompositionPage = lazy(() => import("./pages/ReuDecompositionPage"));
+const ChannelFitPage = lazy(() => import("./pages/ChannelFitPage"));
+const RmweatherCounterfactualPage = lazy(() => import("./pages/RmweatherCounterfactualPage"));
+const TrajectoryPage = lazy(() => import("./pages/TrajectoryPage"));
+const MultiSourceLoadersPage = lazy(() => import("./pages/MultiSourceLoadersPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -75,6 +85,16 @@ function RoutesView() {
             <Route path="/weather-normalization" element={<WeatherNormalizationPage />} />
             <Route path="/human-impact" element={<HumanImpactPage />} />
             <Route path="/data-readiness" element={<DataReadinessPage />} />
+            <Route path="/openair-panels" element={<OpenairPanelPage />} />
+            <Route path="/nowcast" element={<NowCastPage />} />
+            <Route path="/sensor-evaluation" element={<SensorEvaluationPage />} />
+            <Route path="/temp-calibration" element={<TempCalibrationPage />} />
+            <Route path="/bitesized-extensions" element={<BiteSizedExtensionsPage />} />
+            <Route path="/reu-decomposition" element={<ReuDecompositionPage />} />
+            <Route path="/channel-fit" element={<ChannelFitPage />} />
+            <Route path="/rmweather-counterfactual" element={<RmweatherCounterfactualPage />} />
+            <Route path="/trajectories" element={<TrajectoryPage />} />
+            <Route path="/loaders" element={<MultiSourceLoadersPage />} />
           </Routes>
         </Suspense>
       </Shell>

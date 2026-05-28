@@ -5,7 +5,10 @@ export * from "./airSensorCompat";
 export * from "./aqi";
 export * from "./aqiStatistics";
 export * from "./baseline";
+export * from "./bitesizedBlockFixture";
 export * from "./bitesizedFixtures";
+export * from "./channelFit";
+export * from "./climateStratified";
 export * from "./conformal";
 export * from "./covariateLayers";
 export * from "./correctionBenchmark";
@@ -18,12 +21,60 @@ export * from "./dayTypes";
 export * from "./domain";
 export * from "./geo";
 export * from "./hazards";
+export * from "./humanCentricMetrics";
 export * from "./interpolationCv";
 export * from "./importMapping";
+export * from "./lifeExpectancy";
 export * from "./modeling";
 export * from "./modelZoo";
 export * from "./measurementError";
+export * from "./monitorLoaders";
+export * from "./monitorPipeline";
+export * from "./netcdfAdminAggregation";
+export * from "./nowcast";
 export * from "./openairDirectional";
+export * from "./openairPlots";
+export * from "./openairSmoothers";
+export * from "./openairStats";
+export * from "./openairTrajectories";
+export * from "./openaqCatalog";
+export * from "./paleoClimatology";
+export * from "./pollenCoExposure";
+export {
+  POLLUTANT_REPORT_TEMPLATES,
+  getPollutantReportTemplate,
+  listPollutantReportTemplates,
+  type PollutantReportTemplate,
+  type ReportTemplateSection,
+} from "./pollutantReportTemplates";
+export {
+  liangBarskyPolyline,
+  liangBarskySegment,
+  polygonBoundingRect,
+  type Point2D,
+  type Rect,
+} from "./polygonClip";
+export * from "./purpleairChannelClean";
+export * from "./purpleairGroups";
+export * from "./reuDecomposition";
+export * from "./rmweatherExtensions";
+export * from "./sdfsParameters";
+export * from "./sensortoolkitDeployment";
+export * from "./sentinelCalibrationTable";
+export {
+  filterSensorsByBoundingBox,
+  filterSensorsByPolygon,
+  filterSensorsWithinRadius,
+  nearestSensor,
+  type GeoSensor,
+  type NearestSensorMatch,
+} from "./spatialFilters";
+export * from "./splineBaseline";
+export * from "./stickyValueQc";
+export * from "./superPollutants";
+export * from "./targetDiagram";
+export * from "./tempCalibration";
+export * from "./warmupDetection";
 export {
   aggregateMobilePoints,
   buildHistogram,

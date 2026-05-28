@@ -1,0 +1,103 @@
+{
+  "metadata": {
+    "source": "Quantifying air pollution measurement errors (Crilley et al., GitHub: quantpy / quantr). Compact synthesised samples illustrating each figure's structure.",
+    "schemaVersion": 1,
+    "fields": ["dataset", "pollutant", "units", "rows"]
+  },
+  "datasets": [
+    {
+      "id": "fig5_no2",
+      "label": "Fig5 NO₂ — Manchester (Teledyne T500U vs LCS)",
+      "pollutant": "no2",
+      "units": "ppb",
+      "rows": [
+        { "reference": 12.1, "sensor": 13.5 }, { "reference": 22.7, "sensor": 24.8 },
+        { "reference": 31.4, "sensor": 33.0 }, { "reference": 41.0, "sensor": 38.7 },
+        { "reference": 8.6,  "sensor": 11.2 }, { "reference": 17.3, "sensor": 19.6 },
+        { "reference": 26.0, "sensor": 27.8 }, { "reference": 33.9, "sensor": 36.2 }
+      ]
+    },
+    {
+      "id": "fig5_o3",
+      "label": "Fig5 O₃ — Manchester (Thermo 49i vs LCS)",
+      "pollutant": "o3",
+      "units": "ppb",
+      "rows": [
+        { "reference": 5,  "sensor": 7  }, { "reference": 15, "sensor": 17 },
+        { "reference": 25, "sensor": 24 }, { "reference": 35, "sensor": 33 },
+        { "reference": 45, "sensor": 47 }, { "reference": 55, "sensor": 58 }
+      ]
+    },
+    {
+      "id": "fig6_pm25",
+      "label": "Fig6a/c PM₂.₅ — Manchester+York (Fidas200 vs LCS)",
+      "pollutant": "pm25",
+      "units": "ug/m3",
+      "rows": [
+        { "reference": 3.1, "sensor": 5.0 }, { "reference": 6.4, "sensor": 8.1 },
+        { "reference": 9.8, "sensor": 11.4 }, { "reference": 14.2, "sensor": 16.0 },
+        { "reference": 22.6, "sensor": 25.7 }, { "reference": 31.1, "sensor": 34.0 }
+      ]
+    },
+    {
+      "id": "fig6_pm25_b",
+      "label": "Fig6b PM₂.₅ — Manchester Autumn (Fidas200 vs LCS)",
+      "pollutant": "pm25",
+      "units": "ug/m3",
+      "rows": [
+        { "reference": 7.8, "sensor": 10.2 }, { "reference": 11.4, "sensor": 12.9 },
+        { "reference": 18.5, "sensor": 21.0 }, { "reference": 26.0, "sensor": 28.8 }
+      ]
+    },
+    {
+      "id": "figS2_pm25_bc",
+      "label": "FigS2 PM₂.₅ — bias-corrected LCS",
+      "pollutant": "pm25",
+      "units": "ug/m3",
+      "rows": [
+        { "reference": 4.5, "sensor": 4.6 }, { "reference": 12.0, "sensor": 12.3 },
+        { "reference": 20.5, "sensor": 21.1 }, { "reference": 28.5, "sensor": 29.0 }
+      ]
+    },
+    {
+      "id": "fig7_no2_a",
+      "label": "Fig7a NO₂ — Manchester (T500U vs T200U)",
+      "pollutant": "no2",
+      "units": "ppb",
+      "rows": [
+        { "reference": 10, "sensor": 11 }, { "reference": 20, "sensor": 19 },
+        { "reference": 35, "sensor": 36 }, { "reference": 50, "sensor": 47 }
+      ]
+    },
+    {
+      "id": "fig7_no2_b",
+      "label": "Fig7b NO₂ — Manchester (T500U vs T200U unit 2)",
+      "pollutant": "no2",
+      "units": "ppb",
+      "rows": [
+        { "reference": 8,  "sensor": 9  }, { "reference": 16, "sensor": 17 },
+        { "reference": 28, "sensor": 30 }, { "reference": 42, "sensor": 44 }
+      ]
+    },
+    {
+      "id": "figS3_o3_a",
+      "label": "FigS3a O₃ — Manchester (Thermo 49i dual)",
+      "pollutant": "o3",
+      "units": "ppb",
+      "rows": [
+        { "reference": 10, "sensor": 11 }, { "reference": 22, "sensor": 24 },
+        { "reference": 35, "sensor": 36 }, { "reference": 50, "sensor": 49 }
+      ]
+    },
+    {
+      "id": "figS3_o3_b",
+      "label": "FigS3b O₃ — Manchester (Thermo 49i vs 2B)",
+      "pollutant": "o3",
+      "units": "ppb",
+      "rows": [
+        { "reference": 12, "sensor": 14 }, { "reference": 24, "sensor": 26 },
+        { "reference": 38, "sensor": 40 }, { "reference": 52, "sensor": 55 }
+      ]
+    }
+  ]
+}
