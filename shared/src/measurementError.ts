@@ -70,6 +70,31 @@ function variance(values: number[], mean: number): number {
   return values.reduce((sum, value) => sum + (value - mean) ** 2, 0) / (values.length - 1);
 }
 
+/**
+ * @equation rmse
+ * @title Root mean squared error (RMSE)
+ * @category AQI & Metrics
+ * @latex \mathrm{RMSE} = \sqrt{\dfrac{1}{n}\sum_{i=1}^{n}(s_i - r_i)^2}
+ * @var s_i | sensor value
+ * @var r_i | reference value
+ * @cite EPA Performance Targets (Duvall et al. 2021)
+ */
+/**
+ * @equation r2
+ * @title Coefficient of determination (R²)
+ * @category AQI & Metrics
+ * @latex R^2 = \left(\dfrac{\sum (r_i-\bar r)(s_i-\bar s)}{\sqrt{\sum (r_i-\bar r)^2}\,\sqrt{\sum (s_i-\bar s)^2}}\right)^2
+ * @var r_i | reference value
+ * @var s_i | sensor value
+ */
+/**
+ * @equation nmbe
+ * @title Normalized mean bias error (NMBE) & NRMSE
+ * @category AQI & Metrics
+ * @latex \mathrm{NMBE} = \dfrac{\frac{1}{n}\sum (s_i - r_i)}{\bar r} \qquad \mathrm{NRMSE} = \dfrac{\mathrm{RMSE}}{\bar r}
+ * @var \bar r | mean reference value
+ * @cite EPA Performance Targets (Duvall et al. 2021)
+ */
 export function linearFit(pairs: MeasurementPair[]): LinearFit {
   const usable = finitePairs(pairs);
   const n = usable.length;

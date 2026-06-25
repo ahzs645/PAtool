@@ -704,6 +704,15 @@ function roundNonNegative(value: number, digits = 3): number {
   return Number(Math.max(0, value).toFixed(digits));
 }
 
+/**
+ * @equation barkjohn-2021
+ * @title Barkjohn 2021 US-wide PurpleAir PM2.5 correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.524 \cdot PA_{cf1} - 0.0862 \cdot RH + 5.75
+ * @var PA_{cf1} | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @cite Barkjohn, Gantt & Clements 2021, Atmos. Meas. Tech.
+ */
 function barkjohn2021(pm25Cf1: number, humidity: number | null): number {
   if (humidity === null) {
     throw new Error("Barkjohn 2021 correction requires PurpleAir relative humidity.");
@@ -746,6 +755,16 @@ function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
 // blends into a high-smoke quadratic (210–260) while fading out the RH term,
 // and finally drops RH entirely above 260 so the curve stays monotonic at
 // extreme concentrations. All breakpoints are continuous by construction.
+/**
+ * @equation airnow-fsmap
+ * @title EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)
+ * @category Corrections
+ * @latex PM_{2.5} = \begin{cases} 0.524\,PA - 0.0862\,RH + 5.75 & PA < 30 \\ [0.786 f + 0.524(1-f)]\,PA - 0.0862\,RH + 5.75,\ f=\tfrac{PA}{20}-\tfrac{3}{2} & 30 \le PA < 50 \\ 0.786\,PA - 0.0862\,RH + 5.75 & 50 \le PA < 210 \\ [0.69 f + 0.786(1-f)]\,PA - 0.0862\,RH(1-f) + 2.966 f + 5.75(1-f) + 8.84\times10^{-4} PA^2 f,\ f=\tfrac{PA}{50}-\tfrac{21}{5} & 210 \le PA < 260 \\ 2.966 + 0.69\,PA + 8.84\times10^{-4}\,PA^2 & PA \ge 260 \end{cases}
+ * @var PA | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @plain Barkjohn 2021 extended to high smoke through 5 continuous segments; RH fades out 210-260 and is dropped above 260.
+ * @cite Barkjohn et al. 2025 (ASNAT), Atmosphere — Equation 1
+ */
 function epaAirnowFsmap(pm25Cf1: number, humidity: number | null): number {
   const pa = pm25Cf1;
   const rh = humidity ?? 0; // RH term contributes 0 when humidity is unavailable
@@ -774,6 +793,16 @@ function epaAirnowFsmap(pm25Cf1: number, humidity: number | null): number {
 
 // Nilson et al. 2024 (AMT, doi.org/10.5194/amt-17-6735-2024) RH+T
 // multilinear correction. Uses temperature in Celsius.
+/**
+ * @equation nilson-2024
+ * @title Nilson 2024 RH + temperature multilinear correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.412 \cdot PA_{cf1} - 0.0594 \cdot RH - 0.0314 \cdot T_C + 7.74
+ * @var PA_{cf1} | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @var T_C | temperature (°C)
+ * @cite Nilson et al. 2024, Atmos. Meas. Tech.
+ */
 function nilson2024RhTemp(pm25Cf1: number, humidity: number | null, temperatureF?: number | null): number {
   if (humidity === null) {
     throw new Error("Nilson 2024 RH+T correction requires relative humidity.");
@@ -2924,6 +2953,16 @@ function mergeCoincidentPoints(points: InterpolationPoint[]): InterpolationPoint
   }));
 }
 
+/**
+ * @equation idw
+ * @title Inverse-distance weighting (IDW)
+ * @category Interpolation
+ * @latex \hat{z}(x_0) = \dfrac{\sum_{i=1}^{n} d_i^{-p}\, z_i}{\sum_{i=1}^{n} d_i^{-p}}
+ * @var d_i | distance from target x_0 to known point i
+ * @var z_i | observed value at point i
+ * @var p | power parameter (default 2)
+ * @cite Shepard 1968
+ */
 export function idwInterpolate(
   knownPoints: InterpolationPoint[],
   gridWidth: number,
@@ -3129,6 +3168,16 @@ function normalizeStOptions(options: SpatioTemporalIdwOptions): {
   };
 }
 
+/**
+ * @equation st-idw
+ * @title Spatio-temporal IDW (Carroll et al. 2025)
+ * @category Interpolation
+ * @latex w_{ij} = \dfrac{1}{d_i^{2} + C\,|t_j - t_0|} \qquad \hat{x}_{kl} = \sum_i \sum_j \tilde{w}_{ij}\, x_{ij}
+ * @var d_i | spatial distance to monitor i
+ * @var |t_j - t_0| | absolute time difference
+ * @var C | time-weight scalar (LOOCV-tuned; ~10 for NC)
+ * @cite Carroll et al. 2025, Scientific Reports
+ */
 export function idwSpatioTemporalEstimate(
   points: SpatioTemporalPoint[],
   queries: SpatioTemporalQuery[],
@@ -3444,6 +3493,17 @@ function fitSphericalVariogram(
 }
 
 /** Spherical variogram model */
+/**
+ * @equation spherical-variogram
+ * @title Spherical variogram (ordinary kriging)
+ * @category Interpolation
+ * @latex \gamma(h) = \begin{cases} 0 & h = 0 \\ c_0 + c\left(\tfrac{3h}{2a} - \tfrac{1}{2}\tfrac{h^3}{a^3}\right) & 0 < h < a \\ c_0 + c & h \ge a \end{cases}
+ * @var h | separation distance (lag)
+ * @var c_0 | nugget
+ * @var c | partial sill
+ * @var a | range
+ * @cite Cressie 1993, Statistics for Spatial Data
+ */
 function sphericalVariogram(h: number, nugget: number, sill: number, range: number): number {
   if (h === 0) return 0;
   if (h >= range) return nugget + sill;

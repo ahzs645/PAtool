@@ -16,6 +16,7 @@ export * from "./conformal";
 export * from "./covariateLayers";
 export * from "./correctionBenchmark";
 export * from "./ejCoverage";
+export * from "./equations";
 export * from "./exposureModeling";
 export * from "./forecast";
 export * from "./epaEvaluation";

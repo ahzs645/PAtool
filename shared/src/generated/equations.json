@@ -1,0 +1,388 @@
+[
+  {
+    "id": "r2",
+    "title": "Coefficient of determination (R²)",
+    "category": "AQI & Metrics",
+    "latex": [
+      "R^2 = \\left(\\dfrac{\\sum (r_i-\\bar r)(s_i-\\bar s)}{\\sqrt{\\sum (r_i-\\bar r)^2}\\,\\sqrt{\\sum (s_i-\\bar s)^2}}\\right)^2"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "r_i",
+        "meaning": "reference value"
+      },
+      {
+        "symbol": "s_i",
+        "meaning": "sensor value"
+      }
+    ],
+    "cite": "",
+    "file": "shared/src/measurementError.ts",
+    "line": 82
+  },
+  {
+    "id": "nowcast-pm",
+    "title": "EPA NowCast (PM) weighted average",
+    "category": "AQI & Metrics",
+    "latex": [
+      "w = \\max\\!\\left(0.5,\\ \\tfrac{c_{min}}{c_{max}}\\right) \\qquad \\hat{c} = \\dfrac{\\sum_{k=0}^{n-1} w^{k} c_{k}}{\\sum_{k=0}^{n-1} w^{k}}"
+    ],
+    "plain": "12-hour weighted average; requires >=2 of the 3 most recent hours valid.",
+    "vars": [
+      {
+        "symbol": "c_k",
+        "meaning": "hourly concentration, k hours before now (k=0 most recent)"
+      },
+      {
+        "symbol": "w",
+        "meaning": "weight factor (floor 0.5 for US PM, 0.1 for Asian PM)"
+      }
+    ],
+    "cite": "AirNow \"How is the NowCast algorithm used to report current air quality\"",
+    "file": "shared/src/nowcast.ts",
+    "line": 46
+  },
+  {
+    "id": "nmbe",
+    "title": "Normalized mean bias error (NMBE) & NRMSE",
+    "category": "AQI & Metrics",
+    "latex": [
+      "\\mathrm{NMBE} = \\dfrac{\\frac{1}{n}\\sum (s_i - r_i)}{\\bar r} \\qquad \\mathrm{NRMSE} = \\dfrac{\\mathrm{RMSE}}{\\bar r}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\bar r",
+        "meaning": "mean reference value"
+      }
+    ],
+    "cite": "EPA Performance Targets (Duvall et al. 2021)",
+    "file": "shared/src/measurementError.ts",
+    "line": 90
+  },
+  {
+    "id": "rmse",
+    "title": "Root mean squared error (RMSE)",
+    "category": "AQI & Metrics",
+    "latex": [
+      "\\mathrm{RMSE} = \\sqrt{\\dfrac{1}{n}\\sum_{i=1}^{n}(s_i - r_i)^2}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "s_i",
+        "meaning": "sensor value"
+      },
+      {
+        "symbol": "r_i",
+        "meaning": "reference value"
+      }
+    ],
+    "cite": "EPA Performance Targets (Duvall et al. 2021)",
+    "file": "shared/src/measurementError.ts",
+    "line": 73
+  },
+  {
+    "id": "aqi-piecewise",
+    "title": "US Air Quality Index (piecewise linear)",
+    "category": "AQI & Metrics",
+    "latex": [
+      "\\mathrm{AQI} = \\dfrac{I_{hi} - I_{lo}}{C_{hi} - C_{lo}}\\,(C - C_{lo}) + I_{lo}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "C",
+        "meaning": "truncated pollutant concentration"
+      },
+      {
+        "symbol": "C_{lo}, C_{hi}",
+        "meaning": "concentration breakpoints of the containing category"
+      },
+      {
+        "symbol": "I_{lo}, I_{hi}",
+        "meaning": "AQI values of that category"
+      }
+    ],
+    "cite": "US EPA AQI (40 CFR Part 58, Appendix G)",
+    "file": "shared/src/aqi.ts",
+    "line": 86
+  },
+  {
+    "id": "asnat-correction-forms",
+    "title": "ASNAT sensor correction forms (single / additive / interactive)",
+    "category": "Corrections",
+    "latex": [
+      "\\text{single: } \\hat{y} = \\sum_{i=0}^{p} a_i x^{i}",
+      "\\text{additive: } \\hat{y} = \\sum_{i=0}^{p} a_i x^{i} + \\sum_{j=1}^{p} b_j z^{j}",
+      "\\text{interactive: } \\hat{y} = \\sum_{i=0}^{p} a_i x^{i} + \\sum_{j=1}^{p} b_j z^{j} + \\sum_{i=1}^{p}\\sum_{j=1}^{p} c_{ij}\\, x^{i} z^{j}"
+    ],
+    "plain": "Least-squares fit; coefficients require >=20/30/40 rows for linear/quadratic/cubic.",
+    "vars": [
+      {
+        "symbol": "x",
+        "meaning": "predictor variable (e.g. sensor reading)"
+      },
+      {
+        "symbol": "z",
+        "meaning": "optional third variable (e.g. RH or temperature)"
+      },
+      {
+        "symbol": "p",
+        "meaning": "polynomial order (1 linear, 2 quadratic, 3 cubic)"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Atmosphere — corrections tab",
+    "file": "shared/src/asnatCorrections.ts",
+    "line": 141
+  },
+  {
+    "id": "barkjohn-2021",
+    "title": "Barkjohn 2021 US-wide PurpleAir PM2.5 correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 0.524 \\cdot PA_{cf1} - 0.0862 \\cdot RH + 5.75"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{cf1}",
+        "meaning": "PurpleAir CF=1 PM2.5 (µg/m³)"
+      },
+      {
+        "symbol": "RH",
+        "meaning": "relative humidity (%)"
+      }
+    ],
+    "cite": "Barkjohn, Gantt & Clements 2021, Atmos. Meas. Tech.",
+    "file": "shared/src/domain.ts",
+    "line": 707
+  },
+  {
+    "id": "airnow-fsmap",
+    "title": "EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = \\begin{cases} 0.524\\,PA - 0.0862\\,RH + 5.75 & PA < 30 \\\\ [0.786 f + 0.524(1-f)]\\,PA - 0.0862\\,RH + 5.75,\\ f=\\tfrac{PA}{20}-\\tfrac{3}{2} & 30 \\le PA < 50 \\\\ 0.786\\,PA - 0.0862\\,RH + 5.75 & 50 \\le PA < 210 \\\\ [0.69 f + 0.786(1-f)]\\,PA - 0.0862\\,RH(1-f) + 2.966 f + 5.75(1-f) + 8.84\\times10^{-4} PA^2 f,\\ f=\\tfrac{PA}{50}-\\tfrac{21}{5} & 210 \\le PA < 260 \\\\ 2.966 + 0.69\\,PA + 8.84\\times10^{-4}\\,PA^2 & PA \\ge 260 \\end{cases}"
+    ],
+    "plain": "Barkjohn 2021 extended to high smoke through 5 continuous segments; RH fades out 210-260 and is dropped above 260.",
+    "vars": [
+      {
+        "symbol": "PA",
+        "meaning": "PurpleAir CF=1 PM2.5 (µg/m³)"
+      },
+      {
+        "symbol": "RH",
+        "meaning": "relative humidity (%)"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Atmosphere — Equation 1",
+    "file": "shared/src/domain.ts",
+    "line": 758
+  },
+  {
+    "id": "nilson-2024",
+    "title": "Nilson 2024 RH + temperature multilinear correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 0.412 \\cdot PA_{cf1} - 0.0594 \\cdot RH - 0.0314 \\cdot T_C + 7.74"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{cf1}",
+        "meaning": "PurpleAir CF=1 PM2.5 (µg/m³)"
+      },
+      {
+        "symbol": "RH",
+        "meaning": "relative humidity (%)"
+      },
+      {
+        "symbol": "T_C",
+        "meaning": "temperature (°C)"
+      }
+    ],
+    "cite": "Nilson et al. 2024, Atmos. Meas. Tech.",
+    "file": "shared/src/domain.ts",
+    "line": 796
+  },
+  {
+    "id": "idw",
+    "title": "Inverse-distance weighting (IDW)",
+    "category": "Interpolation",
+    "latex": [
+      "\\hat{z}(x_0) = \\dfrac{\\sum_{i=1}^{n} d_i^{-p}\\, z_i}{\\sum_{i=1}^{n} d_i^{-p}}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "d_i",
+        "meaning": "distance from target x_0 to known point i"
+      },
+      {
+        "symbol": "z_i",
+        "meaning": "observed value at point i"
+      },
+      {
+        "symbol": "p",
+        "meaning": "power parameter (default 2)"
+      }
+    ],
+    "cite": "Shepard 1968",
+    "file": "shared/src/domain.ts",
+    "line": 2956
+  },
+  {
+    "id": "st-idw",
+    "title": "Spatio-temporal IDW (Carroll et al. 2025)",
+    "category": "Interpolation",
+    "latex": [
+      "w_{ij} = \\dfrac{1}{d_i^{2} + C\\,|t_j - t_0|} \\qquad \\hat{x}_{kl} = \\sum_i \\sum_j \\tilde{w}_{ij}\\, x_{ij}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "d_i",
+        "meaning": "spatial distance to monitor i"
+      },
+      {
+        "symbol": "",
+        "meaning": "t_j - t_0| | absolute time difference"
+      },
+      {
+        "symbol": "C",
+        "meaning": "time-weight scalar (LOOCV-tuned; ~10 for NC)"
+      }
+    ],
+    "cite": "Carroll et al. 2025, Scientific Reports",
+    "file": "shared/src/domain.ts",
+    "line": 3171
+  },
+  {
+    "id": "spherical-variogram",
+    "title": "Spherical variogram (ordinary kriging)",
+    "category": "Interpolation",
+    "latex": [
+      "\\gamma(h) = \\begin{cases} 0 & h = 0 \\\\ c_0 + c\\left(\\tfrac{3h}{2a} - \\tfrac{1}{2}\\tfrac{h^3}{a^3}\\right) & 0 < h < a \\\\ c_0 + c & h \\ge a \\end{cases}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "h",
+        "meaning": "separation distance (lag)"
+      },
+      {
+        "symbol": "c_0",
+        "meaning": "nugget"
+      },
+      {
+        "symbol": "c",
+        "meaning": "partial sill"
+      },
+      {
+        "symbol": "a",
+        "meaning": "range"
+      }
+    ],
+    "cite": "Cressie 1993, Statistics for Spatial Data",
+    "file": "shared/src/domain.ts",
+    "line": 3496
+  },
+  {
+    "id": "flag-hampel",
+    "title": "Hampel filter outlier flag (code 86)",
+    "category": "QC & Flagging",
+    "latex": [
+      "\\text{flag if } |x_i - \\tilde{x}| > t \\cdot 1.4826 \\cdot \\mathrm{MAD}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\tilde{x}",
+        "meaning": "rolling median over the window"
+      },
+      {
+        "symbol": "\\mathrm{MAD}",
+        "meaning": "median absolute deviation"
+      },
+      {
+        "symbol": "t",
+        "meaning": "user threshold"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Table S2",
+    "file": "shared/src/asnatFlags.ts",
+    "line": 365
+  },
+  {
+    "id": "neighbor-percent-difference",
+    "title": "Neighbor percent-difference flag (code 81)",
+    "category": "QC & Flagging",
+    "latex": [
+      "\\text{\\%diff} = \\dfrac{2\\,|x - y|}{|x| + |y|}\\times 100"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "x",
+        "meaning": "value at site X"
+      },
+      {
+        "symbol": "y",
+        "meaning": "value at neighboring site Y"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Table S2",
+    "file": "shared/src/asnatFlags.ts",
+    "line": 600
+  },
+  {
+    "id": "flag-zscore",
+    "title": "Statistical outlier flag (code 85)",
+    "category": "QC & Flagging",
+    "latex": [
+      "\\text{flag if } |x_i - \\bar{x}| > k\\,\\sigma"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "x_i",
+        "meaning": "observation"
+      },
+      {
+        "symbol": "\\bar{x}",
+        "meaning": "station mean (within optional time window)"
+      },
+      {
+        "symbol": "k",
+        "meaning": "user threshold (standard deviations)"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Table S2",
+    "file": "shared/src/asnatFlags.ts",
+    "line": 355
+  },
+  {
+    "id": "flag-spike",
+    "title": "Sudden spike / drop flag (codes 70 / 71)",
+    "category": "QC & Flagging",
+    "latex": [
+      "\\text{flag if } \\left|\\dfrac{x_i - \\mu_W}{\\mu_W}\\right| > \\tau"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\mu_W",
+        "meaning": "mean of the previous W values"
+      },
+      {
+        "symbol": "\\tau",
+        "meaning": "user threshold (fractional change)"
+      }
+    ],
+    "cite": "Barkjohn et al. 2025 (ASNAT), Table S2",
+    "file": "shared/src/asnatFlags.ts",
+    "line": 375
+  }
+]

@@ -352,6 +352,35 @@ function groupBy<T>(rows: T[], key: (row: T) => string): Map<string, number[]> {
  * aligned per-row flag codes. Rows are grouped by station id; time-ordered
  * flags sort each station's rows by timestamp.
  */
+/**
+ * @equation flag-zscore
+ * @title Statistical outlier flag (code 85)
+ * @category QC & Flagging
+ * @latex \text{flag if } |x_i - \bar{x}| > k\,\sigma
+ * @var x_i | observation
+ * @var \bar{x} | station mean (within optional time window)
+ * @var k | user threshold (standard deviations)
+ * @cite Barkjohn et al. 2025 (ASNAT), Table S2
+ */
+/**
+ * @equation flag-hampel
+ * @title Hampel filter outlier flag (code 86)
+ * @category QC & Flagging
+ * @latex \text{flag if } |x_i - \tilde{x}| > t \cdot 1.4826 \cdot \mathrm{MAD}
+ * @var \tilde{x} | rolling median over the window
+ * @var \mathrm{MAD} | median absolute deviation
+ * @var t | user threshold
+ * @cite Barkjohn et al. 2025 (ASNAT), Table S2
+ */
+/**
+ * @equation flag-spike
+ * @title Sudden spike / drop flag (codes 70 / 71)
+ * @category QC & Flagging
+ * @latex \text{flag if } \left|\dfrac{x_i - \mu_W}{\mu_W}\right| > \tau
+ * @var \mu_W | mean of the previous W values
+ * @var \tau | user threshold (fractional change)
+ * @cite Barkjohn et al. 2025 (ASNAT), Table S2
+ */
 export function flagAsnatSeries(rows: AsnatRow[], options: AsnatFlagOptions = {}): FlaggedRow[] {
   const valueField = options.valueField ?? "value";
   const offset = options.timezoneOffsetHours ?? 0;
@@ -568,6 +597,15 @@ function rSquared(samples: NeighborPairSample[]): number {
   return (ssXY * ssXY) / (ssXX * ssYY);
 }
 
+/**
+ * @equation neighbor-percent-difference
+ * @title Neighbor percent-difference flag (code 81)
+ * @category QC & Flagging
+ * @latex \text{\%diff} = \dfrac{2\,|x - y|}{|x| + |y|}\times 100
+ * @var x | value at site X
+ * @var y | value at neighboring site Y
+ * @cite Barkjohn et al. 2025 (ASNAT), Table S2
+ */
 /** Apply neighbor flags 80/81/82 to a set of matched X/Y samples for one pair. */
 export function flagNeighborPair(samples: NeighborPairSample[], thresholds: NeighborFlagThresholds): NeighborFlagResult {
   const flags: Set<number>[] = samples.map(() => new Set<number>());

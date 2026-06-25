@@ -138,6 +138,19 @@ function formatEquation(terms: string[], coefficients: number[]): string {
   return `y = ${parts.join(" ")}`.replace("y = + ", "y = ");
 }
 
+/**
+ * @equation asnat-correction-forms
+ * @title ASNAT sensor correction forms (single / additive / interactive)
+ * @category Corrections
+ * @latex \text{single: } \hat{y} = \sum_{i=0}^{p} a_i x^{i}
+ * @latex \text{additive: } \hat{y} = \sum_{i=0}^{p} a_i x^{i} + \sum_{j=1}^{p} b_j z^{j}
+ * @latex \text{interactive: } \hat{y} = \sum_{i=0}^{p} a_i x^{i} + \sum_{j=1}^{p} b_j z^{j} + \sum_{i=1}^{p}\sum_{j=1}^{p} c_{ij}\, x^{i} z^{j}
+ * @var x | predictor variable (e.g. sensor reading)
+ * @var z | optional third variable (e.g. RH or temperature)
+ * @var p | polynomial order (1 linear, 2 quadratic, 3 cubic)
+ * @plain Least-squares fit; coefficients require >=20/30/40 rows for linear/quadratic/cubic.
+ * @cite Barkjohn et al. 2025 (ASNAT), Atmosphere — corrections tab
+ */
 export function developCorrection(
   rows: readonly CorrectionInputRow[],
   options: DevelopCorrectionOptions = {},
