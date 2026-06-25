@@ -3,6 +3,7 @@ export * from "./analysisBundle";
 export * from "./airQualityMetrics";
 export * from "./airSensorCompat";
 export * from "./aqi";
+export * from "./asnatFlags";
 export * from "./aqiStatistics";
 export * from "./baseline";
 export * from "./bitesizedBlockFixture";
