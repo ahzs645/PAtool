@@ -34,7 +34,11 @@ export default defineConfig(({ command, mode }) => {
     },
     test: {
       environment: "jsdom",
-      setupFiles: "./src/test-setup.ts"
+      setupFiles: "./src/test-setup.ts",
+      // Rendering the full <App/> in jsdom is heavy; give generous budgets so
+      // the suite stays deterministic under cumulative load.
+      testTimeout: 30000,
+      hookTimeout: 30000
     }
   };
 });

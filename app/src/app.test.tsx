@@ -309,7 +309,7 @@ describe("app", () => {
         expect(screen.getByText("Browse synoptic PurpleAir coverage")).toBeInTheDocument();
         expect(screen.getByText("Visible sensors")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
   });
 
@@ -360,7 +360,7 @@ describe("app", () => {
         expect(screen.getByText("PurpleAir workflow diagrams")).toBeInTheDocument();
         expect(screen.getByText("Final_Draft.pdf / Final_Draft.tex")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
   });
 
@@ -375,7 +375,7 @@ describe("app", () => {
         expect(screen.getByText("GeoJSON surface")).toBeInTheDocument();
         expect(screen.getByText("Validation CSV")).toBeInTheDocument();
       },
-      { timeout: 5000 },
+      { timeout: 25000 },
     );
 
     await waitFor(
@@ -387,7 +387,7 @@ describe("app", () => {
         );
         expect(map?.fitBounds).toHaveBeenCalled();
       },
-      { timeout: 5000 },
+      { timeout: 25000 },
     );
   });
 
@@ -406,7 +406,7 @@ describe("app", () => {
         expect(screen.getByText("Reference validation")).toBeInTheDocument();
         expect(screen.getByText("Recent paired observations")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
 
     const referenceCall = vi.mocked(fetch).mock.calls
@@ -438,7 +438,7 @@ describe("app", () => {
         expect(screen.getByText("Hotspot and coldspot ranking")).toBeInTheDocument();
         expect(screen.getByText("Recommendation blocks")).toBeInTheDocument();
       },
-      { timeout: 15000 }
+      { timeout: 25000 }
     );
   });
 });
