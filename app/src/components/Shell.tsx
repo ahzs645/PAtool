@@ -24,6 +24,8 @@ const navItems = [
   { to: "/reliability", label: "Reliability", icon: ShieldIcon },
   { to: "/comparison", label: "Comparison", icon: CompareIcon },
   { to: "/network-qa", label: "Network QA", icon: NetworkIcon },
+  { to: "/flagging", label: "Flagging", icon: ValidationIcon },
+  { to: "/corrections", label: "Corrections", icon: CompareIcon },
   { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
   { to: "/health", label: "Health", icon: HealthIcon },
   { to: "/poi", label: "Schools / POIs", icon: PinIcon },

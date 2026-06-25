@@ -45,6 +45,8 @@ const ChannelFitPage = lazy(() => import("./pages/ChannelFitPage"));
 const RmweatherCounterfactualPage = lazy(() => import("./pages/RmweatherCounterfactualPage"));
 const TrajectoryPage = lazy(() => import("./pages/TrajectoryPage"));
 const MultiSourceLoadersPage = lazy(() => import("./pages/MultiSourceLoadersPage"));
+const FlaggingPage = lazy(() => import("./pages/FlaggingPage"));
+const CorrectionsPage = lazy(() => import("./pages/CorrectionsPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -95,6 +97,8 @@ function RoutesView() {
             <Route path="/rmweather-counterfactual" element={<RmweatherCounterfactualPage />} />
             <Route path="/trajectories" element={<TrajectoryPage />} />
             <Route path="/loaders" element={<MultiSourceLoadersPage />} />
+            <Route path="/flagging" element={<FlaggingPage />} />
+            <Route path="/corrections" element={<CorrectionsPage />} />
           </Routes>
         </Suspense>
       </Shell>
