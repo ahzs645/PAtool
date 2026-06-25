@@ -139,6 +139,15 @@ export function linearFit(pairs: MeasurementPair[]): LinearFit {
   };
 }
 
+/**
+ * @equation bland-altman
+ * @title Bland-Altman limits of agreement
+ * @category Validation & Uncertainty
+ * @latex \text{LoA} = \bar{d} \pm 1.96\,\mathrm{SD}(d), \quad d = s - r
+ * @var \bar{d} | mean sensor-reference difference
+ * @var \mathrm{SD}(d) | standard deviation of the differences
+ * @cite Bland & Altman 1986
+ */
 export function blandAltman(pairs: MeasurementPair[]): BlandAltmanSummary {
   const points = finitePairs(pairs).map((pair) => ({
     index: pair.index,
@@ -163,6 +172,17 @@ export function blandAltman(pairs: MeasurementPair[]): BlandAltmanSummary {
   };
 }
 
+/**
+ * @equation reu
+ * @title Relative expanded uncertainty (REU)
+ * @category Validation & Uncertainty
+ * @latex \mathrm{REU} = \dfrac{k}{|x|}\sqrt{\sigma_v^{2} - u_{ref}^{2} + \big(b_0 + (m-1)\,r\big)^{2}}\times 100
+ * @var \sigma_v^2 | residual variance of the sensor-reference fit
+ * @var u_{ref} | reference-method uncertainty
+ * @var b_0, m | fit intercept and slope; r reference value
+ * @var k | coverage factor (default 2)
+ * @cite EPA Performance Targets (Duvall et al. 2021)
+ */
 export function relativeExpandedUncertainty(
   pairs: MeasurementPair[],
   options: { k?: number; referenceUncertainty?: number; minSamples?: number } = {},

@@ -44,6 +44,15 @@ function isFinite_(v: number | null | undefined): v is number {
  * checks fail.
  */
 /**
+ * @equation nowcast-ozone
+ * @title EPA NowCast (ozone) trailing mean
+ * @category AQI & Metrics
+ * @latex \hat{c} = \dfrac{1}{n}\sum_{k=1}^{n} c_k \quad (n \le 8 \text{ valid hours})
+ * @var c_k | hourly ozone concentration
+ * @plain Ozone uses a simple unweighted mean over the trailing 8-hour window.
+ * @cite AirNow NowCast (ozone variant)
+ */
+/**
  * @equation nowcast-pm
  * @title EPA NowCast (PM) weighted average
  * @category AQI & Metrics

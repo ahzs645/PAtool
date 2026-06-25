@@ -22,6 +22,24 @@
     "line": 82
   },
   {
+    "id": "nowcast-ozone",
+    "title": "EPA NowCast (ozone) trailing mean",
+    "category": "AQI & Metrics",
+    "latex": [
+      "\\hat{c} = \\dfrac{1}{n}\\sum_{k=1}^{n} c_k \\quad (n \\le 8 \\text{ valid hours})"
+    ],
+    "plain": "Ozone uses a simple unweighted mean over the trailing 8-hour window.",
+    "vars": [
+      {
+        "symbol": "c_k",
+        "meaning": "hourly ozone concentration"
+      }
+    ],
+    "cite": "AirNow NowCast (ozone variant)",
+    "file": "shared/src/nowcast.ts",
+    "line": 46
+  },
+  {
     "id": "nowcast-pm",
     "title": "EPA NowCast (PM) weighted average",
     "category": "AQI & Metrics",
@@ -41,7 +59,7 @@
     ],
     "cite": "AirNow \"How is the NowCast algorithm used to report current air quality\"",
     "file": "shared/src/nowcast.ts",
-    "line": 46
+    "line": 55
   },
   {
     "id": "nmbe",
@@ -160,6 +178,42 @@
     "line": 707
   },
   {
+    "id": "barkjohn-2022-smoke",
+    "title": "Barkjohn 2022 extreme-smoke CF=1 extension",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 4.21\\times10^{-4}\\,PA_{cf1}^{2} + 0.392\\,PA_{cf1} + 3.44 \\quad (PA_{cf1} \\ge 611)"
+    ],
+    "plain": "Below 570 uses Barkjohn 2021; 570-611 linearly blends into this quadratic.",
+    "vars": [
+      {
+        "symbol": "PA_{cf1}",
+        "meaning": "PurpleAir CF=1 PM2.5 (µg/m³)"
+      }
+    ],
+    "cite": "Barkjohn et al. 2022 (extreme smoke)",
+    "file": "shared/src/domain.ts",
+    "line": 723
+  },
+  {
+    "id": "delp-singer-2020",
+    "title": "Delp & Singer 2020 wildfire single-multiplier correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 0.48 \\cdot PA_{atm}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{atm}",
+        "meaning": "PurpleAir ATM PM2.5 (µg/m³)"
+      }
+    ],
+    "cite": "Delp & Singer 2020, Environ. Sci. Technol.",
+    "file": "shared/src/domain.ts",
+    "line": 846
+  },
+  {
     "id": "airnow-fsmap",
     "title": "EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)",
     "category": "Corrections",
@@ -179,7 +233,69 @@
     ],
     "cite": "Barkjohn et al. 2025 (ASNAT), Atmosphere — Equation 1",
     "file": "shared/src/domain.ts",
-    "line": 758
+    "line": 785
+  },
+  {
+    "id": "lrapa-2017",
+    "title": "LRAPA 2017 PurpleAir correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 0.5 \\cdot PA_{atm} - 0.66"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{atm}",
+        "meaning": "PurpleAir ATM PM2.5 (µg/m³)"
+      }
+    ],
+    "cite": "Lane Regional Air Protection Agency 2017",
+    "file": "shared/src/domain.ts",
+    "line": 861
+  },
+  {
+    "id": "nilson-polynomial",
+    "title": "Nilson 2022 polynomial ATM + RH correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = 0.53\\,PA_{atm} + 0.000952\\,PA_{atm}^{2} - 0.0914\\,RH + 6.3"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{atm}",
+        "meaning": "PurpleAir ATM PM2.5 (µg/m³)"
+      },
+      {
+        "symbol": "RH",
+        "meaning": "relative humidity (%)"
+      }
+    ],
+    "cite": "Nilson et al. 2022",
+    "file": "shared/src/domain.ts",
+    "line": 759
+  },
+  {
+    "id": "nilson-rh-growth",
+    "title": "Nilson 2022 RH-growth ATM correction",
+    "category": "Corrections",
+    "latex": [
+      "PM_{2.5} = \\dfrac{PA_{atm}}{1 + \\dfrac{0.24}{\\frac{100}{RH} - 1}}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "PA_{atm}",
+        "meaning": "PurpleAir ATM PM2.5 (µg/m³)"
+      },
+      {
+        "symbol": "RH",
+        "meaning": "relative humidity (%)"
+      }
+    ],
+    "cite": "Nilson et al. 2022",
+    "file": "shared/src/domain.ts",
+    "line": 743
   },
   {
     "id": "nilson-2024",
@@ -205,7 +321,33 @@
     ],
     "cite": "Nilson et al. 2024, Atmos. Meas. Tech.",
     "file": "shared/src/domain.ts",
-    "line": 796
+    "line": 823
+  },
+  {
+    "id": "life-expectancy-loss",
+    "title": "PM2.5 life-expectancy loss (AQLI log-linear)",
+    "category": "Exposure & Health",
+    "latex": [
+      "\\mathrm{HR} = e^{\\beta\\,(PM_{2.5} - C_0)}, \\quad \\mathrm{YLL} = LE\\left(1 - \\tfrac{1}{\\mathrm{HR}}\\right)"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\beta",
+        "meaning": "hazard exponent per µg/m³ (default 0.014, AQLI)"
+      },
+      {
+        "symbol": "C_0",
+        "meaning": "counterfactual concentration (default 5 µg/m³)"
+      },
+      {
+        "symbol": "LE",
+        "meaning": "baseline life expectancy (years)"
+      }
+    ],
+    "cite": "Air Quality Life Index (AQLI); Pope et al.",
+    "file": "shared/src/lifeExpectancy.ts",
+    "line": 30
   },
   {
     "id": "idw",
@@ -231,7 +373,33 @@
     ],
     "cite": "Shepard 1968",
     "file": "shared/src/domain.ts",
-    "line": 2956
+    "line": 2999
+  },
+  {
+    "id": "st-sum-metric-variogram",
+    "title": "Space-time sum-metric variogram",
+    "category": "Interpolation",
+    "latex": [
+      "\\gamma(h, u) = \\gamma_s(h) + \\gamma_t(u) + \\gamma_{st}\\!\\left(\\sqrt{h^2 + (\\kappa\\, u)^2}\\right)"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "h",
+        "meaning": "spatial lag (km)"
+      },
+      {
+        "symbol": "u",
+        "meaning": "temporal lag (days)"
+      },
+      {
+        "symbol": "\\kappa",
+        "meaning": "spatio-temporal anisotropy (km/day)"
+      }
+    ],
+    "cite": "Kar et al. 2024; Carroll et al. 2025 (sum-metric ST kriging)",
+    "file": "shared/src/spaceTimeKriging.ts",
+    "line": 224
   },
   {
     "id": "st-idw",
@@ -257,7 +425,7 @@
     ],
     "cite": "Carroll et al. 2025, Scientific Reports",
     "file": "shared/src/domain.ts",
-    "line": 3171
+    "line": 3214
   },
   {
     "id": "spherical-variogram",
@@ -287,7 +455,47 @@
     ],
     "cite": "Cressie 1993, Statistics for Spatial Data",
     "file": "shared/src/domain.ts",
-    "line": 3496
+    "line": 3539
+  },
+  {
+    "id": "circular-mean",
+    "title": "Circular mean (wind direction)",
+    "category": "Meteorology",
+    "latex": [
+      "\\bar{\\theta} = \\operatorname{atan2}\\!\\left(\\tfrac{1}{n}\\sum \\sin\\theta_i,\\ \\tfrac{1}{n}\\sum \\cos\\theta_i\\right) \\bmod 360^{\\circ}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\theta_i",
+        "meaning": "wind direction (degrees)"
+      }
+    ],
+    "cite": "Mardia & Jupp, Directional Statistics",
+    "file": "shared/src/openairDirectional.ts",
+    "line": 231
+  },
+  {
+    "id": "theil-sen",
+    "title": "Theil-Sen robust trend",
+    "category": "Meteorology",
+    "latex": [
+      "\\hat{\\beta} = \\mathrm{median}\\left\\{\\dfrac{y_j - y_i}{t_j - t_i} : i < j\\right\\}, \\quad \\hat{\\alpha} = \\mathrm{median}\\{y_k - \\hat{\\beta}\\, t_k\\}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "y",
+        "meaning": "series value"
+      },
+      {
+        "symbol": "t",
+        "meaning": "time (days)"
+      }
+    ],
+    "cite": "Theil 1950; Sen 1968",
+    "file": "shared/src/openairDirectional.ts",
+    "line": 121
   },
   {
     "id": "flag-hampel",
@@ -384,5 +592,153 @@
     "cite": "Barkjohn et al. 2025 (ASNAT), Table S2",
     "file": "shared/src/asnatFlags.ts",
     "line": 375
+  },
+  {
+    "id": "bland-altman",
+    "title": "Bland-Altman limits of agreement",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "\\text{LoA} = \\bar{d} \\pm 1.96\\,\\mathrm{SD}(d), \\quad d = s - r"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\bar{d}",
+        "meaning": "mean sensor-reference difference"
+      },
+      {
+        "symbol": "\\mathrm{SD}(d)",
+        "meaning": "standard deviation of the differences"
+      }
+    ],
+    "cite": "Bland & Altman 1986",
+    "file": "shared/src/measurementError.ts",
+    "line": 142
+  },
+  {
+    "id": "unbiased-rmse",
+    "title": "Centered (unbiased) RMSE — target diagram",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "\\mathrm{cRMSE} = \\sqrt{\\dfrac{1}{n}\\sum_i \\big[(m_i - \\bar{m}) - (o_i - \\bar{o})\\big]^2}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "m_i, o_i",
+        "meaning": "model and observed values"
+      },
+      {
+        "symbol": "\\bar{m}, \\bar{o}",
+        "meaning": "their means"
+      }
+    ],
+    "cite": "Jolliff et al. 2009 (target diagram)",
+    "file": "shared/src/targetDiagram.ts",
+    "line": 72
+  },
+  {
+    "id": "crps-gaussian",
+    "title": "Continuous ranked probability score (Gaussian)",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "\\mathrm{CRPS}(x;\\mu,\\sigma) = \\sigma\\left[ z\\,(2\\Phi(z) - 1) + 2\\varphi(z) - \\tfrac{1}{\\sqrt{\\pi}} \\right],\\ z = \\tfrac{x-\\mu}{\\sigma}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "x",
+        "meaning": "observed value"
+      },
+      {
+        "symbol": "\\mu, \\sigma",
+        "meaning": "predictive mean and standard deviation"
+      },
+      {
+        "symbol": "\\Phi, \\varphi",
+        "meaning": "standard normal CDF and PDF"
+      }
+    ],
+    "cite": "Gneiting & Raftery 2007",
+    "file": "shared/src/conformal.ts",
+    "line": 148
+  },
+  {
+    "id": "moran-i",
+    "title": "Moran's I (spatial autocorrelation of residuals)",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "I = \\dfrac{n}{W}\\cdot\\dfrac{\\sum_i \\sum_j w_{ij}(e_i - \\bar{e})(e_j - \\bar{e})}{\\sum_i (e_i - \\bar{e})^2}"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "e_i",
+        "meaning": "residual at site i"
+      },
+      {
+        "symbol": "w_{ij}",
+        "meaning": "spatial weight (inverse distance / k-nearest)"
+      },
+      {
+        "symbol": "W",
+        "meaning": "sum of all weights"
+      }
+    ],
+    "cite": "Mohamed & Gong 2026",
+    "file": "shared/src/validationWorkbench.ts",
+    "line": 271
+  },
+  {
+    "id": "reu",
+    "title": "Relative expanded uncertainty (REU)",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "\\mathrm{REU} = \\dfrac{k}{|x|}\\sqrt{\\sigma_v^{2} - u_{ref}^{2} + \\big(b_0 + (m-1)\\,r\\big)^{2}}\\times 100"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "\\sigma_v^2",
+        "meaning": "residual variance of the sensor-reference fit"
+      },
+      {
+        "symbol": "u_{ref}",
+        "meaning": "reference-method uncertainty"
+      },
+      {
+        "symbol": "b_0, m",
+        "meaning": "fit intercept and slope; r reference value"
+      },
+      {
+        "symbol": "k",
+        "meaning": "coverage factor (default 2)"
+      }
+    ],
+    "cite": "EPA Performance Targets (Duvall et al. 2021)",
+    "file": "shared/src/measurementError.ts",
+    "line": 175
+  },
+  {
+    "id": "smape",
+    "title": "Symmetric mean absolute percentage error (SMAPE)",
+    "category": "Validation & Uncertainty",
+    "latex": [
+      "\\mathrm{SMAPE} = \\dfrac{2\\,|p - a|}{|a| + |p|}\\times 100"
+    ],
+    "plain": "",
+    "vars": [
+      {
+        "symbol": "a",
+        "meaning": "actual / reference value"
+      },
+      {
+        "symbol": "p",
+        "meaning": "predicted value"
+      }
+    ],
+    "cite": "Mohamed & Gong 2026",
+    "file": "shared/src/validationWorkbench.ts",
+    "line": 213
   }
 ]

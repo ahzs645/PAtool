@@ -69,6 +69,15 @@ function align(
   return out;
 }
 
+/**
+ * @equation unbiased-rmse
+ * @title Centered (unbiased) RMSE — target diagram
+ * @category Validation & Uncertainty
+ * @latex \mathrm{cRMSE} = \sqrt{\dfrac{1}{n}\sum_i \big[(m_i - \bar{m}) - (o_i - \bar{o})\big]^2}
+ * @var m_i, o_i | model and observed values
+ * @var \bar{m}, \bar{o} | their means
+ * @cite Jolliff et al. 2009 (target diagram)
+ */
 function unbiasedRmse(pairs: ReadonlyArray<{ obs: number; mod: number }>, meanMod: number, meanObs: number): number {
   if (pairs.length === 0) return 0;
   let sumSq = 0;

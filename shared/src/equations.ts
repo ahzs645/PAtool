@@ -1,10 +1,12 @@
 import equationsJson from "./generated/equations.json";
 
 /**
- * Equation documentation extracted from `@equation` JSDoc annotations across
- * the source by scripts/extract_equations.mjs. The Equations reference page
- * renders this registry, so the equations stay a single source of truth that
- * lives next to the code that implements them.
+ * Equation documentation extracted from structured equation annotations across
+ * the source by scripts/extract_equations.mjs (see that script for the tag
+ * format). The Equations reference page renders this registry, so the equations
+ * stay a single source of truth that lives next to the code that implements
+ * them. equations.test.ts verifies each documented coefficient appears in its
+ * source file, so the rendered LaTeX cannot silently drift from the code.
  */
 export type EquationVar = { symbol: string; meaning: string };
 
