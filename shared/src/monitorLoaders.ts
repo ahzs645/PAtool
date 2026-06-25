@@ -93,7 +93,10 @@ function intoMonitor(rows: Array<Record<string, string>>, meta: MonitorMeta): Mt
   for (const row of rows) {
     const ts = row.timestamp ?? row.datetime ?? row.UTC ?? row.date ?? row.GMT;
     if (!ts) continue;
-    const val = Number(row.pm25 ?? row.PM25 ?? row.value ?? row.ConcRaw ?? row.Concentration);
+    // Empty CSV cells must become null, not 0 — Number("") returns 0, which
+    // would silently turn missing observations into bogus zero readings.
+    const raw = row.pm25 ?? row.PM25 ?? row.value ?? row.ConcRaw ?? row.Concentration;
+    const val = raw === undefined || raw === null || raw.trim() === "" ? NaN : Number(raw);
     datetime.push(new Date(ts).toISOString());
     values.push(Number.isFinite(val) ? val : null);
   }
