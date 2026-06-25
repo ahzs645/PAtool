@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -143,6 +143,10 @@ vi.mock("./components/EChart", () => ({
 
 describe("app", () => {
   afterEach(() => {
+    // Unmount the previous full <App /> tree so DOM/queries don't accumulate
+    // across tests — six stacked App trees otherwise make screen queries
+    // ambiguous and slow, which intermittently times out the heaviest page.
+    cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -434,7 +438,7 @@ describe("app", () => {
         expect(screen.getByText("Hotspot and coldspot ranking")).toBeInTheDocument();
         expect(screen.getByText("Recommendation blocks")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 15000 }
     );
   });
 });
