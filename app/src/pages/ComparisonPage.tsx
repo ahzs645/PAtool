@@ -510,7 +510,7 @@ export default function ComparisonPage() {
         <StatCard
           label="Fit R2"
           value={comparison.fit ? comparison.fit.rSquared.toFixed(3) : "Unavailable"}
-          tone={comparison.fit && comparison.fit.rSquared >= 0.75 ? "good" : "neutral"}
+          tone={comparison.fit && comparison.fit.rSquared >= 0.7 ? "good" : "neutral"}
         />
         <StatCard
           label="Validation"
