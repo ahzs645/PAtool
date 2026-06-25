@@ -145,6 +145,16 @@ export function conformalIntervals(
  * CRPS_Gaussian(x; μ, σ) = σ · [ z·(2Φ(z) - 1) + 2·φ(z) - 1/√π ]
  *   where z = (x - μ) / σ.
  */
+/**
+ * @equation crps-gaussian
+ * @title Continuous ranked probability score (Gaussian)
+ * @category Validation & Uncertainty
+ * @latex \mathrm{CRPS}(x;\mu,\sigma) = \sigma\left[ z\,(2\Phi(z) - 1) + 2\varphi(z) - \tfrac{1}{\sqrt{\pi}} \right],\ z = \tfrac{x-\mu}{\sigma}
+ * @var x | observed value
+ * @var \mu, \sigma | predictive mean and standard deviation
+ * @var \Phi, \varphi | standard normal CDF and PDF
+ * @cite Gneiting & Raftery 2007
+ */
 export function crpsGaussian(observed: number, mean: number, sd: number): number {
   if (!Number.isFinite(observed) || !Number.isFinite(mean) || !Number.isFinite(sd) || sd <= 0) {
     return Number.NaN;

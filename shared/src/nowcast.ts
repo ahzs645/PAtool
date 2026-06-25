@@ -43,6 +43,25 @@ function isFinite_(v: number | null | undefined): v is number {
  * Returns `null` if the most recent hour is missing or completeness
  * checks fail.
  */
+/**
+ * @equation nowcast-ozone
+ * @title EPA NowCast (ozone) trailing mean
+ * @category AQI & Metrics
+ * @latex \hat{c} = \dfrac{1}{n}\sum_{k=1}^{n} c_k \quad (n \le 8 \text{ valid hours})
+ * @var c_k | hourly ozone concentration
+ * @plain Ozone uses a simple unweighted mean over the trailing 8-hour window.
+ * @cite AirNow NowCast (ozone variant)
+ */
+/**
+ * @equation nowcast-pm
+ * @title EPA NowCast (PM) weighted average
+ * @category AQI & Metrics
+ * @latex w = \max\!\left(0.5,\ \tfrac{c_{min}}{c_{max}}\right) \qquad \hat{c} = \dfrac{\sum_{k=0}^{n-1} w^{k} c_{k}}{\sum_{k=0}^{n-1} w^{k}}
+ * @var c_k | hourly concentration, k hours before now (k=0 most recent)
+ * @var w | weight factor (floor 0.5 for US PM, 0.1 for Asian PM)
+ * @plain 12-hour weighted average; requires >=2 of the 3 most recent hours valid.
+ * @cite AirNow "How is the NowCast algorithm used to report current air quality"
+ */
 export function nowcastValue(
   values: ReadonlyArray<number | null>,
   variant: NowcastVariant = "pm",

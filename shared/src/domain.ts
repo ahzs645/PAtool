@@ -704,6 +704,15 @@ function roundNonNegative(value: number, digits = 3): number {
   return Number(Math.max(0, value).toFixed(digits));
 }
 
+/**
+ * @equation barkjohn-2021
+ * @title Barkjohn 2021 US-wide PurpleAir PM2.5 correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.524 \cdot PA_{cf1} - 0.0862 \cdot RH + 5.75
+ * @var PA_{cf1} | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @cite Barkjohn, Gantt & Clements 2021, Atmos. Meas. Tech.
+ */
 function barkjohn2021(pm25Cf1: number, humidity: number | null): number {
   if (humidity === null) {
     throw new Error("Barkjohn 2021 correction requires PurpleAir relative humidity.");
@@ -711,6 +720,15 @@ function barkjohn2021(pm25Cf1: number, humidity: number | null): number {
   return roundNonNegative(0.524 * pm25Cf1 - 0.0862 * humidity + 5.75);
 }
 
+/**
+ * @equation barkjohn-2022-smoke
+ * @title Barkjohn 2022 extreme-smoke CF=1 extension
+ * @category Corrections
+ * @latex PM_{2.5} = 4.21\times10^{-4}\,PA_{cf1}^{2} + 0.392\,PA_{cf1} + 3.44 \quad (PA_{cf1} \ge 611)
+ * @var PA_{cf1} | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @plain Below 570 uses Barkjohn 2021; 570-611 linearly blends into this quadratic.
+ * @cite Barkjohn et al. 2022 (extreme smoke)
+ */
 function barkjohn2022Smoke(pm25Cf1: number, humidity: number | null): number {
   const quadratic = 4.21e-4 * pm25Cf1 ** 2 + 0.392 * pm25Cf1 + 3.44;
   if (pm25Cf1 >= 611) return roundNonNegative(quadratic);
@@ -722,6 +740,15 @@ function barkjohn2022Smoke(pm25Cf1: number, humidity: number | null): number {
   return roundNonNegative(linear * (1 - transition) + quadratic * transition);
 }
 
+/**
+ * @equation nilson-rh-growth
+ * @title Nilson 2022 RH-growth ATM correction
+ * @category Corrections
+ * @latex PM_{2.5} = \dfrac{PA_{atm}}{1 + \dfrac{0.24}{\frac{100}{RH} - 1}}
+ * @var PA_{atm} | PurpleAir ATM PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @cite Nilson et al. 2022
+ */
 function nilsonRhGrowth(pm25Atm: number, humidity: number | null): number {
   if (humidity === null || humidity <= 0 || humidity >= 100) {
     throw new Error("Nilson RH-growth correction requires relative humidity between 0 and 100.");
@@ -729,6 +756,15 @@ function nilsonRhGrowth(pm25Atm: number, humidity: number | null): number {
   return roundNonNegative(pm25Atm / (1 + 0.24 / (100 / humidity - 1)));
 }
 
+/**
+ * @equation nilson-polynomial
+ * @title Nilson 2022 polynomial ATM + RH correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.53\,PA_{atm} + 0.000952\,PA_{atm}^{2} - 0.0914\,RH + 6.3
+ * @var PA_{atm} | PurpleAir ATM PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @cite Nilson et al. 2022
+ */
 function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
   if (humidity === null) {
     throw new Error("Nilson polynomial correction requires relative humidity.");
@@ -736,24 +772,64 @@ function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
   return roundNonNegative(0.53 * pm25Atm + 0.000952 * pm25Atm ** 2 - 0.0914 * humidity + 6.3);
 }
 
-// EPA AirNow Fire & Smoke Map equation (Holder et al. 2023). Distinct from
-// the Barkjohn 2022 smoke paper — the deployed map uses a piecewise form
-// that drops the RH term at high concentrations and replaces it with a
-// CF=1 quadratic term so the relationship stays monotonically increasing
-// at extreme smoke loads.
+// EPA AirNow Fire & Smoke Map US-wide PurpleAir correction. This is the exact
+// piecewise form documented as Equation 1 in Barkjohn et al. 2025 ("Air Sensor
+// Network Analysis Tool") and applied to the deployed PurpleAir.pm25_corrected
+// field served through RSIG/ASNAT. It is the Barkjohn 2021 relationship
+// (0.524·PA − 0.0862·RH + 5.75) extended to high smoke loads through five
+// continuous segments keyed on the CF=1 PA value: the low-range 0.524 slope
+// blends into a 0.786 mid-range slope (30–50), holds through 50–210, then
+// blends into a high-smoke quadratic (210–260) while fading out the RH term,
+// and finally drops RH entirely above 260 so the curve stays monotonic at
+// extreme concentrations. All breakpoints are continuous by construction.
+/**
+ * @equation airnow-fsmap
+ * @title EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)
+ * @category Corrections
+ * @latex PM_{2.5} = \begin{cases} 0.524\,PA - 0.0862\,RH + 5.75 & PA < 30 \\ [0.786 f + 0.524(1-f)]\,PA - 0.0862\,RH + 5.75,\ f=\tfrac{PA}{20}-\tfrac{3}{2} & 30 \le PA < 50 \\ 0.786\,PA - 0.0862\,RH + 5.75 & 50 \le PA < 210 \\ [0.69 f + 0.786(1-f)]\,PA - 0.0862\,RH(1-f) + 2.966 f + 5.75(1-f) + 8.84\times10^{-4} PA^2 f,\ f=\tfrac{PA}{50}-\tfrac{21}{5} & 210 \le PA < 260 \\ 2.966 + 0.69\,PA + 8.84\times10^{-4}\,PA^2 & PA \ge 260 \end{cases}
+ * @var PA | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @plain Barkjohn 2021 extended to high smoke through 5 continuous segments; RH fades out 210-260 and is dropped above 260.
+ * @cite Barkjohn et al. 2025 (ASNAT), Atmosphere — Equation 1
+ */
 function epaAirnowFsmap(pm25Cf1: number, humidity: number | null): number {
-  const lowConcentration = humidity !== null
-    ? 0.524 * pm25Cf1 - 0.0862 * humidity + 5.75
-    : 0.524 * pm25Cf1 + 5.75;
-  const highConcentration = 0.46 * pm25Cf1 + 3.93e-4 * pm25Cf1 ** 2 + 2.97;
-  if (pm25Cf1 < 343) return roundNonNegative(lowConcentration);
-  if (pm25Cf1 >= 410) return roundNonNegative(highConcentration);
-  const transition = (pm25Cf1 - 343) / (410 - 343);
-  return roundNonNegative(lowConcentration * (1 - transition) + highConcentration * transition);
+  const pa = pm25Cf1;
+  const rh = humidity ?? 0; // RH term contributes 0 when humidity is unavailable
+  const highQuad = 2.966 + 0.69 * pa + 8.84e-4 * pa ** 2;
+
+  if (pa < 30) return roundNonNegative(0.524 * pa - 0.0862 * rh + 5.75);
+  if (pa < 50) {
+    const f = pa / 20 - 3 / 2; // 0 at PA=30, 1 at PA=50
+    const slope = 0.786 * f + 0.524 * (1 - f);
+    return roundNonNegative(slope * pa - 0.0862 * rh + 5.75);
+  }
+  if (pa < 210) return roundNonNegative(0.786 * pa - 0.0862 * rh + 5.75);
+  if (pa < 260) {
+    const f = pa / 50 - 21 / 5; // 0 at PA=210, 1 at PA=260
+    const slope = 0.69 * f + 0.786 * (1 - f);
+    return roundNonNegative(
+      slope * pa
+        - 0.0862 * rh * (1 - f)
+        + 2.966 * f
+        + 5.75 * (1 - f)
+        + 8.84e-4 * pa ** 2 * f,
+    );
+  }
+  return roundNonNegative(highQuad);
 }
 
 // Nilson et al. 2024 (AMT, doi.org/10.5194/amt-17-6735-2024) RH+T
 // multilinear correction. Uses temperature in Celsius.
+/**
+ * @equation nilson-2024
+ * @title Nilson 2024 RH + temperature multilinear correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.412 \cdot PA_{cf1} - 0.0594 \cdot RH - 0.0314 \cdot T_C + 7.74
+ * @var PA_{cf1} | PurpleAir CF=1 PM2.5 (µg/m³)
+ * @var RH | relative humidity (%)
+ * @var T_C | temperature (°C)
+ * @cite Nilson et al. 2024, Atmos. Meas. Tech.
+ */
 function nilson2024RhTemp(pm25Cf1: number, humidity: number | null, temperatureF?: number | null): number {
   if (humidity === null) {
     throw new Error("Nilson 2024 RH+T correction requires relative humidity.");
@@ -767,6 +843,14 @@ function nilson2024RhTemp(pm25Cf1: number, humidity: number | null, temperatureF
 
 // Delp & Singer 2020 (Environ. Sci. Technol., doi.org/10.1021/acs.est.0c01716).
 // Single-multiplier wildfire override: PM_corrected ≈ 0.48 × PA_atm.
+/**
+ * @equation delp-singer-2020
+ * @title Delp & Singer 2020 wildfire single-multiplier correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.48 \cdot PA_{atm}
+ * @var PA_{atm} | PurpleAir ATM PM2.5 (µg/m³)
+ * @cite Delp & Singer 2020, Environ. Sci. Technol.
+ */
 function delpSinger2020(pm25Atm: number): number {
   return roundNonNegative(0.48 * pm25Atm);
 }
@@ -774,6 +858,14 @@ function delpSinger2020(pm25Atm: number): number {
 // LRAPA (Lane Regional Air Protection Agency, 2017) simple correction —
 // shipped widely in early PA deployments and still used as a baseline
 // against newer corrections in places without humidity coverage.
+/**
+ * @equation lrapa-2017
+ * @title LRAPA 2017 PurpleAir correction
+ * @category Corrections
+ * @latex PM_{2.5} = 0.5 \cdot PA_{atm} - 0.66
+ * @var PA_{atm} | PurpleAir ATM PM2.5 (µg/m³)
+ * @cite Lane Regional Air Protection Agency 2017
+ */
 function lrapa2017(pm25Atm: number): number {
   return roundNonNegative(0.5 * pm25Atm - 0.66);
 }
@@ -801,12 +893,12 @@ export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId,
   },
   "epa-airnow-fsmap-cf1": {
     id: "epa-airnow-fsmap-cf1",
-    label: "EPA AirNow Fire and Smoke Map equation (Holder et al. 2023)",
+    label: "EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)",
     inputBasis: "cf_1",
     scope: "extreme-smoke",
     citation: EPA_AIRNOW_FSMAP_CITATION,
     requiresHumidity: false,
-    recommendedRegimes: ["moderate-smoke", "heavy-smoke"],
+    recommendedRegimes: ["non-smoke", "light-smoke", "moderate-smoke", "heavy-smoke"],
     correct: epaAirnowFsmap,
   },
   "nilson-2022-rh-growth-atm": {
@@ -2904,6 +2996,16 @@ function mergeCoincidentPoints(points: InterpolationPoint[]): InterpolationPoint
   }));
 }
 
+/**
+ * @equation idw
+ * @title Inverse-distance weighting (IDW)
+ * @category Interpolation
+ * @latex \hat{z}(x_0) = \dfrac{\sum_{i=1}^{n} d_i^{-p}\, z_i}{\sum_{i=1}^{n} d_i^{-p}}
+ * @var d_i | distance from target x_0 to known point i
+ * @var z_i | observed value at point i
+ * @var p | power parameter (default 2)
+ * @cite Shepard 1968
+ */
 export function idwInterpolate(
   knownPoints: InterpolationPoint[],
   gridWidth: number,
@@ -3109,6 +3211,16 @@ function normalizeStOptions(options: SpatioTemporalIdwOptions): {
   };
 }
 
+/**
+ * @equation st-idw
+ * @title Spatio-temporal IDW (Carroll et al. 2025)
+ * @category Interpolation
+ * @latex w_{ij} = \dfrac{1}{d_i^{2} + C\,|t_j - t_0|} \qquad \hat{x}_{kl} = \sum_i \sum_j \tilde{w}_{ij}\, x_{ij}
+ * @var d_i | spatial distance to monitor i
+ * @var |t_j - t_0| | absolute time difference
+ * @var C | time-weight scalar (LOOCV-tuned; ~10 for NC)
+ * @cite Carroll et al. 2025, Scientific Reports
+ */
 export function idwSpatioTemporalEstimate(
   points: SpatioTemporalPoint[],
   queries: SpatioTemporalQuery[],
@@ -3424,6 +3536,17 @@ function fitSphericalVariogram(
 }
 
 /** Spherical variogram model */
+/**
+ * @equation spherical-variogram
+ * @title Spherical variogram (ordinary kriging)
+ * @category Interpolation
+ * @latex \gamma(h) = \begin{cases} 0 & h = 0 \\ c_0 + c\left(\tfrac{3h}{2a} - \tfrac{1}{2}\tfrac{h^3}{a^3}\right) & 0 < h < a \\ c_0 + c & h \ge a \end{cases}
+ * @var h | separation distance (lag)
+ * @var c_0 | nugget
+ * @var c | partial sill
+ * @var a | range
+ * @cite Cressie 1993, Statistics for Spatial Data
+ */
 function sphericalVariogram(h: number, nugget: number, sill: number, range: number): number {
   if (h === 0) return 0;
   if (h >= range) return nugget + sill;

@@ -43,9 +43,27 @@ export type AirnowLoadInput = MonitorLoadOptions & {
   baseUrl?: string;
 };
 
+/**
+ * AQS PM2.5 parameter codes the user can choose between (Barkjohn et al. 2025):
+ *   88101 FEM/FRM regulatory PM2.5 (used for NAAQS attainment)
+ *   88500 total atmospheric PM2.5
+ *   88501 PM2.5 raw data
+ *   88502 acceptable PM2.5 AQI & speciation mass
+ */
+export const AQS_PM25_PARAMETER_CODES = [
+  { code: "88101", label: "FEM/FRM regulatory (88101)" },
+  { code: "88500", label: "Total atmospheric (88500)" },
+  { code: "88501", label: "Raw data (88501)" },
+  { code: "88502", label: "AQI & speciation mass (88502)" },
+] as const;
+
+export type AqsPm25ParameterCode = (typeof AQS_PM25_PARAMETER_CODES)[number]["code"];
+
 export type EpaAqsLoadInput = MonitorLoadOptions & {
   year: number;
   parameter: "pm25" | "pm10" | "ozone" | "no2" | "co" | "so2";
+  /** AQS PM2.5 parameter code (88101/88500/88501/88502); only used when parameter === "pm25". */
+  pm25ParameterCode?: AqsPm25ParameterCode;
   baseUrl?: string;
 };
 
@@ -93,7 +111,10 @@ function intoMonitor(rows: Array<Record<string, string>>, meta: MonitorMeta): Mt
   for (const row of rows) {
     const ts = row.timestamp ?? row.datetime ?? row.UTC ?? row.date ?? row.GMT;
     if (!ts) continue;
-    const val = Number(row.pm25 ?? row.PM25 ?? row.value ?? row.ConcRaw ?? row.Concentration);
+    // Empty CSV cells must become null, not 0 — Number("") returns 0, which
+    // would silently turn missing observations into bogus zero readings.
+    const raw = row.pm25 ?? row.PM25 ?? row.value ?? row.ConcRaw ?? row.Concentration;
+    const val = raw === undefined || raw === null || raw.trim() === "" ? NaN : Number(raw);
     datetime.push(new Date(ts).toISOString());
     values.push(Number.isFinite(val) ? val : null);
   }
@@ -157,12 +178,14 @@ export async function airnowLoadDaily(input: AirnowLoadInput): Promise<MtsMonito
 export async function epaAqsLoadAnnual(input: EpaAqsLoadInput): Promise<MtsMonitor> {
   const parse = input.parseCsv ?? defaultParseCsv;
   const base = input.baseUrl ?? EPA_AQS_BASE;
-  const url = `${base}/hourly_${input.parameter}_${input.year}.zip`;
+  const code = input.parameter === "pm25" ? input.pm25ParameterCode ?? "88101" : undefined;
+  const suffix = code ? `-${code}` : "";
+  const url = `${base}/hourly_${input.parameter}${code ? `_${code}` : ""}_${input.year}.zip`;
   const text = await input.fetcher(url);
   const rows = parse(text);
   return intoMonitor(rows, {
-    id: `epa-aqs-${input.parameter}-${input.year}`,
-    label: `EPA AQS ${input.parameter} ${input.year}`,
+    id: `epa-aqs-${input.parameter}${suffix}-${input.year}`,
+    label: `EPA AQS ${input.parameter}${code ? ` ${code}` : ""} ${input.year}`,
     parameter: input.parameter,
     units: input.parameter === "ozone" ? "ppm" : "ug/m3",
     agencyName: "US EPA AQS",

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { DataStatus } from "@patool/shared";
@@ -5,45 +6,84 @@ import { useTheme } from "../hooks/useTheme";
 import { getJson } from "../lib/api";
 import styles from "./Shell.module.css";
 
-const navItems = [
-  { to: "/", label: "Explorer", icon: TableIcon },
-  { to: "/map", label: "Map", icon: MapIcon },
-  { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
-  { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
-  { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
-  { to: "/analytics", label: "Analytics", icon: ChartIcon },
-  { to: "/network-summary", label: "Network", icon: NetworkIcon },
-  { to: "/modeling", label: "Modeling", icon: LayersIcon },
-  { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
-  { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
-  { to: "/measurement-error", label: "Measurement Error", icon: ErrorIcon },
-  { to: "/epa-evaluation", label: "EPA Evaluation", icon: ValidationIcon },
-  { to: "/directional-analysis", label: "Directional", icon: WindIcon },
-  { to: "/regimes", label: "Regimes", icon: RegimeIcon },
-  { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
-  { to: "/reliability", label: "Reliability", icon: ShieldIcon },
-  { to: "/comparison", label: "Comparison", icon: CompareIcon },
-  { to: "/network-qa", label: "Network QA", icon: NetworkIcon },
-  { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
-  { to: "/health", label: "Health", icon: HealthIcon },
-  { to: "/poi", label: "Schools / POIs", icon: PinIcon },
-  { to: "/ej-coverage", label: "EJ Coverage", icon: ScaleIcon },
-  { to: "/forecast", label: "Forecast", icon: ForecastIcon },
-  { to: "/weather-normalization", label: "Weather Norm", icon: WeatherNormIcon },
-  { to: "/human-impact", label: "Human Impact", icon: HumanImpactIcon },
-  { to: "/data-readiness", label: "Data Readiness", icon: DataReadinessIcon },
-  { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
-  { to: "/reports", label: "Reports", icon: ReportIcon },
-  { to: "/openair-panels", label: "Openair Panels", icon: ChartIcon },
-  { to: "/trajectories", label: "Trajectories", icon: WindIcon },
-  { to: "/nowcast", label: "NowCast", icon: ForecastIcon },
-  { to: "/sensor-evaluation", label: "Sensor Eval", icon: ShieldIcon },
-  { to: "/temp-calibration", label: "Temp Calibration", icon: WeatherNormIcon },
-  { to: "/bitesized-extensions", label: "Super Pollutants", icon: HumanImpactIcon },
-  { to: "/reu-decomposition", label: "REU Decomposition", icon: ErrorIcon },
-  { to: "/channel-fit", label: "Channel Fit", icon: CompareIcon },
-  { to: "/rmweather-counterfactual", label: "Met-Year Counterfactual", icon: WeatherNormIcon },
-  { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
+const navSections: Array<{ label: string; items: Array<{ to: string; label: string; icon: () => React.ReactNode }> }> = [
+  {
+    label: "Overview",
+    items: [
+      { to: "/", label: "Explorer", icon: TableIcon },
+      { to: "/map", label: "Map", icon: MapIcon },
+      { to: "/timelapse", label: "Time-lapse", icon: MapIcon },
+      { to: "/network-summary", label: "Network", icon: NetworkIcon },
+    ],
+  },
+  {
+    label: "Data & QC",
+    items: [
+      { to: "/flagging", label: "Flagging", icon: ValidationIcon },
+      { to: "/corrections", label: "Corrections", icon: CompareIcon },
+      { to: "/channel-fit", label: "Channel Fit", icon: CompareIcon },
+      { to: "/data-readiness", label: "Data Readiness", icon: DataReadinessIcon },
+      { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
+      { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
+      { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
+      { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
+    ],
+  },
+  {
+    label: "Performance & Validation",
+    items: [
+      { to: "/epa-evaluation", label: "EPA Evaluation", icon: ValidationIcon },
+      { to: "/comparison", label: "Comparison", icon: CompareIcon },
+      { to: "/validation-lab", label: "Validation", icon: ValidationIcon },
+      { to: "/network-qa", label: "Network QA", icon: NetworkIcon },
+      { to: "/reliability", label: "Reliability", icon: ShieldIcon },
+      { to: "/sensor-evaluation", label: "Sensor Eval", icon: ShieldIcon },
+      { to: "/measurement-error", label: "Measurement Error", icon: ErrorIcon },
+      { to: "/reu-decomposition", label: "REU Decomposition", icon: ErrorIcon },
+      { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
+      { to: "/temp-calibration", label: "Temp Calibration", icon: WeatherNormIcon },
+    ],
+  },
+  {
+    label: "Modeling & Forecast",
+    items: [
+      { to: "/modeling", label: "Modeling", icon: LayersIcon },
+      { to: "/model-zoo", label: "Model Zoo", icon: ModelZooIcon },
+      { to: "/forecast", label: "Forecast", icon: ForecastIcon },
+      { to: "/nowcast", label: "NowCast", icon: ForecastIcon },
+      { to: "/regimes", label: "Regimes", icon: RegimeIcon },
+      { to: "/weather-normalization", label: "Weather Norm", icon: WeatherNormIcon },
+      { to: "/rmweather-counterfactual", label: "Met-Year Counterfactual", icon: WeatherNormIcon },
+    ],
+  },
+  {
+    label: "Analysis",
+    items: [
+      { to: "/analytics", label: "Analytics", icon: ChartIcon },
+      { to: "/directional-analysis", label: "Directional", icon: WindIcon },
+      { to: "/openair-panels", label: "Openair Panels", icon: ChartIcon },
+      { to: "/trajectories", label: "Trajectories", icon: WindIcon },
+      { to: "/bitesized-extensions", label: "Super Pollutants", icon: HumanImpactIcon },
+    ],
+  },
+  {
+    label: "Exposure & Health",
+    items: [
+      { to: "/health", label: "Health", icon: HealthIcon },
+      { to: "/human-impact", label: "Human Impact", icon: HumanImpactIcon },
+      { to: "/poi", label: "Schools / POIs", icon: PinIcon },
+      { to: "/ej-coverage", label: "EJ Coverage", icon: ScaleIcon },
+      { to: "/outcome-model", label: "Outcome model", icon: SigmaIcon },
+    ],
+  },
+  {
+    label: "Outputs & Reference",
+    items: [
+      { to: "/reports", label: "Reports", icon: ReportIcon },
+      { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
+      { to: "/equations", label: "Equations", icon: SigmaIcon },
+    ],
+  },
 ];
 
 function ScaleIcon() {
@@ -120,8 +160,46 @@ function DataReadinessIcon() {
   );
 }
 
+const COLLAPSE_KEY = "patool-nav-collapsed";
+
+function ChevronIcon({ open }: { open: boolean }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      style={{ transform: open ? "rotate(0deg)" : "rotate(-90deg)", transition: "transform var(--duration-fast)" }}
+    >
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  );
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "{}") as Record<string, boolean>;
+    } catch {
+      return {};
+    }
+  });
+  const toggleSection = (label: string) => {
+    setCollapsed((prev) => {
+      const next = { ...prev, [label]: !prev[label] };
+      try {
+        localStorage.setItem(COLLAPSE_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore storage failures */
+      }
+      return next;
+    });
+  };
   const { data: status } = useQuery({
     queryKey: ["api-status"],
     queryFn: () => getJson<DataStatus>("/api/status"),
@@ -140,23 +218,42 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className={styles.brandName}>PAtool</span>
         </Link>
 
-        <span className={styles.navLabel} id="workspace-nav-label">Workspace</span>
-        <nav className={styles.navSection} aria-labelledby="workspace-nav-label">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              end={item.to === "/"}
-              className={({ isActive }) =>
-                `${styles.navLink} ${isActive ? styles.active : ""}`
-              }
-            >
-              <span className={styles.navIcon} aria-hidden="true">
-                <item.icon />
-              </span>
-              {item.label}
-            </NavLink>
-          ))}
+        <nav aria-label="Workspace sections">
+          {navSections.map((section) => {
+            const isOpen = !collapsed[section.label];
+            const sectionId = `nav-section-${section.label.replace(/[^a-z]+/gi, "-").toLowerCase()}`;
+            return (
+              <div key={section.label} className={styles.navGroup}>
+                <button
+                  type="button"
+                  className={styles.sectionHeader}
+                  aria-expanded={isOpen}
+                  aria-controls={sectionId}
+                  onClick={() => toggleSection(section.label)}
+                >
+                  <span>{section.label}</span>
+                  <ChevronIcon open={isOpen} />
+                </button>
+                {isOpen && (
+                  <div className={styles.navSection} id={sectionId}>
+                    {section.items.map((item) => (
+                      <NavLink
+                        key={item.to}
+                        to={item.to}
+                        end={item.to === "/"}
+                        className={({ isActive }) => `${styles.navLink} ${isActive ? styles.active : ""}`}
+                      >
+                        <span className={styles.navIcon} aria-hidden="true">
+                          <item.icon />
+                        </span>
+                        {item.label}
+                      </NavLink>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </nav>
 
         <div className={styles.sidebarFooter}>

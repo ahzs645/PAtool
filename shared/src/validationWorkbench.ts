@@ -210,6 +210,15 @@ function runGroupedCv(
   };
 }
 
+/**
+ * @equation smape
+ * @title Symmetric mean absolute percentage error (SMAPE)
+ * @category Validation & Uncertainty
+ * @latex \mathrm{SMAPE} = \dfrac{2\,|p - a|}{|a| + |p|}\times 100
+ * @var a | actual / reference value
+ * @var p | predicted value
+ * @cite Mohamed & Gong 2026
+ */
 export function smape(actual: number, predicted: number): number {
   if (!Number.isFinite(actual) || !Number.isFinite(predicted)) return 0;
   const denominator = Math.abs(actual) + Math.abs(predicted);
@@ -259,6 +268,16 @@ export function spatialBlockCrossValidate(
   );
 }
 
+/**
+ * @equation moran-i
+ * @title Moran's I (spatial autocorrelation of residuals)
+ * @category Validation & Uncertainty
+ * @latex I = \dfrac{n}{W}\cdot\dfrac{\sum_i \sum_j w_{ij}(e_i - \bar{e})(e_j - \bar{e})}{\sum_i (e_i - \bar{e})^2}
+ * @var e_i | residual at site i
+ * @var w_{ij} | spatial weight (inverse distance / k-nearest)
+ * @var W | sum of all weights
+ * @cite Mohamed & Gong 2026
+ */
 export function moransI(points: ResidualPoint[], options: MoransIOptions = {}): MoransIResult {
   const usable = points.filter(
     (point) =>

@@ -44,6 +44,25 @@ export type MappedImportRow = {
 
 export const IMPORT_PRESETS: ImportPreset[] = [
   {
+    id: "asdu-standard",
+    label: "ASDU / ASNAT standard format",
+    description: "Standard-format files produced by the EPA Air Sensor Data Unifier (ASDU) for loading into ASNAT.",
+    aliases: {
+      timestamp: ["timestamp(UTC)", "timestamp", "datetime(UTC)", "datetime", "time(UTC)"],
+      sensorId: ["id(-)", "id", "site", "site_id", "monitor_id", "sensor"],
+      longitude: ["longitude(deg)", "longitude", "lon", "lng"],
+      latitude: ["latitude(deg)", "latitude", "lat"],
+      pollutant: [
+        "pm25(ug/m3)", "pm10(ug/m3)", "ozone(ppb)", "o3(ppb)", "no2(ppb)", "co(ppm)", "so2(ppb)",
+        "pm25", "pm2.5", "pm10", "ozone", "o3", "no2", "co", "so2", "measurement", "value", "concentration",
+      ],
+      temperature: ["temperature(C)", "temperature", "temp"],
+      humidity: ["relativeHumidity(%)", "humidity", "rh"],
+      pressure: ["seaLevelPress(hPa)", "pressure(hPa)", "pressure"],
+      qaFlag: ["flagged(-)", "flag", "qa_flag"],
+    },
+  },
+  {
     id: "epa-collocation",
     label: "EPA collocation",
     description: "Sensor/reference comparison files with timestamped pollutant columns.",

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -143,6 +143,10 @@ vi.mock("./components/EChart", () => ({
 
 describe("app", () => {
   afterEach(() => {
+    // Unmount the previous full <App /> tree so DOM/queries don't accumulate
+    // across tests — six stacked App trees otherwise make screen queries
+    // ambiguous and slow, which intermittently times out the heaviest page.
+    cleanup();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
@@ -305,7 +309,7 @@ describe("app", () => {
         expect(screen.getByText("Browse synoptic PurpleAir coverage")).toBeInTheDocument();
         expect(screen.getByText("Visible sensors")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
   });
 
@@ -356,7 +360,7 @@ describe("app", () => {
         expect(screen.getByText("PurpleAir workflow diagrams")).toBeInTheDocument();
         expect(screen.getByText("Final_Draft.pdf / Final_Draft.tex")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
   });
 
@@ -371,7 +375,7 @@ describe("app", () => {
         expect(screen.getByText("GeoJSON surface")).toBeInTheDocument();
         expect(screen.getByText("Validation CSV")).toBeInTheDocument();
       },
-      { timeout: 5000 },
+      { timeout: 25000 },
     );
 
     await waitFor(
@@ -383,7 +387,7 @@ describe("app", () => {
         );
         expect(map?.fitBounds).toHaveBeenCalled();
       },
-      { timeout: 5000 },
+      { timeout: 25000 },
     );
   });
 
@@ -402,7 +406,7 @@ describe("app", () => {
         expect(screen.getByText("Reference validation")).toBeInTheDocument();
         expect(screen.getByText("Recent paired observations")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
 
     const referenceCall = vi.mocked(fetch).mock.calls
@@ -434,7 +438,7 @@ describe("app", () => {
         expect(screen.getByText("Hotspot and coldspot ranking")).toBeInTheDocument();
         expect(screen.getByText("Recommendation blocks")).toBeInTheDocument();
       },
-      { timeout: 5000 }
+      { timeout: 25000 }
     );
   });
 });

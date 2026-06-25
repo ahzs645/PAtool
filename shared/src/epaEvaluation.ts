@@ -10,6 +10,12 @@ export type EpaEvaluationTarget = {
   minR2?: number;
   maxNormalizedMeanBias?: number;
   maxNormalizedRmse?: number;
+  /**
+   * Absolute RMSE target (concentration units). EPA's PM2.5 error target is
+   * met by satisfying EITHER the absolute RMSE OR the NRMSE target, so when
+   * both are present they are evaluated as a single OR'd criterion.
+   */
+  maxRmse?: number;
   maxMedianReu?: number;
   averagingPeriod: "1-hour" | "24-hour";
 };
@@ -48,13 +54,16 @@ export type EpaEvaluationResult = {
   pass: boolean;
 };
 
+// EPA performance targets. PM2.5: R^2 >= 0.70, NRMSE <= 30% OR RMSE <= 7 ug/m3
+// (Duvall et al. 2021, the same targets used by ASNAT). O3 linearity target is
+// R^2 >= 0.80 (Barkjohn et al. 2025 / EPA gaseous-sensor targets).
 const DEFAULT_TARGETS: Record<EvaluationPollutant, EpaEvaluationTarget> = {
-  "PM2.5": { pollutant: "PM2.5", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.7, maxNormalizedMeanBias: 0.3, maxNormalizedRmse: 0.5, maxMedianReu: 50 },
-  PM10: { pollutant: "PM10", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.7, maxNormalizedMeanBias: 0.3, maxNormalizedRmse: 0.5, maxMedianReu: 50 },
-  O3: { pollutant: "O3", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.75, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
-  NO2: { pollutant: "NO2", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.75, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
-  CO: { pollutant: "CO", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.75, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
-  SO2: { pollutant: "SO2", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.75, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
+  "PM2.5": { pollutant: "PM2.5", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.7, maxNormalizedMeanBias: 0.3, maxNormalizedRmse: 0.3, maxRmse: 7, maxMedianReu: 50 },
+  PM10: { pollutant: "PM10", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.7, maxNormalizedMeanBias: 0.3, maxNormalizedRmse: 0.3, maxRmse: 7, maxMedianReu: 50 },
+  O3: { pollutant: "O3", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.8, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
+  NO2: { pollutant: "NO2", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.8, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
+  CO: { pollutant: "CO", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.8, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
+  SO2: { pollutant: "SO2", averagingPeriod: "1-hour", minPairs: 23, minR2: 0.8, maxNormalizedMeanBias: 0.2, maxNormalizedRmse: 0.35 },
 };
 
 export function evaluateEpaSensorPerformance(
@@ -93,12 +102,7 @@ export function evaluateEpaSensorPerformance(
       threshold: target.maxNormalizedMeanBias,
       pass: normalizedMeanBias !== null && Math.abs(normalizedMeanBias) <= target.maxNormalizedMeanBias,
     }]),
-    ...(target.maxNormalizedRmse === undefined ? [] : [{
-      criterion: "Maximum normalized RMSE",
-      value: normalizedRmse,
-      threshold: target.maxNormalizedRmse,
-      pass: normalizedRmse !== null && normalizedRmse <= target.maxNormalizedRmse,
-    }]),
+    ...errorDecisions(fit.rmse, normalizedRmse, target),
     ...(target.maxMedianReu === undefined ? [] : [{
       criterion: "Maximum median REU",
       value: medianReu,
@@ -123,6 +127,34 @@ export function evaluateEpaSensorPerformance(
     decisions,
     pass: decisions.every((decision) => decision.pass),
   };
+}
+
+function errorDecisions(
+  rmse: number | null,
+  normalizedRmse: number | null,
+  target: EpaEvaluationTarget,
+): Array<{ criterion: string; value: number | null; threshold: number; pass: boolean; units?: string }> {
+  const hasAbs = target.maxRmse !== undefined;
+  const hasRel = target.maxNormalizedRmse !== undefined;
+  if (!hasAbs && !hasRel) return [];
+
+  const absPass = hasAbs && rmse !== null && rmse <= target.maxRmse!;
+  const relPass = hasRel && normalizedRmse !== null && normalizedRmse <= target.maxNormalizedRmse!;
+
+  // EPA error target: meeting EITHER absolute RMSE OR NRMSE is sufficient.
+  if (hasAbs && hasRel) {
+    return [{
+      criterion: `RMSE <= ${target.maxRmse} OR NRMSE <= ${Math.round(target.maxNormalizedRmse! * 100)}%`,
+      value: rmse,
+      threshold: target.maxRmse!,
+      pass: absPass || relPass,
+      units: "ug/m3",
+    }];
+  }
+  if (hasAbs) {
+    return [{ criterion: "Maximum RMSE", value: rmse, threshold: target.maxRmse!, pass: absPass, units: "ug/m3" }];
+  }
+  return [{ criterion: "Maximum normalized RMSE", value: normalizedRmse, threshold: target.maxNormalizedRmse!, pass: relPass }];
 }
 
 function validateByPm25Aqi(pairs: MeasurementPair[]): AqiCategoryValidation[] {

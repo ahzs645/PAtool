@@ -72,12 +72,33 @@ textarea {
   font: inherit;
 }
 
+/* ── Base styling for native form controls ──
+   Ensures every control looks intentional (never browser-default). Component
+   styles (e.g. Button.module.css `.button`, page module classes) use class
+   selectors and therefore override these element-level defaults. */
 input,
 select,
 textarea {
   background: var(--bg-primary);
   color: var(--text-primary);
-  border-color: var(--border-medium);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--border-radius-sm);
+  padding: var(--spacing-1-5) var(--spacing-2);
+  min-height: 30px;
+  transition: border-color var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+input:hover,
+select:hover,
+textarea:hover {
+  border-color: var(--text-tertiary);
+}
+
+textarea {
+  min-height: 64px;
+  padding: var(--spacing-2);
+  line-height: var(--line-height-md);
+  resize: vertical;
 }
 
 input::placeholder,
@@ -85,18 +106,96 @@ textarea::placeholder {
   color: var(--text-tertiary);
 }
 
+/* Custom dropdown chevron so selects never show the native control. */
+select {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: var(--spacing-7);
+  cursor: pointer;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%23888888' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right var(--spacing-2) center;
+  background-size: 14px;
+}
+
+/* Checkboxes, radios, ranges: themed accent, not the box treatment above. */
+input[type="checkbox"],
+input[type="radio"] {
+  appearance: auto;
+  -webkit-appearance: auto;
+  accent-color: var(--accent-primary);
+  width: 16px;
+  height: 16px;
+  min-height: auto;
+  padding: 0;
+  border: none;
+  cursor: pointer;
+}
+
+input[type="range"] {
+  accent-color: var(--accent-primary);
+  min-height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type="file"] {
+  border: none;
+  padding: 0;
+  background: transparent;
+  min-height: auto;
+}
+
+input[type="color"] {
+  padding: var(--spacing-0-5);
+  min-height: 30px;
+  cursor: pointer;
+}
+
 input[type="file"]::file-selector-button {
   min-height: 28px;
   margin-right: var(--spacing-2);
+  padding: var(--spacing-1) var(--spacing-3);
   border: 1px solid var(--border-strong);
   border-radius: var(--border-radius-sm);
   background: var(--bg-tertiary);
   color: var(--text-primary);
   font: inherit;
+  cursor: pointer;
 }
 
+input[type="file"]::file-selector-button:hover {
+  background: var(--bg-quaternary);
+}
+
+/* Default button chrome (matches the Button "secondary" variant). Class-based
+   buttons (Button component, page modules, MapLibre controls) override this. */
 button {
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-2);
+  min-height: 30px;
+  padding: var(--spacing-1-5) var(--spacing-3);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--border-radius-sm);
+  transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
+}
+
+button:hover:not(:disabled) {
+  background: var(--bg-tertiary);
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 ul,

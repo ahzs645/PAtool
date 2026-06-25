@@ -15,6 +15,7 @@ const targetDir = resolve(root, "app", "public", "data");
 const RUNTIME_ASSETS = [
   "example_pas.collection.json",
   "example_pat.series.json",
+  "network_timeseries.json",
 ];
 
 if (!existsSync(sourceDir)) {

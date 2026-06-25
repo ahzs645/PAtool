@@ -27,6 +27,16 @@ export type LifeExpectancyEstimate = {
   baseLifeExpectancyYears: number;
 };
 
+/**
+ * @equation life-expectancy-loss
+ * @title PM2.5 life-expectancy loss (AQLI log-linear)
+ * @category Exposure & Health
+ * @latex \mathrm{HR} = e^{\beta\,(PM_{2.5} - C_0)}, \quad \mathrm{YLL} = LE\left(1 - \tfrac{1}{\mathrm{HR}}\right)
+ * @var \beta | hazard exponent per µg/m³ (default 0.014, AQLI)
+ * @var C_0 | counterfactual concentration (default 5 µg/m³)
+ * @var LE | baseline life expectancy (years)
+ * @cite Air Quality Life Index (AQLI); Pope et al.
+ */
 export function lifeExpectancyLoss(
   pm25Exposure: number,
   options: LifeExpectancyOptions = {},

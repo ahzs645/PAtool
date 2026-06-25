@@ -221,6 +221,16 @@ function solveAugmentedLinearSystem(
 
 // -- Fitting --------------------------------------------------------------
 
+/**
+ * @equation st-sum-metric-variogram
+ * @title Space-time sum-metric variogram
+ * @category Interpolation
+ * @latex \gamma(h, u) = \gamma_s(h) + \gamma_t(u) + \gamma_{st}\!\left(\sqrt{h^2 + (\kappa\, u)^2}\right)
+ * @var h | spatial lag (km)
+ * @var u | temporal lag (days)
+ * @var \kappa | spatio-temporal anisotropy (km/day)
+ * @cite Kar et al. 2024; Carroll et al. 2025 (sum-metric ST kriging)
+ */
 export function sumMetricVariogramValue(
   h: number,
   u: number,

@@ -16,9 +16,12 @@ describe("EPA NowCast", () => {
   });
 
   it("returns null when last 3 hours mostly missing for PM", () => {
-    const v: Array<number | null> = [10, 10, 10, 10, 10, 10, 10, 10, 10, null, null, 10];
+    // values[0] is the oldest hour; values[n-1] is the most recent. Gaps among
+    // the *oldest* hours still allow a value because the recent 3 are complete.
+    const v: Array<number | null> = [null, null, 10, 10, 10, 10, 10, 10, 10, 10, 10, 10];
     expect(nowcastValue(v, "pm")).toBeCloseTo(10, 6);
-    const broken: Array<number | null> = [10, 10, 10, 10, 10, 10, 10, 10, 10, null, null, null];
+    // Gaps in the most recent 3 hours (only 1 of 3 valid) must yield null.
+    const broken: Array<number | null> = [10, 10, 10, 10, 10, 10, 10, 10, 10, null, null, 10];
     expect(nowcastValue(broken, "pm")).toBeNull();
   });
 

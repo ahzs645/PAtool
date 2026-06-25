@@ -5,6 +5,7 @@ import type { EChartsCoreOption } from "echarts/core";
 import {
   aqiCategoryStatistics,
   aqiConfusionMatrix,
+  comparisonPatterns,
   pm25ToAqi,
   pm25ToAqiBand,
   type AqiCategoryStatistic,
@@ -247,6 +248,44 @@ export default function ComparisonPage() {
   const aqiConfusion = useMemo(() => aqiConfusionMatrix(
     concentrationPairs.map((pair) => ({ reference: pair.referencePm25, sensor: pair.sensorPm25Mean })),
   ), [concentrationPairs]);
+  const temporalPatterns = useMemo(() => comparisonPatterns(
+    concentrationPairs.map((pair) => ({ timestamp: pair.timestamp, value: pair.sensorPm25Mean })),
+    concentrationPairs.map((pair) => ({ timestamp: pair.timestamp, value: pair.referencePm25 })),
+  ), [concentrationPairs]);
+
+  const temporalOption = useMemo<EChartsCoreOption | null>(() => {
+    if (concentrationPairs.length === 0) return null;
+    const panel = (a: { label: string }[]) => a.map((point) => point.label);
+    const sensorSeries = (points: { mean: number | null }[]) => points.map((point) => (point.mean === null ? null : Number(point.mean.toFixed(2))));
+    return {
+      tooltip: { trigger: "axis" },
+      legend: { data: ["Sensor", "Reference"], textStyle: { color: ct.text} },
+      grid: [
+        { left: "6%", right: "2%", top: "12%", height: "20%" },
+        { left: "6%", right: "2%", top: "44%", height: "20%" },
+        { left: "6%", right: "2%", top: "76%", height: "20%" },
+      ],
+      xAxis: [
+        { gridIndex: 0, type: "category", data: panel(temporalPatterns.hourOfDay.a), name: "Hour", axisLabel: { color: ct.text} },
+        { gridIndex: 1, type: "category", data: panel(temporalPatterns.dayOfWeek.a), name: "Day", axisLabel: { color: ct.text} },
+        { gridIndex: 2, type: "category", data: panel(temporalPatterns.monthOfYear.a), name: "Month", axisLabel: { color: ct.text} },
+      ],
+      yAxis: [
+        { gridIndex: 0, type: "value", axisLabel: { color: ct.text} },
+        { gridIndex: 1, type: "value", axisLabel: { color: ct.text} },
+        { gridIndex: 2, type: "value", axisLabel: { color: ct.text} },
+      ],
+      series: [
+        { name: "Sensor", type: "line", xAxisIndex: 0, yAxisIndex: 0, connectNulls: true, data: sensorSeries(temporalPatterns.hourOfDay.a), itemStyle: { color: ct.colors[1] } },
+        { name: "Reference", type: "line", xAxisIndex: 0, yAxisIndex: 0, connectNulls: true, data: sensorSeries(temporalPatterns.hourOfDay.b), itemStyle: { color: ct.colors[2] } },
+        { name: "Sensor", type: "line", xAxisIndex: 1, yAxisIndex: 1, connectNulls: true, data: sensorSeries(temporalPatterns.dayOfWeek.a), itemStyle: { color: ct.colors[1] } },
+        { name: "Reference", type: "line", xAxisIndex: 1, yAxisIndex: 1, connectNulls: true, data: sensorSeries(temporalPatterns.dayOfWeek.b), itemStyle: { color: ct.colors[2] } },
+        { name: "Sensor", type: "line", xAxisIndex: 2, yAxisIndex: 2, connectNulls: true, data: sensorSeries(temporalPatterns.monthOfYear.a), itemStyle: { color: ct.colors[1] } },
+        { name: "Reference", type: "line", xAxisIndex: 2, yAxisIndex: 2, connectNulls: true, data: sensorSeries(temporalPatterns.monthOfYear.b), itemStyle: { color: ct.colors[2] } },
+      ],
+    };
+  }, [concentrationPairs, temporalPatterns, ct]);
+
   const recentPairs = useMemo(() => pairs.slice(-12).reverse(), [pairs]);
   const latestPair = useMemo(() => (
     [...pairs].reverse().find((pair) => (
@@ -510,7 +549,7 @@ export default function ComparisonPage() {
         <StatCard
           label="Fit R2"
           value={comparison.fit ? comparison.fit.rSquared.toFixed(3) : "Unavailable"}
-          tone={comparison.fit && comparison.fit.rSquared >= 0.75 ? "good" : "neutral"}
+          tone={comparison.fit && comparison.fit.rSquared >= 0.7 ? "good" : "neutral"}
         />
         <StatCard
           label="Validation"
@@ -608,6 +647,12 @@ export default function ComparisonPage() {
           <p className={styles.empty}>No paired PM2.5 concentrations are available for AQI category diagnostics.</p>
         )}
       </Card>
+
+      {temporalOption && (
+        <Card title="Temporal patterns (hour of day, day of week, month)">
+          <EChart option={temporalOption} height={520} />
+        </Card>
+      )}
 
       <Card title="Recent paired observations">
         <div className={styles.tableWrap}>

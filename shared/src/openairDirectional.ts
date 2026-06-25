@@ -118,6 +118,15 @@ export function polarCluster(points: readonly WindDataPoint[]): DirectionalClust
   });
 }
 
+/**
+ * @equation theil-sen
+ * @title Theil-Sen robust trend
+ * @category Meteorology
+ * @latex \hat{\beta} = \mathrm{median}\left\{\dfrac{y_j - y_i}{t_j - t_i} : i < j\right\}, \quad \hat{\alpha} = \mathrm{median}\{y_k - \hat{\beta}\, t_k\}
+ * @var y | series value
+ * @var t | time (days)
+ * @cite Theil 1950; Sen 1968
+ */
 export function theilSenTrend(points: ReadonlyArray<{ timestamp: string; value: number }>): { slopePerDay: number; intercept: number; n: number } {
   const rows = points
     .map((point) => ({ x: new Date(point.timestamp).getTime() / 86_400_000, y: point.value }))
@@ -219,6 +228,14 @@ function median(values: readonly number[]): number {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
+/**
+ * @equation circular-mean
+ * @title Circular mean (wind direction)
+ * @category Meteorology
+ * @latex \bar{\theta} = \operatorname{atan2}\!\left(\tfrac{1}{n}\sum \sin\theta_i,\ \tfrac{1}{n}\sum \cos\theta_i\right) \bmod 360^{\circ}
+ * @var \theta_i | wind direction (degrees)
+ * @cite Mardia & Jupp, Directional Statistics
+ */
 function meanCircular(values: readonly number[]): number {
   if (!values.length) return 0;
   const radians = values.map((value) => (value * Math.PI) / 180);

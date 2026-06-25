@@ -83,6 +83,16 @@ export function truncatePm25ForAqi(pm25: number): number {
   return Math.floor(Math.max(0, pm25) * 10) / 10;
 }
 
+/**
+ * @equation aqi-piecewise
+ * @title US Air Quality Index (piecewise linear)
+ * @category AQI & Metrics
+ * @latex \mathrm{AQI} = \dfrac{I_{hi} - I_{lo}}{C_{hi} - C_{lo}}\,(C - C_{lo}) + I_{lo}
+ * @var C | truncated pollutant concentration
+ * @var C_{lo}, C_{hi} | concentration breakpoints of the containing category
+ * @var I_{lo}, I_{hi} | AQI values of that category
+ * @cite US EPA AQI (40 CFR Part 58, Appendix G)
+ */
 export function pm25ToAqiRegulatory(pm25: number, profile: AqiProfile): number {
   const c = truncatePm25ForAqi(pm25);
   for (const bp of profile.breakpoints) {
