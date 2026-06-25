@@ -37,6 +37,13 @@ describe("monitor loaders", () => {
     const m = await epaAqsLoadAnnual({ fetcher: async () => csv, year: 2024, parameter: "pm25" });
     expect(m.meta[0].parameter).toBe("pm25");
     expect(m.meta[0].units).toBe("ug/m3");
+    expect(m.meta[0].id).toContain("88101"); // defaults to the regulatory FEM code
+  });
+
+  it("epa aqs loader honors the selected PM2.5 parameter code", async () => {
+    const m = await epaAqsLoadAnnual({ fetcher: async () => csv, year: 2024, parameter: "pm25", pm25ParameterCode: "88500" });
+    expect(m.meta[0].id).toContain("88500");
+    expect(m.meta[0].label).toContain("88500");
   });
 
   it("clarity loader handles JSON results", async () => {
