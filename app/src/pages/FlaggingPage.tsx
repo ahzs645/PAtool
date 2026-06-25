@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 import {
   exportFlagConditions,
   flagAsnatSeries,
-  type AsnatRow,
   type PatSeries,
 } from "@patool/shared";
 
@@ -32,6 +31,18 @@ function flagLabel(code: number): string {
   if (code >= 1 && code <= 79) return `User condition ${code}`;
   return FLAG_LABELS[code] ?? `Flag ${code}`;
 }
+
+type FlagTableRow = {
+  timestamp: string;
+  id: string;
+  latitude: number | null;
+  longitude: number | null;
+  value: number | null;
+  humidity: number | null;
+  temperature: number | null;
+  pm25A: number | null;
+  pm25B: number | null;
+};
 
 function meanPm(a: number | null, b: number | null): number | null {
   if (a !== null && Number.isFinite(a) && b !== null && Number.isFinite(b)) return (a + b) / 2;
@@ -73,7 +84,7 @@ export default function FlaggingPage() {
     queryFn: () => getJson<PatSeries>(`/api/pat?id=${sensorId}&aggregate=raw`),
   });
 
-  const rows = useMemo<AsnatRow[]>(() => {
+  const rows = useMemo<FlagTableRow[]>(() => {
     if (!series) return [];
     return series.points.map((point) => ({
       timestamp: point.timestamp,
@@ -81,10 +92,10 @@ export default function FlaggingPage() {
       latitude: series.meta.latitude ?? null,
       longitude: series.meta.longitude ?? null,
       value: meanPm(point.pm25A, point.pm25B),
-      humidity: point.humidity,
-      temperature: point.temperature,
-      pm25A: point.pm25A,
-      pm25B: point.pm25B,
+      humidity: point.humidity ?? null,
+      temperature: point.temperature ?? null,
+      pm25A: point.pm25A ?? null,
+      pm25B: point.pm25B ?? null,
     }));
   }, [series]);
 
