@@ -133,6 +133,7 @@ export type { AggregatedMeasurementRow, MeasurementRow, SiteSummaryRow, TimeBuck
 export * from "./standardsCoverage";
 export * from "./standardTable";
 export * from "./summaries";
+export * from "./temporalPatterns";
 export * from "./timeSeriesQuality";
 export * from "./studyArea";
 export {
