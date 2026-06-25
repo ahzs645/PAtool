@@ -286,22 +286,24 @@ describe("PurpleAir correction profiles and health checks", () => {
   it("supports the extended correction library (FSMap, Nilson 2024, Delp & Singer, LRAPA)", async () => {
     const { pickCorrectionProfileForRegime, PURPLEAIR_CORRECTION_KELLEHER_FIXTURE } = await import("./domain");
 
-    // EPA AirNow Fire & Smoke Map equation matches Barkjohn 2021 below the
-    // breakpoint and the high-concentration quadratic above it.
+    // EPA AirNow Fire & Smoke Map US-wide correction (Equation 1). PA=100 sits
+    // in the 50–210 segment, which uses the 0.786 mid-range slope (not the
+    // low-range 0.524 Barkjohn-2021 slope); PA=500 uses the high-smoke
+    // quadratic with the RH term dropped.
     const fsmapLow = applyPurpleAirCorrection({
       pm25: 100,
       humidity: 60,
       inputBasis: "cf_1",
       profileId: "epa-airnow-fsmap-cf1",
     });
-    expect(fsmapLow?.pm25Corrected).toBeCloseTo(0.524 * 100 - 0.0862 * 60 + 5.75, 3);
+    expect(fsmapLow?.pm25Corrected).toBeCloseTo(0.786 * 100 - 0.0862 * 60 + 5.75, 3);
     const fsmapHigh = applyPurpleAirCorrection({
       pm25: 500,
       humidity: 60,
       inputBasis: "cf_1",
       profileId: "epa-airnow-fsmap-cf1",
     });
-    expect(fsmapHigh?.pm25Corrected).toBeCloseTo(0.46 * 500 + 3.93e-4 * 500 ** 2 + 2.97, 2);
+    expect(fsmapHigh?.pm25Corrected).toBeCloseTo(2.966 + 0.69 * 500 + 8.84e-4 * 500 ** 2, 2);
 
     // Nilson 2024 needs both RH and temperature.
     const nilson2024 = applyPurpleAirCorrection({

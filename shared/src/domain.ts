@@ -736,20 +736,40 @@ function nilsonPolynomial(pm25Atm: number, humidity: number | null): number {
   return roundNonNegative(0.53 * pm25Atm + 0.000952 * pm25Atm ** 2 - 0.0914 * humidity + 6.3);
 }
 
-// EPA AirNow Fire & Smoke Map equation (Holder et al. 2023). Distinct from
-// the Barkjohn 2022 smoke paper — the deployed map uses a piecewise form
-// that drops the RH term at high concentrations and replaces it with a
-// CF=1 quadratic term so the relationship stays monotonically increasing
-// at extreme smoke loads.
+// EPA AirNow Fire & Smoke Map US-wide PurpleAir correction. This is the exact
+// piecewise form documented as Equation 1 in Barkjohn et al. 2025 ("Air Sensor
+// Network Analysis Tool") and applied to the deployed PurpleAir.pm25_corrected
+// field served through RSIG/ASNAT. It is the Barkjohn 2021 relationship
+// (0.524·PA − 0.0862·RH + 5.75) extended to high smoke loads through five
+// continuous segments keyed on the CF=1 PA value: the low-range 0.524 slope
+// blends into a 0.786 mid-range slope (30–50), holds through 50–210, then
+// blends into a high-smoke quadratic (210–260) while fading out the RH term,
+// and finally drops RH entirely above 260 so the curve stays monotonic at
+// extreme concentrations. All breakpoints are continuous by construction.
 function epaAirnowFsmap(pm25Cf1: number, humidity: number | null): number {
-  const lowConcentration = humidity !== null
-    ? 0.524 * pm25Cf1 - 0.0862 * humidity + 5.75
-    : 0.524 * pm25Cf1 + 5.75;
-  const highConcentration = 0.46 * pm25Cf1 + 3.93e-4 * pm25Cf1 ** 2 + 2.97;
-  if (pm25Cf1 < 343) return roundNonNegative(lowConcentration);
-  if (pm25Cf1 >= 410) return roundNonNegative(highConcentration);
-  const transition = (pm25Cf1 - 343) / (410 - 343);
-  return roundNonNegative(lowConcentration * (1 - transition) + highConcentration * transition);
+  const pa = pm25Cf1;
+  const rh = humidity ?? 0; // RH term contributes 0 when humidity is unavailable
+  const highQuad = 2.966 + 0.69 * pa + 8.84e-4 * pa ** 2;
+
+  if (pa < 30) return roundNonNegative(0.524 * pa - 0.0862 * rh + 5.75);
+  if (pa < 50) {
+    const f = pa / 20 - 3 / 2; // 0 at PA=30, 1 at PA=50
+    const slope = 0.786 * f + 0.524 * (1 - f);
+    return roundNonNegative(slope * pa - 0.0862 * rh + 5.75);
+  }
+  if (pa < 210) return roundNonNegative(0.786 * pa - 0.0862 * rh + 5.75);
+  if (pa < 260) {
+    const f = pa / 50 - 21 / 5; // 0 at PA=210, 1 at PA=260
+    const slope = 0.69 * f + 0.786 * (1 - f);
+    return roundNonNegative(
+      slope * pa
+        - 0.0862 * rh * (1 - f)
+        + 2.966 * f
+        + 5.75 * (1 - f)
+        + 8.84e-4 * pa ** 2 * f,
+    );
+  }
+  return roundNonNegative(highQuad);
 }
 
 // Nilson et al. 2024 (AMT, doi.org/10.5194/amt-17-6735-2024) RH+T
@@ -801,12 +821,12 @@ export const PURPLEAIR_CORRECTION_PROFILES: Record<PurpleAirCorrectionProfileId,
   },
   "epa-airnow-fsmap-cf1": {
     id: "epa-airnow-fsmap-cf1",
-    label: "EPA AirNow Fire and Smoke Map equation (Holder et al. 2023)",
+    label: "EPA AirNow Fire & Smoke Map US-wide correction (Equation 1)",
     inputBasis: "cf_1",
     scope: "extreme-smoke",
     citation: EPA_AIRNOW_FSMAP_CITATION,
     requiresHumidity: false,
-    recommendedRegimes: ["moderate-smoke", "heavy-smoke"],
+    recommendedRegimes: ["non-smoke", "light-smoke", "moderate-smoke", "heavy-smoke"],
     correct: epaAirnowFsmap,
   },
   "nilson-2022-rh-growth-atm": {
