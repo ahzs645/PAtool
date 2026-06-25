@@ -47,6 +47,7 @@ const TrajectoryPage = lazy(() => import("./pages/TrajectoryPage"));
 const MultiSourceLoadersPage = lazy(() => import("./pages/MultiSourceLoadersPage"));
 const FlaggingPage = lazy(() => import("./pages/FlaggingPage"));
 const CorrectionsPage = lazy(() => import("./pages/CorrectionsPage"));
+const TimeLapsePage = lazy(() => import("./pages/TimeLapsePage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -99,6 +100,7 @@ function RoutesView() {
             <Route path="/loaders" element={<MultiSourceLoadersPage />} />
             <Route path="/flagging" element={<FlaggingPage />} />
             <Route path="/corrections" element={<CorrectionsPage />} />
+            <Route path="/timelapse" element={<TimeLapsePage />} />
           </Routes>
         </Suspense>
       </Shell>

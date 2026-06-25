@@ -296,6 +296,10 @@ export async function getStaticJson<T>(path: string): Promise<T> {
     return (await getStaticStatus()) as T;
   }
 
+  if (url.pathname === "/api/network/timeseries") {
+    return (await loadAsset("network_timeseries.json")) as T;
+  }
+
   if (url.pathname === "/api/pat") {
     const sensorId = url.searchParams.get("id") ?? "1001";
     const start = url.searchParams.get("start") ?? undefined;

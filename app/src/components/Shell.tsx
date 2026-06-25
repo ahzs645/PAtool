@@ -8,6 +8,7 @@ import styles from "./Shell.module.css";
 const navItems = [
   { to: "/", label: "Explorer", icon: TableIcon },
   { to: "/map", label: "Map", icon: MapIcon },
+  { to: "/timelapse", label: "Time-lapse", icon: MapIcon },
   { to: "/airfuse", label: "AirFuse", icon: AirFuseIcon },
   { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
   { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
