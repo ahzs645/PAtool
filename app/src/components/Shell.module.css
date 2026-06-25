@@ -66,6 +66,34 @@
   color: var(--text-tertiary);
 }
 
+.navGroup {
+  margin-bottom: var(--spacing-1);
+}
+
+.sectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: auto;
+  padding: var(--spacing-1-5) var(--spacing-3);
+  margin-top: var(--spacing-1);
+  background: transparent;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+.sectionHeader:hover {
+  color: var(--text-secondary);
+  background: var(--bg-tertiary);
+}
+
 .navLink {
   display: flex;
   align-items: center;
