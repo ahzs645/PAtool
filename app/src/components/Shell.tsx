@@ -17,16 +17,23 @@ const navSections: Array<{ label: string; items: Array<{ to: string; label: stri
     ],
   },
   {
-    label: "Data & QC",
+    label: "Ingest & Sources",
+    items: [
+      { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
+      { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
+      { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
+      { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
+    ],
+  },
+  {
+    label: "QC & Corrections",
     items: [
       { to: "/flagging", label: "Flagging", icon: ValidationIcon },
       { to: "/corrections", label: "Corrections", icon: CompareIcon },
       { to: "/channel-fit", label: "Channel Fit", icon: CompareIcon },
+      { to: "/temp-calibration", label: "Temp Calibration", icon: WeatherNormIcon },
+      { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
       { to: "/data-readiness", label: "Data Readiness", icon: DataReadinessIcon },
-      { to: "/covariates", label: "Covariates", icon: DatabaseIcon },
-      { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
-      { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
-      { to: "/campaigns", label: "Campaigns", icon: RouteIcon },
     ],
   },
   {
@@ -40,8 +47,6 @@ const navSections: Array<{ label: string; items: Array<{ to: string; label: stri
       { to: "/sensor-evaluation", label: "Sensor Eval", icon: ShieldIcon },
       { to: "/measurement-error", label: "Measurement Error", icon: ErrorIcon },
       { to: "/reu-decomposition", label: "REU Decomposition", icon: ErrorIcon },
-      { to: "/diagnostics", label: "Diagnostics", icon: DiagnosticsIcon },
-      { to: "/temp-calibration", label: "Temp Calibration", icon: WeatherNormIcon },
     ],
   },
   {
@@ -180,8 +185,20 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+function focusMain(event: React.MouseEvent<HTMLAnchorElement>) {
+  // Under HashRouter the href="#patool-main" would be parsed as a route and
+  // blank the page, so drive focus/scroll manually instead of navigating.
+  event.preventDefault();
+  const main = document.getElementById("patool-main");
+  if (main) {
+    main.focus();
+    main.scrollIntoView();
+  }
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
+  const [navFilter, setNavFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "{}") as Record<string, boolean>;
@@ -207,9 +224,19 @@ export function Shell({ children }: { children: React.ReactNode }) {
   });
   const warning = status?.warnings?.[0];
 
+  const query = navFilter.trim().toLowerCase();
+  const filteredSections = query
+    ? navSections
+        .map((section) => ({
+          ...section,
+          items: section.items.filter((item) => item.label.toLowerCase().includes(query)),
+        }))
+        .filter((section) => section.items.length > 0)
+    : navSections;
+
   return (
     <div className={styles.shell}>
-      <a className="skip-link" href="#patool-main">
+      <a className="skip-link" href="#patool-main" onClick={focusMain}>
         Skip to main content
       </a>
       <aside className={styles.sidebar} aria-label="Primary navigation">
@@ -218,9 +245,22 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <span className={styles.brandName}>PAtool</span>
         </Link>
 
+        <input
+          type="search"
+          className={styles.navFilter}
+          placeholder="Filter workspaces..."
+          aria-label="Filter workspaces"
+          value={navFilter}
+          onChange={(event) => setNavFilter(event.target.value)}
+        />
+
         <nav aria-label="Workspace sections">
-          {navSections.map((section) => {
-            const isOpen = !collapsed[section.label];
+          {filteredSections.length === 0 && (
+            <p className={styles.navEmpty}>No workspaces match &ldquo;{navFilter}&rdquo;.</p>
+          )}
+          {filteredSections.map((section) => {
+            // A filter query auto-expands the sections that still have matches.
+            const isOpen = query ? true : !collapsed[section.label];
             const sectionId = `nav-section-${section.label.replace(/[^a-z]+/gi, "-").toLowerCase()}`;
             return (
               <div key={section.label} className={styles.navGroup}>
