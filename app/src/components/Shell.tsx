@@ -19,6 +19,7 @@ const navSections: Array<{ label: string; items: Array<{ to: string; label: stri
   {
     label: "Ingest & Sources",
     items: [
+      { to: "/import", label: "Upload Data", icon: ImportIcon },
       { to: "/loaders", label: "Loaders & Catalog", icon: ImportIcon },
       { to: "/sentinel", label: "SENTINEL", icon: ImportIcon },
       { to: "/campaigns", label: "Campaigns", icon: RouteIcon },

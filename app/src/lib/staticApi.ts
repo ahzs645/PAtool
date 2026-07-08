@@ -37,6 +37,8 @@ import {
   type DataStatus,
 } from "@patool/shared";
 
+import { ensureDatasetHydrated, getActiveDataset } from "./datasetStore";
+
 const assetCache = new Map<string, Promise<unknown>>();
 
 export function clearStaticApiCache(): void {
@@ -68,6 +70,8 @@ async function loadAsset<T>(file: string): Promise<T> {
 }
 
 async function loadPasCollection(): Promise<PasCollection> {
+  const active = getActiveDataset();
+  if (active) return active.collection;
   return pasCollectionSchema.parse(await loadAsset("example_pas.collection.json"));
 }
 
@@ -247,6 +251,23 @@ function buildSeriesForSensor(template: PatSeries, sensorId: string, sensorRecor
 }
 
 async function getStaticStatus(): Promise<DataStatus> {
+  const active = getActiveDataset();
+  if (active) {
+    const range = active.summary.start && active.summary.end
+      ? ` (${active.summary.start.slice(0, 10)} to ${active.summary.end.slice(0, 10)})`
+      : "";
+    return {
+      mode: "static",
+      collectionSource: "local",
+      generatedAt: active.importedAt,
+      liveConfigured: false,
+      localConfigured: true,
+      warnings: [
+        `Serving your uploaded data: ${active.summary.sensorCount} sensor(s)${range}.`,
+      ],
+    };
+  }
+
   const collection = await loadPasCollection();
   return {
     mode: "static",
@@ -260,20 +281,30 @@ async function getStaticStatus(): Promise<DataStatus> {
   };
 }
 
+function finalizeSeries(series: PatSeries, start?: string, end?: string, aggregate: "raw" | "hourly" = "raw"): PatSeries {
+  let result = series;
+  if (start && end) {
+    result = patFilterDate(result, start, end);
+  }
+  if (aggregate === "hourly") {
+    return patAggregate(result, 60);
+  }
+  return result;
+}
+
 async function loadPatSeriesForSensor(sensorId: string, start?: string, end?: string, aggregate: "raw" | "hourly" = "raw"): Promise<PatSeries> {
+  const active = getActiveDataset();
+  if (active) {
+    // Serve the sensor's real uploaded series; fall back to any series so pages
+    // with a hard-coded default sensor id still render.
+    const series = active.seriesById[sensorId] ?? Object.values(active.seriesById)[0];
+    if (series) return finalizeSeries(series, start, end, aggregate);
+  }
+
   const [template, collection] = await Promise.all([loadTemplatePatSeries(), loadPasCollection()]);
   const sensorRecord = collection.records.find((record) => record.id === sensorId);
-  let series = buildSeriesForSensor(template, sensorId, sensorRecord);
-
-  if (start && end) {
-    series = patFilterDate(series, start, end);
-  }
-
-  if (aggregate === "hourly") {
-    return patAggregate(series, 60);
-  }
-
-  return series;
+  const series = buildSeriesForSensor(template, sensorId, sensorRecord);
+  return finalizeSeries(series, start, end, aggregate);
 }
 
 async function buildSensorRecord(sensorId: string): Promise<SensorRecord> {
@@ -286,6 +317,8 @@ async function buildSensorRecord(sensorId: string): Promise<SensorRecord> {
 }
 
 export async function getStaticJson<T>(path: string): Promise<T> {
+  // Load any user-uploaded dataset before answering so it takes precedence.
+  await ensureDatasetHydrated();
   const url = new URL(path, "https://patool.local");
 
   if (url.pathname === "/api/pas") {
@@ -297,6 +330,8 @@ export async function getStaticJson<T>(path: string): Promise<T> {
   }
 
   if (url.pathname === "/api/network/timeseries") {
+    const active = getActiveDataset();
+    if (active) return active.network as T;
     return (await loadAsset("network_timeseries.json")) as T;
   }
 

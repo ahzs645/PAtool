@@ -58,6 +58,22 @@ npm run build:pages
 
 The output is written to `app/dist/`.
 
+## Upload your own data
+
+PAtool can run the entire interface on your own PurpleAir network instead of the
+bundled demo. Open **Upload Data** in the sidebar (or visit `/#/import`) and drop
+your PurpleAir daily/hourly export CSVs — the columns documented in
+[`data/prince-george-sample/`](data/prince-george-sample/README.md)
+(`time_stamp, sensor_number, latitude, longitude, pm2.5_cf_1, humidity, …`).
+
+Parsing happens entirely in the browser; nothing is sent to a server. The parsed
+dataset is stored in IndexedDB, so it persists across reloads until you choose
+**Revert to demo data**. While a dataset is active, the provenance banner reads
+"Serving your uploaded data" and every page (Explorer, map, QC, corrections,
+comparison, analytics, …) reflects your sensors. Because these exports carry a
+single combined PM2.5 per sensor-hour, A/B channel-agreement diagnostics will
+show identical channels.
+
 ## Data pipeline
 
 The path from raw sources to the committed fixtures the static app reads is
