@@ -173,7 +173,7 @@ export default function ReportBuilderPage() {
     if (!collection) return;
     setBuilderReady(false);
     let idleId: number | null = null;
-    let timeoutId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
 
     if (typeof window.requestIdleCallback === "function") {
       idleId = window.requestIdleCallback(() => setBuilderReady(true), { timeout: 500 });
