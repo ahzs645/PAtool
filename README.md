@@ -58,6 +58,21 @@ npm run build:pages
 
 The output is written to `app/dist/`.
 
+## Data pipeline
+
+The path from raw sources to the committed fixtures the static app reads is
+documented in [`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md), including each
+generator script and which fixtures ship at runtime.
+
+A committed sample of the raw PurpleAir daily CSV exports lives in
+[`data/prince-george-sample/`](data/prince-george-sample/README.md) (Prince
+George, BC; 36 sensors; Nov 2022 – Jan 2023). It documents the expected CSV
+shape and makes the `NetworkTimeSeries` build reproducible from a clean checkout:
+
+```bash
+npm run network:build   # data/prince-george-sample -> network_timeseries.sample.json
+```
+
 ## Notes
 
 - The original AirSensor R package remains in the parent repository where this web workspace was first developed.

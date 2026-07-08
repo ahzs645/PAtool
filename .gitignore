@@ -6,6 +6,8 @@ tmp/
 .DS_Store
 worker/.wrangler/
 *.log
+# Reproducible output of `npm run network:build` (regenerate from data/prince-george-sample)
+shared/src/generated/network_timeseries.sample.json
 .playwright-mcp/
 /after*.png
 /dark-*.png

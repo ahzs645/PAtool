@@ -16,6 +16,7 @@
     "equations:extract": "node scripts/extract_equations.mjs",
     "fixtures:convert": "python3.13 scripts/convert_rda_fixtures.py",
     "fixtures:import-bitesizedaq": "node scripts/import_bitesizedaq_data.mjs",
+    "network:build": "node scripts/build_network_timeseries.mjs data/prince-george-sample shared/src/generated/network_timeseries.sample.json day",
     "prepare:static-data": "node scripts/prepare_static_data.mjs",
     "test": "npm run test --workspaces --if-present",
     "test:heatmap-browser": "node scripts/check_heatmap_flicker.mjs",
