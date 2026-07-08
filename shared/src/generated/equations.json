@@ -174,8 +174,8 @@
       }
     ],
     "cite": "Barkjohn, Gantt & Clements 2021, Atmos. Meas. Tech.",
-    "file": "shared/src/domain.ts",
-    "line": 707
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 77
   },
   {
     "id": "barkjohn-2022-smoke",
@@ -192,8 +192,8 @@
       }
     ],
     "cite": "Barkjohn et al. 2022 (extreme smoke)",
-    "file": "shared/src/domain.ts",
-    "line": 723
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 93
   },
   {
     "id": "delp-singer-2020",
@@ -210,8 +210,8 @@
       }
     ],
     "cite": "Delp & Singer 2020, Environ. Sci. Technol.",
-    "file": "shared/src/domain.ts",
-    "line": 846
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 216
   },
   {
     "id": "airnow-fsmap",
@@ -232,8 +232,8 @@
       }
     ],
     "cite": "Barkjohn et al. 2025 (ASNAT), Atmosphere — Equation 1",
-    "file": "shared/src/domain.ts",
-    "line": 785
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 155
   },
   {
     "id": "lrapa-2017",
@@ -250,8 +250,8 @@
       }
     ],
     "cite": "Lane Regional Air Protection Agency 2017",
-    "file": "shared/src/domain.ts",
-    "line": 861
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 231
   },
   {
     "id": "nilson-polynomial",
@@ -272,8 +272,8 @@
       }
     ],
     "cite": "Nilson et al. 2022",
-    "file": "shared/src/domain.ts",
-    "line": 759
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 129
   },
   {
     "id": "nilson-rh-growth",
@@ -294,8 +294,8 @@
       }
     ],
     "cite": "Nilson et al. 2022",
-    "file": "shared/src/domain.ts",
-    "line": 743
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 113
   },
   {
     "id": "nilson-2024",
@@ -320,8 +320,8 @@
       }
     ],
     "cite": "Nilson et al. 2024, Atmos. Meas. Tech.",
-    "file": "shared/src/domain.ts",
-    "line": 823
+    "file": "shared/src/purpleairCorrections.ts",
+    "line": 193
   },
   {
     "id": "life-expectancy-loss",
@@ -373,7 +373,7 @@
     ],
     "cite": "Shepard 1968",
     "file": "shared/src/domain.ts",
-    "line": 2999
+    "line": 2624
   },
   {
     "id": "st-sum-metric-variogram",
@@ -425,7 +425,7 @@
     ],
     "cite": "Carroll et al. 2025, Scientific Reports",
     "file": "shared/src/domain.ts",
-    "line": 3214
+    "line": 2839
   },
   {
     "id": "spherical-variogram",
@@ -455,7 +455,7 @@
     ],
     "cite": "Cressie 1993, Statistics for Spatial Data",
     "file": "shared/src/domain.ts",
-    "line": 3539
+    "line": 3164
   },
   {
     "id": "circular-mean",
