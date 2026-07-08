@@ -49,6 +49,8 @@ const FlaggingPage = lazy(() => import("./pages/FlaggingPage"));
 const CorrectionsPage = lazy(() => import("./pages/CorrectionsPage"));
 const TimeLapsePage = lazy(() => import("./pages/TimeLapsePage"));
 const EquationsPage = lazy(() => import("./pages/EquationsPage"));
+const ImportDataPage = lazy(() => import("./pages/ImportDataPage"));
+const NotFoundPage = lazy(() => import("./pages/NotFoundPage"));
 
 function RoutesView() {
   const Router = routerMode === "hash" ? HashRouter : BrowserRouter;
@@ -103,6 +105,8 @@ function RoutesView() {
             <Route path="/corrections" element={<CorrectionsPage />} />
             <Route path="/timelapse" element={<TimeLapsePage />} />
             <Route path="/equations" element={<EquationsPage />} />
+            <Route path="/import" element={<ImportDataPage />} />
+            <Route path="*" element={<NotFoundPage />} />
           </Routes>
         </Suspense>
       </Shell>

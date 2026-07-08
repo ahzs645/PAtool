@@ -58,6 +58,37 @@ npm run build:pages
 
 The output is written to `app/dist/`.
 
+## Upload your own data
+
+PAtool can run the entire interface on your own PurpleAir network instead of the
+bundled demo. Open **Upload Data** in the sidebar (or visit `/#/import`) and drop
+your PurpleAir daily/hourly export CSVs — the columns documented in
+[`data/prince-george-sample/`](data/prince-george-sample/README.md)
+(`time_stamp, sensor_number, latitude, longitude, pm2.5_cf_1, humidity, …`).
+
+Parsing happens entirely in the browser; nothing is sent to a server. The parsed
+dataset is stored in IndexedDB, so it persists across reloads until you choose
+**Revert to demo data**. While a dataset is active, the provenance banner reads
+"Serving your uploaded data" and every page (Explorer, map, QC, corrections,
+comparison, analytics, …) reflects your sensors. Because these exports carry a
+single combined PM2.5 per sensor-hour, A/B channel-agreement diagnostics will
+show identical channels.
+
+## Data pipeline
+
+The path from raw sources to the committed fixtures the static app reads is
+documented in [`docs/DATA_PIPELINE.md`](docs/DATA_PIPELINE.md), including each
+generator script and which fixtures ship at runtime.
+
+A committed sample of the raw PurpleAir daily CSV exports lives in
+[`data/prince-george-sample/`](data/prince-george-sample/README.md) (Prince
+George, BC; 36 sensors; Nov 2022 – Jan 2023). It documents the expected CSV
+shape and makes the `NetworkTimeSeries` build reproducible from a clean checkout:
+
+```bash
+npm run network:build   # data/prince-george-sample -> network_timeseries.sample.json
+```
+
 ## Notes
 
 - The original AirSensor R package remains in the parent repository where this web workspace was first developed.

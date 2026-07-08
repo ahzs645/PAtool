@@ -128,15 +128,16 @@ export function DataTable<T>({
   };
 
   return (
-    <div className={styles.table}>
+    <div className={styles.table} role="table">
       {/* Header */}
-      <div className={styles.headerRow}>
+      <div className={styles.headerRow} role="row">
         {visibleColumns.map((col) => {
           const filterValue = filters[col.key] ?? "";
           const isSorted = sort?.key === col.key;
           return (
           <div
             key={col.key}
+            role="columnheader"
             className={`${styles.headerCell} ${styles.headerClickable}`}
             style={{ width: col.width, minWidth: col.width }}
             onClick={(e) => {
@@ -239,7 +240,7 @@ export function DataTable<T>({
       </div>
 
       {/* Body */}
-      <div className={styles.tbody}>
+      <div className={styles.tbody} role="rowgroup">
         {visibleData.length === 0 ? (
           <div className={styles.empty}>{emptyMessage}</div>
         ) : (
@@ -249,12 +250,15 @@ export function DataTable<T>({
             return (
               <div
                 key={`${String(key)}-${currentPage}-${rowIndex}`}
+                role="row"
+                aria-selected={onRowClick ? isSelected : undefined}
                 className={`${styles.row} ${onRowClick ? styles.rowClickable : ""} ${isSelected ? styles.rowSelected : ""}`}
                 onClick={onRowClick ? () => onRowClick(row) : undefined}
               >
                 {visibleColumns.map((col) => (
                   <div
                     key={col.key}
+                    role="cell"
                     className={styles.cell}
                     style={{ width: col.width, minWidth: col.width }}
                   >
