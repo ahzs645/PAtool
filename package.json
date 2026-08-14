@@ -20,6 +20,7 @@
     "prepare:static-data": "node scripts/prepare_static_data.mjs",
     "test": "npm run test --workspaces --if-present",
     "test:heatmap-browser": "node scripts/check_heatmap_flicker.mjs",
+    "test:responsive": "node scripts/check_responsive_layout.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {

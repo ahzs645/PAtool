@@ -1,7 +1,8 @@
 .pageLayout {
   display: flex;
   gap: 0;
-  height: calc(100vh - var(--spacing-8));
+  height: calc(100vh - var(--spacing-8) - var(--topbar-height));
+  height: calc(100dvh - var(--spacing-8) - var(--topbar-height));
 }
 
 .mainContent {
@@ -189,64 +190,6 @@
   }
 }
 
-@media (max-width: 760px) {
-  .pageLayout {
-    flex-direction: column;
-    height: auto;
-    min-height: 0;
-  }
-
-  .mainContent {
-    overflow: visible;
-  }
-
-  .controls {
-    align-items: stretch;
-  }
-
-  .search,
-  .select,
-  .toggle {
-    flex: 1 1 100%;
-    min-width: 0;
-  }
-
-  .listCard {
-    height: 320px;
-    min-height: 320px;
-  }
-
-  .resizeHandle {
-    display: none;
-  }
-
-  .sidePanelWrapper,
-  .sidePanelWrapperOpen {
-    width: 100%;
-  }
-
-  .sidePanel {
-    width: 100%;
-    height: auto;
-    max-height: 70vh;
-    margin-left: 0;
-  }
-
-  .tabBar {
-    gap: var(--spacing-2);
-    overflow-x: auto;
-    padding: 0 var(--spacing-3);
-  }
-
-  .fieldRow {
-    align-items: flex-start;
-  }
-
-  .fieldLabel {
-    width: 76px;
-  }
-}
-
 /* ── Resize Handle ── */
 .resizeHandle {
   width: 8px;
@@ -283,6 +226,10 @@
 .sidePanelWrapper {
   flex-shrink: 0;
   min-width: 0;
+  /* The drag-to-resize width is set inline, so it outranks any stylesheet
+     `width`. `max-width` still clamps it, which is what keeps the panel inside
+     narrow viewports. */
+  max-width: 100%;
   overflow: hidden;
   transition: width var(--duration-normal) ease;
 }
@@ -298,6 +245,7 @@
 /* ── Right Side Panel (Twenty CRM pattern) ── */
 .sidePanel {
   width: 400px;
+  max-width: 100%;
   border: 1px solid var(--border-medium);
   border-radius: var(--border-radius-md);
   background: var(--bg-primary);
@@ -604,4 +552,85 @@
   gap: var(--spacing-2);
   padding: 0 var(--spacing-4);
   margin-bottom: var(--spacing-3);
+}
+
+/* ── Small viewports ──
+   Kept at the end of the file on purpose: these rules override base rules of
+   equal specificity, so they only win from below them in source order. */
+@media (max-width: 760px) {
+  .pageLayout {
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+
+  .mainContent {
+    overflow: visible;
+  }
+
+  .controls {
+    align-items: stretch;
+  }
+
+  .search,
+  .select,
+  .toggle {
+    flex: 1 1 100%;
+    min-width: 0;
+  }
+
+  .listCard {
+    height: 320px;
+    min-height: 320px;
+  }
+
+  .resizeHandle {
+    display: none;
+  }
+
+  /* Stacked under the table the panel opens a full screen below the fold, so a
+     row tap reads as "nothing happened". Dock it as a bottom sheet instead. */
+  .sidePanelWrapper {
+    width: 100%;
+  }
+
+  .sidePanelWrapperOpen {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 45;
+    width: 100%;
+    transition: none;
+  }
+
+  .sidePanel {
+    width: 100%;
+    height: auto;
+    max-height: 70vh;
+    max-height: 70dvh;
+    margin-left: 0;
+    border-bottom: 0;
+    border-radius: var(--border-radius-lg) var(--border-radius-lg) 0 0;
+    box-shadow: var(--shadow-strong);
+  }
+
+  .sidePanelClose {
+    width: 40px;
+    height: 40px;
+  }
+
+  .tabBar {
+    gap: var(--spacing-2);
+    overflow-x: auto;
+    padding: 0 var(--spacing-3);
+  }
+
+  .fieldRow {
+    align-items: flex-start;
+  }
+
+  .fieldLabel {
+    width: 76px;
+  }
 }

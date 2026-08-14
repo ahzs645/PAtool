@@ -46,6 +46,9 @@
   /* ── Layout (theme-invariant) ── */
   --sidebar-width: 220px;
   --table-row-height: 32px;
+  /* Height of the compact-viewport top bar. Zero while the sidebar is a
+     permanent column; pages subtract it from full-height layouts. */
+  --topbar-height: 0px;
 
   /* ── Light theme (default) ── */
   --bg-primary: #ffffff;
@@ -159,4 +162,11 @@
   --chart-5: #abb2e4;
   --chart-axis: #818181;
   --chart-grid: #2a2a2a;
+}
+
+/* Matches the drawer breakpoint in Shell.module.css, where the top bar appears. */
+@media (max-width: 1080px) {
+  :root {
+    --topbar-height: 57px;
+  }
 }

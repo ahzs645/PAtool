@@ -260,6 +260,44 @@ ol {
   color: var(--text-secondary) !important;
 }
 
+/* ── Touch and small-viewport form controls ──
+   iOS Safari zooms the page whenever a focused field's text is under 16px, and
+   never zooms back out. Raising every control to 16px below the tablet
+   breakpoint keeps forms usable, and coarse pointers get taller hit areas. */
+@media (max-width: 900px) {
+  /* `!important` is deliberate. Page modules set their own control font sizes
+     with class selectors, and any one of them slipping back under 16px
+     reintroduces the zoom, so this floor has to outrank all of them. */
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+@media (pointer: coarse) {
+  button,
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]),
+  select {
+    min-height: 40px;
+  }
+
+  /* 24px is the WCAG 2.5.8 minimum target. The `body` prefix is what outranks
+     the `.checkbox input` rules page modules use to set 14-16px mouse sizes,
+     and `flex: 0 0 auto` stops flex labels from shrinking the box back down. */
+  body input[type="checkbox"],
+  body input[type="radio"] {
+    width: 24px;
+    height: 24px;
+    flex: 0 0 auto;
+  }
+
+  /* Sliders are dragged, not tapped, so the whole track needs to be reachable. */
+  body input[type="range"] {
+    min-height: 40px;
+  }
+}
+
 /* ── Accessibility ── */
 .skip-link {
   position: absolute;
