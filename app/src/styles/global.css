@@ -260,6 +260,13 @@ ol {
   color: var(--text-secondary) !important;
 }
 
+/* MapLibre colors the attribution link itself, so theming only the container
+   above left it near-black on a near-black panel. This link carries the
+   basemap's required attribution, so it has to stay legible. */
+[data-theme="dark"] .maplibregl-ctrl-attrib a {
+  color: var(--text-secondary) !important;
+}
+
 /* ── Touch and small-viewport form controls ──
    iOS Safari zooms the page whenever a focused field's text is under 16px, and
    never zooms back out. Raising every control to 16px below the tablet
