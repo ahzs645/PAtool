@@ -176,7 +176,11 @@
 
 .aqiDiagnosticsGrid {
   display: grid;
-  grid-template-columns: minmax(420px, 1fr) minmax(320px, 0.9fr);
+  /* The left column takes no floor of its own: a 420px one plus the right
+     column's 320px exceeded the width available just above the 780px stacking
+     breakpoint, which overflowed the page. `1fr` against `0.9fr` already keeps
+     this the wider column. */
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.9fr);
   gap: var(--spacing-3);
   align-items: start;
 }

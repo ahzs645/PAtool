@@ -312,14 +312,24 @@
     border-right: 1px solid var(--border-medium);
     box-shadow: var(--shadow-strong);
     transform: translateX(-100%);
-    /* `visibility` keeps the closed drawer's 45 links out of the tab order. */
+    /* `visibility` keeps the closed drawer's 45 links out of the tab order.
+       It is switched with a zero-length transition delayed by the slide, not
+       interpolated: a transitioned `visibility` stays computed-hidden partway
+       into the animation, which left the drawer unfocusable and unclickable
+       for 300ms after opening. Delaying only the hide keeps the slide-out
+       visible while making the slide-in interactive immediately. */
     visibility: hidden;
-    transition: transform var(--duration-normal) ease, visibility var(--duration-normal) ease;
+    transition:
+      transform var(--duration-normal) ease,
+      visibility 0s linear var(--duration-normal);
   }
 
   .sidebarOpen {
     transform: translateX(0);
     visibility: visible;
+    transition:
+      transform var(--duration-normal) ease,
+      visibility 0s linear 0s;
   }
 
   .drawerHeader {

@@ -172,6 +172,8 @@ const COLLAPSE_KEY = "patool-nav-collapsed";
    sidebar stops being a permanent column and becomes an off-canvas drawer. */
 const DRAWER_QUERY = "(max-width: 1080px)";
 
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
 function MenuIcon() {
   return (
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -268,17 +270,47 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!drawerOpen) return;
+
+    // Queried fresh on every Tab: filtering the nav and collapsing sections
+    // both add and remove links while the drawer is open.
+    const focusables = () =>
+      Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         setDrawerOpen(false);
         menuButtonRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      // The drawer covers the page, so tabbing past its last link would land on
+      // content the user cannot see. Cycle within the drawer instead.
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (!(active instanceof Node) || !sidebarRef.current?.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
       }
     };
+
     document.addEventListener("keydown", onKeyDown);
     // Stop the page behind the drawer from scrolling under the user's finger.
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    sidebarRef.current?.querySelector<HTMLElement>("a, button, input")?.focus();
+    focusables()[0]?.focus();
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       document.body.style.overflow = previousOverflow;
