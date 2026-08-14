@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -305,7 +305,10 @@ describe("app", () => {
 
     await waitFor(
       () => {
-        expect(screen.getByText("PAtool")).toBeInTheDocument();
+        // The brand renders twice — once in the compact top bar, once in the
+        // sidebar/drawer — so scope the assertion to the top bar.
+        const topbar = screen.getByRole("banner", { name: "Application" });
+        expect(within(topbar).getByText("PAtool")).toBeInTheDocument();
         expect(screen.getByText("Browse synoptic PurpleAir coverage")).toBeInTheDocument();
         expect(screen.getByText("Visible sensors")).toBeInTheDocument();
       },

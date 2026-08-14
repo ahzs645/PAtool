@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: var(--spacing-2);
-  height: calc(100vh - 48px);
-  height: calc(100dvh - 48px);
+  height: calc(100vh - 48px - var(--topbar-height));
+  height: calc(100dvh - 48px - var(--topbar-height));
   overflow: hidden;
 }
 
@@ -329,12 +329,33 @@
     flex: 1 1 0;
   }
 
+  /* The full-height app layout does not survive a narrow viewport: the toolbar
+     and stats alone are taller than a phone screen, so the map ended up past
+     the fold and clipped by `overflow: hidden`. Let the page scroll instead,
+     and pull the map above the controls so it is what you land on. */
+  .layout {
+    height: auto;
+    overflow: visible;
+  }
+
   .stats {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .exportButtons {
+    grid-column: 1 / -1;
+    flex-direction: row;
+  }
+
+  .exportButtons > * {
+    flex: 1 1 0;
   }
 
   .mapWrap {
-    min-height: 440px;
+    order: -1;
+    flex: 0 0 auto;
+    height: 55dvh;
+    min-height: 300px;
   }
 
   .heatmapStatus {

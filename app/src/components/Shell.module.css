@@ -2,6 +2,20 @@
   display: grid;
   grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
   min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Shown only below the drawer breakpoint (see the media query below). */
+.topbar {
+  display: none;
+}
+
+.drawerClose {
+  display: none;
+}
+
+.drawerHeader {
+  display: contents;
 }
 
 .sidebar {
@@ -14,7 +28,11 @@
   position: sticky;
   top: 0;
   height: 100vh;
+  height: 100dvh;
   overflow-y: auto;
+  /* Without this the `overflow-y` above computes `overflow-x` to `auto` too,
+     which lets long labels scroll sideways inside the column instead of wrapping. */
+  overflow-x: hidden;
 }
 
 .brand {
@@ -182,6 +200,7 @@
   background: var(--bg-secondary);
   min-width: 0;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 .statusBanner {
@@ -215,44 +234,135 @@
   text-transform: uppercase;
 }
 
+/* ── Compact viewports: sidebar becomes an off-canvas drawer ──
+   Below 1080px the 45-item nav cannot share the fold with page content, so it
+   slides in over the page from a top-bar trigger instead of stacking above it. */
 @media (max-width: 1080px) {
   .shell {
-    grid-template-columns: 1fr;
-    grid-template-rows: auto 1fr;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .topbar {
+    display: flex;
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    align-items: center;
+    gap: var(--spacing-2);
+    padding: var(--spacing-2) var(--spacing-3);
+    border-bottom: 1px solid var(--border-medium);
+    background: var(--bg-primary);
+  }
+
+  .menuButton,
+  .topbarAction {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: 1px solid var(--border-medium);
+    border-radius: var(--border-radius-sm);
+    background: var(--bg-primary);
+    color: var(--text-secondary);
+    cursor: pointer;
+  }
+
+  .menuButton:hover,
+  .topbarAction:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+  }
+
+  .topbarAction {
+    margin-left: auto;
+  }
+
+  .topbarBrand {
+    display: flex;
+    align-items: center;
+    align-self: stretch;
+    gap: var(--spacing-2);
+    min-width: 0;
+    padding: 0 var(--spacing-1);
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.45);
+    animation: fade-in var(--duration-fast) ease;
   }
 
   .sidebar {
-    position: static;
-    height: auto;
-    flex-direction: row;
-    flex-wrap: wrap;
-    align-items: center;
-    align-content: flex-start;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-medium);
-    padding: var(--spacing-2) var(--spacing-4);
-    row-gap: var(--spacing-2);
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 50;
+    width: min(300px, 86vw);
+    height: 100dvh;
+    padding: var(--spacing-3) var(--spacing-2);
+    border-right: 1px solid var(--border-medium);
+    box-shadow: var(--shadow-strong);
+    transform: translateX(-100%);
+    /* `visibility` keeps the closed drawer's 45 links out of the tab order.
+       It is switched with a zero-length transition delayed by the slide, not
+       interpolated: a transitioned `visibility` stays computed-hidden partway
+       into the animation, which left the drawer unfocusable and unclickable
+       for 300ms after opening. Delaying only the hide keeps the slide-out
+       visible while making the slide-in interactive immediately. */
+    visibility: hidden;
+    transition:
+      transform var(--duration-normal) ease,
+      visibility 0s linear var(--duration-normal);
   }
 
-  .brand {
+  .sidebarOpen {
+    transform: translateX(0);
+    visibility: visible;
+    transition:
+      transform var(--duration-normal) ease,
+      visibility 0s linear 0s;
+  }
+
+  .drawerHeader {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-2);
+    margin-bottom: var(--spacing-2);
+  }
+
+  .drawerHeader .brand {
     margin-bottom: 0;
   }
 
-  .navSection {
-    flex-direction: row;
-    flex-wrap: wrap;
-    flex: 1 1 100%;
-    gap: var(--spacing-1);
-    min-width: 0;
-    max-width: 100%;
+  .drawerClose {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 auto;
+    width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    border: none;
+    border-radius: var(--border-radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    cursor: pointer;
   }
 
-  .navLabel {
-    display: none;
-  }
-
-  .sidebarFooter {
-    display: none;
+  .drawerClose:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
   }
 
   .main {
@@ -265,31 +375,47 @@
   }
 }
 
-@media (max-width: 720px) {
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
   .sidebar {
-    display: grid;
-    grid-template-columns: 1fr;
-    padding: var(--spacing-2);
+    transition: none;
   }
 
-  .brand {
-    width: fit-content;
-    padding: var(--spacing-1-5) var(--spacing-2);
+  .backdrop {
+    animation: none;
+  }
+}
+
+/* ── Touch-sized nav rows ──
+   The drawer is finger-driven, so its rows get the 44px comfortable target
+   instead of the pointer-sized 26-30px used in the desktop column. */
+@media (max-width: 1080px) {
+  .navFilter {
+    min-height: 44px;
+    /* 16px keeps iOS Safari from zooming the page when the field is focused. */
+    font-size: 16px;
   }
 
-  .navSection {
-    display: flex;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    padding-bottom: var(--spacing-1);
-    scrollbar-width: thin;
+  .sectionHeader,
+  .navLink,
+  .themeToggle {
+    min-height: 44px;
   }
 
   .navLink {
-    flex: 0 0 auto;
-    white-space: nowrap;
+    font-size: var(--font-size-md);
   }
+}
 
+@media (max-width: 720px) {
   .main {
     padding: var(--spacing-3);
   }
@@ -300,5 +426,12 @@
 
   .statusSource {
     margin-left: 0;
+  }
+}
+
+@media print {
+  .topbar,
+  .backdrop {
+    display: none !important;
   }
 }

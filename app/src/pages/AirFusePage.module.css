@@ -137,6 +137,10 @@
   background: color-mix(in srgb, var(--color-danger) 12%, var(--bg-primary));
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  /* These messages name the artifact that failed, and those paths carry no
+     spaces to break at. Without this the banner is clipped by the map wrapper
+     and the user cannot see which request failed. */
+  overflow-wrap: anywhere;
 }
 
 .sidePanel {

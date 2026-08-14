@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { Link, NavLink } from "react-router-dom";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { Link, NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import type { DataStatus } from "@patool/shared";
 import { useTheme } from "../hooks/useTheme";
@@ -168,6 +168,31 @@ function DataReadinessIcon() {
 
 const COLLAPSE_KEY = "patool-nav-collapsed";
 
+/* Matches the `max-width: 1080px` breakpoint in Shell.module.css, where the
+   sidebar stops being a permanent column and becomes an off-canvas drawer. */
+const DRAWER_QUERY = "(max-width: 1080px)";
+
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+function MenuIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M3 12h18" />
+      <path d="M3 18h18" />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 6L6 18" />
+      <path d="M6 6l12 12" />
+    </svg>
+  );
+}
+
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
@@ -199,7 +224,12 @@ function focusMain(event: React.MouseEvent<HTMLAnchorElement>) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { theme, toggle } = useTheme();
+  const location = useLocation();
   const [navFilter, setNavFilter] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const sidebarId = useId();
+  const sidebarRef = useRef<HTMLElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>(() => {
     try {
       return JSON.parse(localStorage.getItem(COLLAPSE_KEY) ?? "{}") as Record<string, boolean>;
@@ -218,6 +248,75 @@ export function Shell({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+  const closeDrawer = useCallback(() => setDrawerOpen(false), []);
+
+  // Navigating is the drawer's "done" signal — it would otherwise stay open
+  // over the page the user just asked for.
+  useEffect(() => {
+    setDrawerOpen(false);
+  }, [location.pathname]);
+
+  // Growing past the breakpoint turns the drawer back into a permanent column,
+  // so drop the open state (and its scroll lock) with it.
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia(DRAWER_QUERY);
+    const onChange = (event: MediaQueryListEvent) => {
+      if (!event.matches) setDrawerOpen(false);
+    };
+    media.addEventListener("change", onChange);
+    return () => media.removeEventListener("change", onChange);
+  }, []);
+
+  useEffect(() => {
+    if (!drawerOpen) return;
+
+    // Queried fresh on every Tab: filtering the nav and collapsing sections
+    // both add and remove links while the drawer is open.
+    const focusables = () =>
+      Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setDrawerOpen(false);
+        menuButtonRef.current?.focus();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      // The drawer covers the page, so tabbing past its last link would land on
+      // content the user cannot see. Cycle within the drawer instead.
+      const items = focusables();
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+
+      if (!(active instanceof Node) || !sidebarRef.current?.contains(active)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
+      if (event.shiftKey && active === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && active === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown);
+    // Stop the page behind the drawer from scrolling under the user's finger.
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    focusables()[0]?.focus();
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [drawerOpen]);
+
   const { data: status } = useQuery({
     queryKey: ["api-status"],
     queryFn: () => getJson<DataStatus>("/api/status"),
@@ -240,11 +339,62 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <a className="skip-link" href="#patool-main" onClick={focusMain}>
         Skip to main content
       </a>
-      <aside className={styles.sidebar} aria-label="Primary navigation">
-        <Link className={styles.brand} to="/">
+
+      {/* Compact-viewport chrome: the sidebar is off-canvas below 1080px, so
+          this bar carries the drawer trigger, brand, and theme toggle. */}
+      <header className={styles.topbar} aria-label="Application">
+        <button
+          type="button"
+          ref={menuButtonRef}
+          className={styles.menuButton}
+          onClick={() => setDrawerOpen(true)}
+          aria-label="Open navigation menu"
+          aria-expanded={drawerOpen}
+          aria-controls={sidebarId}
+        >
+          <MenuIcon />
+        </button>
+        <Link className={styles.topbarBrand} to="/">
           <span className={styles.brandIcon} aria-hidden="true">A</span>
           <span className={styles.brandName}>PAtool</span>
         </Link>
+        <button
+          type="button"
+          className={styles.topbarAction}
+          onClick={toggle}
+          aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+        >
+          {theme === "light" ? <MoonIcon /> : <SunIcon />}
+        </button>
+      </header>
+
+      {drawerOpen && <div className={styles.backdrop} onClick={closeDrawer} aria-hidden="true" />}
+
+      <aside
+        ref={sidebarRef}
+        id={sidebarId}
+        className={`${styles.sidebar} ${drawerOpen ? styles.sidebarOpen : ""}`}
+        aria-label="Primary navigation"
+      >
+        {/* The open drawer covers the top bar's trigger, so it carries its own
+            close control alongside the brand. Desktop hides this row. */}
+        <div className={styles.drawerHeader}>
+          <Link className={styles.brand} to="/">
+            <span className={styles.brandIcon} aria-hidden="true">A</span>
+            <span className={styles.brandName}>PAtool</span>
+          </Link>
+          <button
+            type="button"
+            className={styles.drawerClose}
+            onClick={() => {
+              closeDrawer();
+              menuButtonRef.current?.focus();
+            }}
+            aria-label="Close navigation menu"
+          >
+            <CloseIcon />
+          </button>
+        </div>
 
         <input
           type="search"

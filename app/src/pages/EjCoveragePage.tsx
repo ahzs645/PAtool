@@ -168,8 +168,8 @@ export default function EjCoveragePage() {
             onChange={(event) => setCsv(event.target.value)}
             rows={10}
             spellCheck={false}
-            className={styles.csvBox ?? ""}
-            style={{ width: "100%", fontFamily: "monospace", fontSize: "12px", marginTop: 8 }}
+            className={styles.textarea}
+            style={{ marginTop: 8 }}
           />
         </details>
       </Card>
