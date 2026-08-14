@@ -21,6 +21,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:heatmap-browser": "node scripts/check_heatmap_flicker.mjs",
     "test:responsive": "node scripts/check_responsive_layout.mjs",
+    "test:interactive": "node scripts/check_interactive_layout.mjs",
     "typecheck": "npm run typecheck --workspaces --if-present"
   },
   "devDependencies": {
