@@ -28,6 +28,7 @@ import {
   stitchPatArchiveMonths,
   summarizeSensorHealth,
 } from "@patool/shared";
+import { sampleNetworkTimeSeries } from "@patool/shared/fixtures";
 
 import {
   getAirNowConditions,
@@ -293,6 +294,10 @@ export function createApp() {
     const date = c.req.query("date");
     return cachedJson(c, c.req.url, () => getPasCollection(c.env, date));
   });
+
+  // Same committed network the static build serves, so the time-lapse page
+  // also works against the worker.
+  app.get("/api/network/timeseries", (c) => c.json(sampleNetworkTimeSeries));
 
   app.get("/api/local-sensors", async (c) => {
     return cachedJson(c, c.req.url, () => getLocalPasCollection(c.env));

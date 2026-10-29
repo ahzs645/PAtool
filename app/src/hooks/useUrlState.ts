@@ -58,6 +58,11 @@ export function useUrlState<T>(
   const initialRef = useRef(initial);
   const fromUrl = useMemo(() => codec.parse(searchParams.get(paramName)), [codec, paramName, searchParams]);
   const [value, setValueLocal] = useState<T>(fromUrl ?? initialRef.current);
+  // Latest value for functional updates. Resolving them inside a state
+  // updater would call setSearchParams while React renders the page, which
+  // updates the router mid-render.
+  const valueRef = useRef(value);
+  valueRef.current = value;
 
   // Reflect URL → state when the URL changes from outside.
   useEffect(() => {
@@ -66,20 +71,20 @@ export function useUrlState<T>(
 
   const setValue = useCallback(
     (next: T | ((prev: T) => T)) => {
-      setValueLocal((prev) => {
-        const resolved = typeof next === "function" ? (next as (p: T) => T)(prev) : next;
-        const serialized = codec.serialize(resolved);
-        setSearchParams(
-          (current) => {
-            const updated = new URLSearchParams(current);
-            if (serialized === null) updated.delete(paramName);
-            else updated.set(paramName, serialized);
-            return updated;
-          },
-          { replace: true },
-        );
-        return resolved;
-      });
+      const resolved = typeof next === "function" ? (next as (p: T) => T)(valueRef.current) : next;
+      // Chained updates before the next render build on this one.
+      valueRef.current = resolved;
+      setValueLocal(resolved);
+      const serialized = codec.serialize(resolved);
+      setSearchParams(
+        (current) => {
+          const updated = new URLSearchParams(current);
+          if (serialized === null) updated.delete(paramName);
+          else updated.set(paramName, serialized);
+          return updated;
+        },
+        { replace: true },
+      );
     },
     [codec, paramName, setSearchParams],
   );

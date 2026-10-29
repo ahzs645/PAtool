@@ -62,6 +62,10 @@ function startProcess(args, recentOutput) {
       NO_UPDATE_NOTIFIER: "1",
     },
     stdio: ["ignore", "pipe", "pipe"],
+    // Own the process group: `npm run` forks Vite and Wrangler, and signalling
+    // only npm leaves them alive holding this process's stdio pipes open, so
+    // the check never exits.
+    detached: true,
   });
 
   const remember = (chunk) => {
@@ -96,16 +100,26 @@ function startDevServers(appPort) {
 
 async function stopDevServers(children) {
   for (const child of children) {
-    if (child.exitCode != null) continue;
+    const signalGroup = (signal) => {
+      try {
+        process.kill(-child.pid, signal);
+      } catch {
+        /* group already gone */
+      }
+    };
 
-    child.kill("SIGTERM");
-    await Promise.race([
-      new Promise((resolve) => child.once("exit", resolve)),
-      delay(3_000),
-    ]);
     if (child.exitCode == null) {
-      child.kill("SIGKILL");
+      signalGroup("SIGTERM");
+      await Promise.race([
+        new Promise((resolve) => child.once("exit", resolve)),
+        delay(3_000),
+      ]);
+      if (child.exitCode == null) signalGroup("SIGKILL");
     }
+
+    // A server can outlive the signal briefly; dropping the pipes lets Node exit.
+    child.stdout?.destroy();
+    child.stderr?.destroy();
   }
 }
 

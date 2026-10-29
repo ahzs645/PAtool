@@ -19,6 +19,15 @@ describe("worker api", () => {
     expect(payload.records.length).toBeGreaterThan(0);
   });
 
+  it("serves the network time series the time-lapse page reads", async () => {
+    const response = await app.request("/api/network/timeseries");
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { timestamps: string[]; sites: Array<{ values: unknown[] }> };
+    expect(payload.timestamps.length).toBeGreaterThan(0);
+    expect(payload.sites.length).toBeGreaterThan(0);
+    expect(payload.sites[0].values).toHaveLength(payload.timestamps.length);
+  });
+
   it("runs qc and soh endpoints", async () => {
     const qcResponse = await app.request("/api/qc/hourly-ab", {
       method: "POST",
