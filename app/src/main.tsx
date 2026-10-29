@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 
 import { App } from "./App";
 import { registerServiceWorker } from "./lib/registerServiceWorker";
+import "@pgmaps/geo-toolkit/styles.css";
 import "./styles/global.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(

@@ -1,0 +1,47 @@
+/*
+ * PAtool's palette expressed in the toolkit's tokens (space-separated HSL
+ * channels). Scoped to the map workspace: PAtool's own hex --border and
+ * --chart-* tokens keep their meaning everywhere else, so app components
+ * belong beside the map rather than inside it.
+ */
+.geo-toolkit.patool-map {
+  --background: 0 0% 100%;
+  --foreground: 0 0% 20%;
+  --card: 0 0% 100%;
+  --card-foreground: 0 0% 20%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 0 0% 20%;
+  --primary: 233 44% 50%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 0 0% 95%;
+  --secondary-foreground: 0 0% 20%;
+  --muted: 0 0% 95%;
+  --muted-foreground: 0 0% 40%;
+  --accent: 228 70% 96%;
+  --accent-foreground: 234 49% 42%;
+  --border: 0 0% 84%;
+  --input: 0 0% 84%;
+  --ring: 233 44% 50%;
+  --radius: 0.5rem;
+  font-family: var(--font-family);
+}
+
+.geo-toolkit.patool-map[data-theme="dark"] {
+  --background: 0 0% 9%;
+  --foreground: 0 0% 92%;
+  --card: 0 0% 9%;
+  --card-foreground: 0 0% 92%;
+  --popover: 0 0% 11%;
+  --popover-foreground: 0 0% 92%;
+  --primary: 232 45% 61%;
+  --primary-foreground: 0 0% 9%;
+  --secondary: 0 0% 13%;
+  --secondary-foreground: 0 0% 92%;
+  --muted: 0 0% 13%;
+  --muted-foreground: 0 0% 70%;
+  --accent: 232 46% 19%;
+  --accent-foreground: 232 45% 80%;
+  --border: 0 0% 28%;
+  --input: 0 0% 28%;
+  --ring: 232 45% 61%;
+}

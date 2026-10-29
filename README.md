@@ -8,6 +8,7 @@
 - `shared`: TypeScript domain models, QC helpers, SoH calculations, interpolation, and diagnostics logic
 - `worker`: optional Cloudflare Worker API for local API-style development
 - `scripts`: fixture conversion and static-data preparation
+- `packages/geo-toolkit`: the [geo-toolkit](https://github.com/ahzs645/geo-toolkit) map library, pinned as a Git submodule (shared with PG Maps)
 
 ## Static deployment model
 
@@ -20,7 +21,7 @@ That means GitHub Pages can host the full demo as a static site.
 
 ## Local development
 
-From the repo root:
+Clone with the map toolkit submodule (or run `git submodule update --init` in an existing checkout), then from the repo root:
 
 ```bash
 npm install
@@ -29,6 +30,16 @@ npm run dev
 ```
 
 The default development app still proxies `/api/*` to the local Worker on `http://127.0.0.1:8787`.
+
+## Maps
+
+Every map is built from `@pgmaps/geo-toolkit`, an npm workspace at `packages/geo-toolkit`. The app imports its compiled output, so `npm run dev`, `npm run typecheck` and `npm run build:pages` build it first (`npm run toolkit:build`). While editing the toolkit, run `npm run toolkit:watch` beside the dev server.
+
+- `app/src/components/map/PaMap.tsx` is the app's map: it follows PAtool's light/dark theme, uses the Carto basemaps with a tile-free fallback for offline use, and maps PAtool's colour tokens onto the toolkit's (`PaMap.css`).
+- Pages compose toolkit layers inside it (`MapCircleLayer`, `MapFillLayer`, `MapLineLayer`, `MapGeoJsonLayer`, `MapCanvasLayer` for the interpolated heatmap). `FitMapToPoints` frames data and `ReceptorMap` draws receptors over the sensor network.
+- Toolkit UI outside a map, such as `PlaybackControls`, goes inside `ToolkitScope` so it gets the toolkit's styles.
+
+Toolkit changes are made in the geo-toolkit repository first; then move the submodule pointer here (`git -C packages/geo-toolkit checkout <commit>` and commit `packages/geo-toolkit`).
 
 ## Optional live and LAN data
 

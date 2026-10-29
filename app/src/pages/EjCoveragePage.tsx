@@ -9,7 +9,10 @@ import {
   type PasCollection,
 } from "@patool/shared";
 
+import { areaRadiusScale } from "@pgmaps/geo-toolkit/scales";
+import { escapeHtml, LegendItem } from "@pgmaps/geo-toolkit/ui";
 import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
+import { circlePolygon, ReceptorMap, type ReceptorProperties } from "../components/map/ReceptorMap";
 import { getJson } from "../lib/api";
 import { downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import styles from "./ToolsetPage.module.css";
@@ -22,6 +25,17 @@ T004,Capitol Hill,47.620,-122.319,28500,49,0.22
 T005,White Center,47.518,-122.348,12300,94,0.62
 T006,Beacon Hill,47.581,-122.318,15800,76,0.38
 T007,Magnolia,47.658,-122.392,18900,28,0.10`;
+
+// Gap score bands, matching the ranking table's chips.
+const GAP_BANDS = [
+  { min: 0.7, color: "#d44c47", label: "Gap ≥ 0.7" },
+  { min: 0.4, color: "#e5953e", label: "Gap 0.4–0.7" },
+  { min: -Infinity, color: "#55a368", label: "Gap < 0.4" },
+];
+
+function gapColor(score: number): string {
+  return (GAP_BANDS.find((band) => score >= band.min) ?? GAP_BANDS[2]).color;
+}
 
 export default function EjCoveragePage() {
   const [csv, setCsv] = useState<string>(SAMPLE_EJ_CSV);
@@ -55,6 +69,37 @@ export default function EjCoveragePage() {
     () => computeCoverageGapReport(ejUnits, sensors, { radiusKm, minPopulation }),
     [ejUnits, sensors, radiusKm, minPopulation],
   );
+
+  const tractMap = useMemo(() => {
+    const populations = report.rows.map((row) => row.unit.population);
+    const sizes = areaRadiusScale(populations, { minRadius: 6, maxRadius: 22 });
+    const tracts: GeoJSON.FeatureCollection<GeoJSON.Point, ReceptorProperties> = {
+      type: "FeatureCollection",
+      features: report.rows.map((row) => ({
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [row.unit.longitude, row.unit.latitude] },
+        properties: {
+          id: row.unit.id,
+          color: gapColor(row.gapScore),
+          radius: sizes.radius(row.unit.population),
+          html: `<strong>${escapeHtml(row.unit.label ?? row.unit.id)}</strong>`
+            + `<br/>Population ${escapeHtml(row.unit.population.toLocaleString())}`
+            + `${row.unit.ejIndex === undefined ? "" : `<br/>EJ index ${escapeHtml(row.unit.ejIndex.toFixed(0))}`}`
+            + `<br/>${escapeHtml(row.sensorCount)} sensors within ${escapeHtml(radiusKm)} km`
+            + `<br/>Gap score ${escapeHtml(row.gapScore.toFixed(3))}`,
+        },
+      })),
+    };
+    const coverage: GeoJSON.FeatureCollection = {
+      type: "FeatureCollection",
+      features: report.rows.map((row) => ({
+        type: "Feature",
+        geometry: circlePolygon(row.unit.longitude, row.unit.latitude, radiusKm),
+        properties: { id: row.unit.id },
+      })),
+    };
+    return { tracts, coverage };
+  }, [report.rows, radiusKm]);
 
   const columns: Column<typeof report.rows[number]>[] = [
     {
@@ -172,6 +217,24 @@ export default function EjCoveragePage() {
             style={{ marginTop: 8 }}
           />
         </details>
+      </Card>
+
+      <Card title="Coverage gap map">
+        <p className={styles.muted}>
+          Tracts sized by population and coloured by gap score, with their {radiusKm} km coverage radius; click a tract for its numbers.
+        </p>
+        <div style={{ height: 440, borderRadius: 8, overflow: "hidden", marginTop: 8 }}>
+          <ReceptorMap
+            receptors={tractMap.tracts}
+            receptorLabel={`Tracts (${report.rows.length})`}
+            sensors={sensors}
+            areas={tractMap.coverage}
+            areaLabel={`${radiusKm} km coverage radius`}
+            legend={GAP_BANDS.map((band) => (
+              <LegendItem key={band.label} color={band.color} label={band.label} disabled />
+            ))}
+          />
+        </div>
       </Card>
 
       <Card title="Coverage gap ranking">

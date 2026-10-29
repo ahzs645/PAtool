@@ -1,5 +1,4 @@
 import { pasPalette, pasSlicePm25, pm25ToAqiBand, type PasPm25Slice, type PasRecord } from "@patool/shared";
-import type maplibregl from "maplibre-gl";
 
 import { appPath } from "../../lib/routing";
 import { MISSING_PM_COLOR } from "./config";
@@ -59,7 +58,7 @@ function getMetricValue(record: PasRecord, metric: SensorMapMetric, pm25Window: 
   return getPm25ValueForSlice(record, pm25Window, pm25Slice);
 }
 
-export function buildSensorPopupHtml(props: maplibregl.GeoJSONFeature["properties"]): string {
+export function buildSensorPopupHtml(props: Record<string, unknown>): string {
   const bandText = props.aqi === "NA" ? props.bandLabel : `${props.bandLabel} · AQI ${props.aqi}`;
   const sensorPathId = encodeURIComponent(String(props.id ?? ""));
   const rows = [

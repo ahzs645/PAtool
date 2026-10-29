@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   createOrdinaryKrigingModel,
+  EPA_PM25_AQI_PROFILE,
   estimateIndoorPm25,
   idwEstimateAtPoints,
   INFILTRATION_PROFILES,
@@ -16,7 +17,9 @@ import {
   type PointEstimateSource,
 } from "@patool/shared";
 
+import { escapeHtml, LegendItem } from "@pgmaps/geo-toolkit/ui";
 import { Button, Card, CellStack, Chip, DataTable, Loader, PageHeader, StatCard, type Column } from "../components";
+import { ReceptorMap, type ReceptorProperties } from "../components/map/ReceptorMap";
 import { getJson } from "../lib/api";
 import styles from "./PoiExposurePage.module.css";
 
@@ -93,6 +96,29 @@ function buildKnownPoints(collection: PasCollection | undefined, valueField: str
   }
   return out;
 }
+
+function receptorFeatures(rows: PoiResult[]): GeoJSON.FeatureCollection<GeoJSON.Point, ReceptorProperties> {
+  return {
+    type: "FeatureCollection",
+    features: rows.map((row) => {
+      const band = pm25ToAqiBand(row.estimate.value);
+      const value = row.estimate.value === null ? "No estimate" : `${row.estimate.value.toFixed(1)} µg/m³ · ${band.label}`;
+      return {
+        type: "Feature",
+        geometry: { type: "Point", coordinates: [row.longitude, row.latitude] },
+        properties: {
+          id: row.id,
+          color: band.color,
+          radius: 7,
+          html: `<strong>${escapeHtml(row.name)}</strong><br/>${escapeHtml(value)}`
+            + `<br/>${escapeHtml(row.estimate.source)} from ${escapeHtml(row.estimate.neighborCount)} sensors`,
+        },
+      };
+    }),
+  };
+}
+
+const AQI_LEGEND = EPA_PM25_AQI_PROFILE.breakpoints.slice(0, 4);
 
 function exportToCsv(rows: PoiResult[]): string {
   const headers = [
@@ -209,6 +235,17 @@ export default function PoiExposurePage() {
 
     return parsed.rows.map((row, i) => ({ ...row, estimate: estimates[i] }));
   }, [parsed.rows, knownPoints, method, krigingModel, maxNeighbors, maxDistanceKm]);
+
+  const receptorMapData = useMemo(() => receptorFeatures(results), [results]);
+  const sensorMapData = useMemo(
+    () => knownPoints.map((point) => ({
+      id: point.id ?? `${point.y.toFixed(4)}, ${point.x.toFixed(4)}`,
+      longitude: point.x,
+      latitude: point.y,
+      valueLabel: `${point.value.toFixed(1)} µg/m³`,
+    })),
+    [knownPoints],
+  );
 
   const summary = useMemo(() => {
     if (results.length === 0) {
@@ -439,6 +476,22 @@ export default function PoiExposurePage() {
           >
             Download CSV
           </Button>
+        </div>
+      </Card>
+
+      <Card title="Receptor map">
+        <p className={styles.cardHint}>
+          Receptors coloured by their estimated PM2.5 AQI band; click one for its estimate. Grey dots are the outdoor sensors it is interpolated from.
+        </p>
+        <div className={styles.mapCanvas}>
+          <ReceptorMap
+            receptors={receptorMapData}
+            receptorLabel={`Receptors (${results.length})`}
+            sensors={sensorMapData}
+            legend={AQI_LEGEND.map((band) => (
+              <LegendItem key={band.category} color={band.color} label={band.label} disabled />
+            ))}
+          />
         </div>
       </Card>
 

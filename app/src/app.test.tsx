@@ -7,46 +7,45 @@ import { samplePasCollection, samplePatSeries, sampleSensorRecord } from "@patoo
 
 import { App } from "./App";
 
-type MockMap = {
-  addControl: ReturnType<typeof vi.fn>;
-  on: ReturnType<typeof vi.fn>;
-  once: ReturnType<typeof vi.fn>;
-  off: ReturnType<typeof vi.fn>;
-  remove: ReturnType<typeof vi.fn>;
-  getSource: ReturnType<typeof vi.fn>;
-  addSource: ReturnType<typeof vi.fn>;
-  removeSource: ReturnType<typeof vi.fn>;
-  addLayer: ReturnType<typeof vi.fn>;
-  getLayer: ReturnType<typeof vi.fn>;
-  removeLayer: ReturnType<typeof vi.fn>;
-  setPaintProperty: ReturnType<typeof vi.fn>;
-  setLayoutProperty: ReturnType<typeof vi.fn>;
-  getCanvas: ReturnType<typeof vi.fn>;
-  isStyleLoaded: ReturnType<typeof vi.fn>;
-  setStyle: ReturnType<typeof vi.fn>;
-  getBounds: ReturnType<typeof vi.fn>;
-  getZoom: ReturnType<typeof vi.fn>;
-  resize: ReturnType<typeof vi.fn>;
-  fitBounds: ReturnType<typeof vi.fn>;
+type MockFn = ReturnType<typeof vi.fn>;
+type MockMap = Record<string, MockFn | unknown> & {
+  on: MockFn;
+  once: MockFn;
+  off: MockFn;
+  getSource: MockFn;
+  addSource: MockFn;
+  removeSource: MockFn;
+  addLayer: MockFn;
+  getLayer: MockFn;
+  removeLayer: MockFn;
+  setPaintProperty: MockFn;
+  setLayoutProperty: MockFn;
+  fitBounds: MockFn;
 };
 
 const mockMaps: MockMap[] = [];
 
+// Events the toolkit map waits on before it mounts layers; fire them at once.
+const IMMEDIATE_MAP_EVENTS = new Set(["load", "style.load", "styledata", "render"]);
+
 function createMockMap(): MockMap {
   const sources = new Map<string, unknown>();
   const layers = new Map<string, unknown>();
+  const canvas = document.createElement("canvas");
+  const container = document.createElement("div");
+  const handler = () => ({ isEnabled: vi.fn(() => true), enable: vi.fn(), disable: vi.fn() });
 
   const map: MockMap = {
     addControl: vi.fn(),
     on: vi.fn((event: string, maybeLayer: unknown, maybeHandler?: unknown) => {
-      const handler = typeof maybeLayer === "function" ? maybeLayer : maybeHandler;
-      if ((event === "load" || event === "styledata") && typeof handler === "function") {
-        handler();
+      const listener = typeof maybeLayer === "function" ? maybeLayer : maybeHandler;
+      if (typeof maybeLayer === "function" && IMMEDIATE_MAP_EVENTS.has(event) && typeof listener === "function") {
+        listener();
       }
     }),
-    once: vi.fn((event: string, handler: unknown) => {
-      if ((event === "load" || event === "styledata") && typeof handler === "function") {
-        handler();
+    once: vi.fn((event: string, listener: unknown) => {
+      if (IMMEDIATE_MAP_EVENTS.has(event) && typeof listener === "function") {
+        listener();
       }
     }),
     off: vi.fn(),
@@ -94,20 +93,36 @@ function createMockMap(): MockMap {
     removeLayer: vi.fn((id: string) => {
       layers.delete(id);
     }),
+    moveLayer: vi.fn(),
     setPaintProperty: vi.fn(),
     setLayoutProperty: vi.fn(),
-    getCanvas: vi.fn(() => ({ style: {} })),
+    setFilter: vi.fn(),
+    setFeatureState: vi.fn(),
+    getCanvas: vi.fn(() => canvas),
+    getContainer: vi.fn(() => container),
+    getStyle: vi.fn(() => ({ version: 8, sources: {}, layers: [] })),
     isStyleLoaded: vi.fn(() => true),
+    isMoving: vi.fn(() => false),
     setStyle: vi.fn(),
+    setProjection: vi.fn(),
     resize: vi.fn(),
+    jumpTo: vi.fn(),
+    flyTo: vi.fn(),
+    zoomTo: vi.fn(),
     fitBounds: vi.fn(),
+    triggerRepaint: vi.fn(),
     getBounds: vi.fn(() => ({
       getWest: () => -123,
       getEast: () => -121,
       getSouth: () => 46,
       getNorth: () => 48,
     })),
+    getCenter: vi.fn(() => ({ lng: -122, lat: 47 })),
     getZoom: vi.fn(() => 4),
+    getBearing: vi.fn(() => 0),
+    getPitch: vi.fn(() => 0),
+    boxZoom: handler(),
+    doubleClickZoom: handler(),
   };
 
   return map;
@@ -119,18 +134,28 @@ vi.mock("maplibre-gl", () => {
     mockMaps.push(map);
     return map;
   });
-  return {
-    default: {
-      Map,
-      NavigationControl: vi.fn(),
-      GeolocateControl: vi.fn(),
-      Popup: vi.fn().mockImplementation(() => ({
-        setLngLat: vi.fn().mockReturnThis(),
-        setHTML: vi.fn().mockReturnThis(),
-        addTo: vi.fn().mockReturnThis(),
-      })),
-    },
-  };
+  const chain = () => ({
+    setLngLat: vi.fn().mockReturnThis(),
+    setHTML: vi.fn().mockReturnThis(),
+    setDOMContent: vi.fn().mockReturnThis(),
+    setMaxWidth: vi.fn().mockReturnThis(),
+    setOffset: vi.fn().mockReturnThis(),
+    addTo: vi.fn().mockReturnThis(),
+    remove: vi.fn().mockReturnThis(),
+    on: vi.fn().mockReturnThis(),
+    off: vi.fn().mockReturnThis(),
+    isOpen: vi.fn(() => false),
+    getLngLat: vi.fn(() => ({ lng: 0, lat: 0 })),
+    getElement: vi.fn(() => document.createElement("div")),
+  });
+  const Popup = vi.fn(function MockPopup() {
+    return chain();
+  });
+  const Marker = vi.fn(function MockMarker() {
+    return chain();
+  });
+  const runtime = { Map, Popup, Marker, addProtocol: vi.fn() };
+  return { ...runtime, default: runtime };
 });
 
 vi.mock("echarts-for-react/lib/core", () => ({
@@ -322,31 +347,32 @@ describe("app", () => {
 
     render(<App />);
 
+    // The map page is lazy-loaded; its first transform can take a while.
     await waitFor(() => {
       expect(screen.getByText("Heatmap")).toBeInTheDocument();
-    });
+    }, { timeout: 25000 });
 
     await user.click(screen.getByText("Heatmap"));
 
     await waitFor(() => {
       const map = mockMaps.at(-1);
       expect(map?.addSource).toHaveBeenCalledWith(
-        "heatmap-source",
+        expect.stringMatching(/^canvas-src-/),
         expect.objectContaining({ type: "canvas", animate: false }),
       );
       expect(map?.addLayer).toHaveBeenCalledWith(
-        expect.objectContaining({ id: "heatmap-layer", type: "raster" }),
-        expect.anything(),
+        expect.objectContaining({ id: expect.stringMatching(/^canvas-layer-/), type: "raster" }),
+        undefined,
       );
-      expect(map?.setPaintProperty).toHaveBeenCalledWith("sensors-circles", "circle-opacity", 0.35);
-    });
+      expect(map?.setPaintProperty).toHaveBeenCalledWith(expect.stringMatching(/^circle-layer-/), "circle-opacity", 0.35);
+    }, { timeout: 10000 });
 
     await user.click(screen.getByText("Markers"));
 
     await waitFor(() => {
       const map = mockMaps.at(-1);
-      expect(map?.removeLayer).toHaveBeenCalledWith("heatmap-layer");
-      expect(map?.removeSource).toHaveBeenCalledWith("heatmap-source");
+      expect(map?.removeLayer).toHaveBeenCalledWith(expect.stringMatching(/^canvas-layer-/));
+      expect(map?.removeSource).toHaveBeenCalledWith(expect.stringMatching(/^canvas-src-/));
     });
   });
 
@@ -385,7 +411,7 @@ describe("app", () => {
       () => {
         const map = mockMaps.at(-1);
         expect(map?.addSource).toHaveBeenCalledWith(
-          "airfuse-surface",
+          expect.stringMatching(/^fill-src-/),
           expect.objectContaining({ type: "geojson" }),
         );
         expect(map?.fitBounds).toHaveBeenCalled();

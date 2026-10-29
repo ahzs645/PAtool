@@ -171,8 +171,9 @@ input[type="file"]::file-selector-button:hover {
 }
 
 /* Default button chrome (matches the Button "secondary" variant). Class-based
-   buttons (Button component, page modules, MapLibre controls) override this. */
-button {
+   buttons (Button component, page modules) override this. Buttons inside a
+   geo-toolkit workspace (map controls, playback) are styled by the toolkit. */
+button:not(:where(.geo-toolkit *)) {
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -189,11 +190,11 @@ button {
   transition: background var(--duration-fast), border-color var(--duration-fast), color var(--duration-fast);
 }
 
-button:hover:not(:disabled) {
+button:hover:not(:disabled):not(:where(.geo-toolkit *)) {
   background: var(--bg-tertiary);
 }
 
-button:disabled {
+button:disabled:not(:where(.geo-toolkit *)) {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -203,8 +204,10 @@ ol {
   list-style: none;
 }
 
-/* ── MapLibre GL popup overrides ── */
-.maplibregl-popup-content {
+/* ── MapLibre GL popup overrides ──
+   MapLibre's stylesheet arrives with the lazily loaded map pages, after this
+   file, so these rules need more specificity than its own to win. */
+.maplibregl-popup .maplibregl-popup-content {
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-medium);
   font-family: var(--font-family);
@@ -215,7 +218,7 @@ ol {
   color: var(--text-primary);
 }
 
-.maplibregl-popup-content a {
+.maplibregl-popup .maplibregl-popup-content a {
   color: var(--accent-primary);
   font-weight: var(--font-weight-medium);
   text-decoration: none;
@@ -226,33 +229,24 @@ ol {
   padding: 4px 8px;
 }
 
-[data-theme="dark"] .maplibregl-popup-tip {
+[data-theme="dark"] .maplibregl-popup-anchor-bottom .maplibregl-popup-tip,
+[data-theme="dark"] .maplibregl-popup-anchor-bottom-left .maplibregl-popup-tip,
+[data-theme="dark"] .maplibregl-popup-anchor-bottom-right .maplibregl-popup-tip {
   border-top-color: var(--bg-primary);
 }
 
-.maplibregl-ctrl-group {
-  overflow: hidden;
-  border: 1px solid var(--border-medium) !important;
-  border-radius: var(--border-radius-sm) !important;
-  background: var(--bg-primary) !important;
-  box-shadow: var(--shadow-medium) !important;
+[data-theme="dark"] .maplibregl-popup-anchor-top .maplibregl-popup-tip,
+[data-theme="dark"] .maplibregl-popup-anchor-top-left .maplibregl-popup-tip,
+[data-theme="dark"] .maplibregl-popup-anchor-top-right .maplibregl-popup-tip {
+  border-bottom-color: var(--bg-primary);
 }
 
-.maplibregl-ctrl-group button {
-  background-color: var(--bg-primary) !important;
-  color: var(--text-primary) !important;
+[data-theme="dark"] .maplibregl-popup-anchor-left .maplibregl-popup-tip {
+  border-right-color: var(--bg-primary);
 }
 
-.maplibregl-ctrl-group button + button {
-  border-top-color: var(--border-medium) !important;
-}
-
-.maplibregl-ctrl-group button:hover {
-  background-color: var(--bg-tertiary) !important;
-}
-
-[data-theme="dark"] .maplibregl-ctrl button .maplibregl-ctrl-icon {
-  filter: invert(1) brightness(1.4) !important;
+[data-theme="dark"] .maplibregl-popup-anchor-right .maplibregl-popup-tip {
+  border-left-color: var(--bg-primary);
 }
 
 [data-theme="dark"] .maplibregl-ctrl-attrib {

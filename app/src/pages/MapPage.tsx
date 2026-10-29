@@ -1,6 +1,15 @@
-import { startTransition, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import maplibregl from "maplibre-gl";
+import {
+  boundsToQuad,
+  captureMapImage,
+  MapCanvasLayer,
+  MapCircleLayer,
+  MapControls,
+  MapGeoJsonLayer,
+  type MapRef,
+  type MapViewState,
+} from "@pgmaps/geo-toolkit/map";
 
 import {
   pasFilter,
@@ -14,23 +23,16 @@ import {
 
 import { Button, StatCard } from "../components";
 import { getJson } from "../lib/api";
-import { downloadCanvasPng, downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
+import { PaMap } from "../components/map/PaMap";
+import { downloadBlob, downloadCsv, objectsToCsv, suggestFilename } from "../lib/exporters";
 import type { InterpolationBounds, InterpolationWorkerResponse } from "../lib/interpolationProtocol";
-import { useTheme } from "../hooks/useTheme";
 import { urlCodec, useUrlState } from "../hooks/useUrlState";
 import {
-  HEATMAP_LAYER_ID,
-  HEATMAP_SOURCE_ID,
-  LAYER_ID,
   MAX_IDW_GRID_CELLS,
   MAX_KRIGING_GRID_CELLS,
   MIN_INTERPOLATION_POINTS,
-  OVERLAY_ID_PREFIX,
   OVERLAY_PALETTE,
   RESIZE_RECOMPUTE_DEBOUNCE_MS,
-  SOURCE_ID,
-  STYLE_DARK,
-  STYLE_LIGHT,
 } from "./map/config";
 import {
   boundsEqual,
@@ -42,7 +44,6 @@ import {
   deriveKrigingTileSize,
   deriveZoomAdjustedGridResolution,
   getInterpolationPointKey,
-  getMapBounds,
   paintInterpolationCanvas,
   quantizeMapBounds,
   quantizeZoom,
@@ -66,21 +67,24 @@ import {
 } from "./map/types";
 import styles from "./MapPage.module.css";
 
-import "maplibre-gl/dist/maplibre-gl.css";
+// Draw order on the map: heatmap surface, then user overlays, then sensors.
+const HEATMAP_ORDER = 1;
+const OVERLAY_ORDER = 2;
+const SENSOR_ORDER = 3;
 
 export default function MapPage() {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const heatmapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const mapRef = useRef<MapRef | null>(null);
+  // One backing canvas for the surface, repainted in place on every result.
+  const [heatmapCanvas] = useState(() => document.createElement("canvas"));
+  const latestViewRef = useRef<MapViewState | null>(null);
   const interpolationWorkerRef = useRef<Worker | null>(null);
   const interpolationJobIdRef = useRef(0);
   const heatmapDebugRef = useRef<HeatmapDebugState>(createHeatmapDebugState());
   const selectedPointKeysRef = useRef<string[]>([]);
-  const sensorLayerHandlersAttachedRef = useRef(false);
   const rawMapSizeRef = useRef<MapSize>({ width: 1, height: 1 });
   const workerBusyRef = useRef(false);
   const activeJobMethodRef = useRef<InterpolationMethod | null>(null);
-  const { theme } = useTheme();
 
   const [query, setQuery] = useUrlState("q", urlCodec.string, "");
   const [outsideOnly, setOutsideOnly] = useUrlState("outdoor", urlCodec.boolean(true), true);
@@ -116,7 +120,6 @@ export default function MapPage() {
   const [gridRes, setGridRes] = useUrlState("res", urlCodec.number(100), 100);
   const [idwPower, setIdwPower] = useUrlState("pow", urlCodec.number(2), 2);
   const [followView, setFollowView] = useState(true);
-  const [styleReloadTick, setStyleReloadTick] = useState(0);
   const [overlays, setOverlays] = useState<OverlayLayer[]>([]);
   const [overlayUrl, setOverlayUrl] = useState("");
   const [overlayError, setOverlayError] = useState<string | null>(null);
@@ -162,10 +165,6 @@ export default function MapPage() {
     if (!filtered) return { type: "FeatureCollection", features: [] };
     return buildGeoJson(filtered.records, pm25Window, sensorMetric, pm25Slice);
   }, [filtered, pm25Window, sensorMetric, pm25Slice]);
-
-  // Stable ref for the latest geojson so the callbacks inside map.on("load") always see current data
-  const geojsonRef = useRef(geojson);
-  geojsonRef.current = geojson;
 
   const interpolationPoints = useMemo(() => {
     if (!filtered) return [];
@@ -432,107 +431,9 @@ export default function MapPage() {
     handleInterpolationWorkerMessage,
     recordHeatmapDebug,
   ]);
-
-  const addSensorLayer = useCallback((map: maplibregl.Map) => {
-    if (!map.getSource(SOURCE_ID)) {
-      map.addSource(SOURCE_ID, {
-        type: "geojson",
-        data: geojsonRef.current,
-      });
-    }
-
-    if (!map.getLayer(LAYER_ID)) {
-      map.addLayer({
-        id: LAYER_ID,
-        type: "circle",
-        source: SOURCE_ID,
-        paint: {
-          "circle-radius": 6,
-          "circle-color": ["get", "color"],
-          "circle-stroke-width": 1.5,
-          "circle-stroke-color": "#ffffff",
-          "circle-opacity": 0.85,
-        },
-      });
-    }
-
-    if (sensorLayerHandlersAttachedRef.current) return;
-    sensorLayerHandlersAttachedRef.current = true;
-
-    map.on("click", LAYER_ID, (e) => {
-      const feature = e.features?.[0];
-      if (!feature) return;
-      const props = feature.properties!;
-      new maplibregl.Popup({ offset: 10 })
-        .setLngLat(e.lngLat)
-        .setHTML(buildSensorPopupHtml(props))
-        .addTo(map);
-    });
-
-    map.on("mouseenter", LAYER_ID, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", LAYER_ID, () => {
-      map.getCanvas().style.cursor = "";
-    });
-  }, []);
-
-  const syncSensorLayerPaint = useCallback((map: maplibregl.Map) => {
-    if (!map.isStyleLoaded() || !map.getLayer(LAYER_ID)) return;
-
-    map.setLayoutProperty(LAYER_ID, "visibility", showSensorMarkers ? "visible" : "none");
-    if (!showSensorMarkers) return;
-
-    if (mapMode === "heatmap") {
-      map.setPaintProperty(LAYER_ID, "circle-radius", 3);
-      map.setPaintProperty(LAYER_ID, "circle-opacity", 0.35);
-      return;
-    }
-
-    map.setPaintProperty(LAYER_ID, "circle-radius", 6);
-    map.setPaintProperty(LAYER_ID, "circle-opacity", 0.85);
-  }, [mapMode, showSensorMarkers]);
-
-  // Initialize map using a callback ref so it fires when the div mounts
-  const mapContainerCallback = useCallback((node: HTMLDivElement | null) => {
-    // Also store in containerRef for other effects
-    containerRef.current = node;
-
-    if (!node) {
-      // Cleanup when unmounting
-      if (mapRef.current) {
-        mapRef.current.remove();
-        mapRef.current = null;
-        sensorLayerHandlersAttachedRef.current = false;
-      }
-      return;
-    }
-
-    // Don't double-init
-    if (mapRef.current) return;
-
-    const map = new maplibregl.Map({
-      container: node,
-      style: theme === "dark" ? STYLE_DARK : STYLE_LIGHT,
-      center: [-103.23, 44.08],
-      zoom: 4,
-    });
-
-    mapRef.current = map;
-
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
-    map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: true }, trackUserLocation: true }), "top-right");
-
-    map.on("load", () => {
-      addSensorLayer(map);
-      setStyleReloadTick((tick) => tick + 1);
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const syncViewState = useCallback((map: maplibregl.Map) => {
-    const nextBounds = quantizeMapBounds(getMapBounds(map));
-    const nextZoom = quantizeZoom(map.getZoom());
+  const applyViewState = useCallback((view: MapViewState) => {
+    const nextBounds = quantizeMapBounds(view.bounds);
+    const nextZoom = quantizeZoom(view.zoom);
 
     setViewBounds((previous) => (
       boundsEqual(previous, nextBounds) ? previous : nextBounds
@@ -542,6 +443,33 @@ export default function MapPage() {
     ));
   }, []);
 
+  // Interpolation bounds follow pan/zoom/resize in heatmap+followView mode,
+  // debounced so a drag or a divider resize recomputes once it settles.
+  const followViewportRef = useRef(false);
+  followViewportRef.current = mapMode === "heatmap" && followView;
+  const viewTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleMoveEnd = useCallback((view: MapViewState) => {
+    latestViewRef.current = view;
+    if (!followViewportRef.current) return;
+    if (viewTimerRef.current) clearTimeout(viewTimerRef.current);
+    viewTimerRef.current = setTimeout(() => {
+      viewTimerRef.current = null;
+      applyViewState(view);
+    }, RESIZE_RECOMPUTE_DEBOUNCE_MS);
+  }, [applyViewState]);
+
+  // Seed the current view at once when following starts.
+  useEffect(() => {
+    if (mapMode !== "heatmap" || !followView) return;
+    if (latestViewRef.current) applyViewState(latestViewRef.current);
+    return () => {
+      if (viewTimerRef.current) clearTimeout(viewTimerRef.current);
+      viewTimerRef.current = null;
+    };
+  }, [mapMode, followView, applyViewState]);
+
+  // Track the map's pixel size; the grid's aspect ratio follows it.
   useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
@@ -569,14 +497,6 @@ export default function MapPage() {
           ? previous
           : nextSize;
       });
-
-      const map = mapRef.current;
-      if (map) {
-        map.resize();
-        if (mapMode === "heatmap" && followView) {
-          syncViewState(map);
-        }
-      }
     };
 
     let resizeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -607,266 +527,35 @@ export default function MapPage() {
       window.removeEventListener("resize", scheduleSizeSync);
       if (resizeTimer) clearTimeout(resizeTimer);
     };
-  }, [mapMode, followView, viewZoom, gridRes, interpMethod, syncViewState]);
+  }, [followView, viewZoom, gridRes, interpMethod]);
 
   useEffect(() => {
     setMapSize(rawMapSizeRef.current);
   }, [gridRes, interpMethod]);
 
-  // Update GeoJSON data when the filtered set changes
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-    const source = map.getSource(SOURCE_ID) as maplibregl.GeoJSONSource | undefined;
-    if (source) {
-      source.setData(geojson);
-    }
-  }, [geojson]);
+  const showHeatmapLayer = mapMode === "heatmap" && interpolationResult !== null;
 
-  const managedOverlayIdsRef = useRef<Set<string>>(new Set());
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !map.isStyleLoaded()) return;
-
-    const beforeLayer = map.getLayer(LAYER_ID) ? LAYER_ID : undefined;
-    const wanted = new Set(overlays.map((o) => o.id));
-
-    for (const overlayId of Array.from(managedOverlayIdsRef.current)) {
-      if (wanted.has(overlayId)) continue;
-      const sourceId = `${OVERLAY_ID_PREFIX}${overlayId}`;
-      for (const suffix of ["-fill", "-line", "-point"]) {
-        const layerId = `${sourceId}${suffix}`;
-        if (map.getLayer(layerId)) map.removeLayer(layerId);
-      }
-      if (map.getSource(sourceId)) map.removeSource(sourceId);
-      managedOverlayIdsRef.current.delete(overlayId);
-    }
-
-    for (const overlay of overlays) {
-      const sourceId = `${OVERLAY_ID_PREFIX}${overlay.id}`;
-      const existingSource = map.getSource(sourceId) as maplibregl.GeoJSONSource | undefined;
-      if (existingSource) {
-        existingSource.setData(overlay.data);
-      } else {
-        map.addSource(sourceId, { type: "geojson", data: overlay.data });
-      }
-      managedOverlayIdsRef.current.add(overlay.id);
-
-      const fillId = `${sourceId}-fill`;
-      const lineId = `${sourceId}-line`;
-      const pointId = `${sourceId}-point`;
-
-      if (!map.getLayer(fillId)) {
-        map.addLayer(
-          {
-            id: fillId,
-            source: sourceId,
-            type: "fill",
-            filter: ["in", ["geometry-type"], ["literal", ["Polygon", "MultiPolygon"]]],
-            paint: { "fill-color": overlay.color, "fill-opacity": 0.2 },
-          },
-          beforeLayer,
-        );
-      } else {
-        map.setPaintProperty(fillId, "fill-color", overlay.color);
-      }
-      if (!map.getLayer(lineId)) {
-        map.addLayer(
-          {
-            id: lineId,
-            source: sourceId,
-            type: "line",
-            filter: ["in", ["geometry-type"], ["literal", ["LineString", "MultiLineString", "Polygon", "MultiPolygon"]]],
-            paint: { "line-color": overlay.color, "line-width": 1.5, "line-opacity": 0.8 },
-          },
-          beforeLayer,
-        );
-      } else {
-        map.setPaintProperty(lineId, "line-color", overlay.color);
-      }
-      if (!map.getLayer(pointId)) {
-        map.addLayer(
-          {
-            id: pointId,
-            source: sourceId,
-            type: "circle",
-            filter: ["in", ["geometry-type"], ["literal", ["Point", "MultiPoint"]]],
-            paint: {
-              "circle-radius": 4,
-              "circle-color": overlay.color,
-              "circle-stroke-width": 1,
-              "circle-stroke-color": "#ffffff",
-              "circle-opacity": 0.85,
-            },
-          },
-          beforeLayer,
-        );
-      } else {
-        map.setPaintProperty(pointId, "circle-color", overlay.color);
-      }
-    }
-  }, [overlays, styleReloadTick]);
-
-  // Switch map style when theme changes
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    const style = theme === "dark" ? STYLE_DARK : STYLE_LIGHT;
-    map.once("styledata", () => {
-      addSensorLayer(map);
-      syncSensorLayerPaint(map);
-      setStyleReloadTick((tick) => tick + 1);
-    });
-    map.setStyle(style, { diff: true });
-  }, [theme, addSensorLayer, syncSensorLayerPaint]);
-
-  // Render heatmap overlay from interpolation result
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (!map.isStyleLoaded()) {
-      const retryWhenStyleLoads = () => {
-        setStyleReloadTick((tick) => tick + 1);
-      };
-      const retryTimer = window.setTimeout(retryWhenStyleLoads, 100);
-
-      map.once("load", retryWhenStyleLoads);
-      map.once("styledata", retryWhenStyleLoads);
-      return () => {
-        window.clearTimeout(retryTimer);
-        map.off("load", retryWhenStyleLoads);
-        map.off("styledata", retryWhenStyleLoads);
-      };
-    }
-
-    if (!interpolationResult) {
-      // Remove heatmap layer if exists
-      if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
-      if (map.getSource(HEATMAP_SOURCE_ID)) {
-        map.removeSource(HEATMAP_SOURCE_ID);
-        recordHeatmapDebug((state) => {
-          state.sourceRemovals += 1;
-        });
-      }
-      return;
-    }
-
+  // Paint before the canvas layer's own effect uploads the pixels: layout
+  // effects run ahead of every passive effect in the commit.
+  useLayoutEffect(() => {
+    if (!showHeatmapLayer || !interpolationResult) return;
     const renderStartedAt = performance.now();
-    // Reuse the backing canvas to avoid repeated allocations during pan/zoom.
-    const canvas = heatmapCanvasRef.current ?? document.createElement("canvas");
-    heatmapCanvasRef.current = canvas;
-    const colorizeMs = paintInterpolationCanvas(interpolationResult, canvas);
-
-    const { west, east, south, north } = interpolationResult.bounds;
-    const coordinates: [[number, number], [number, number], [number, number], [number, number]] = [
-      [west, north], // top-left
-      [east, north], // top-right
-      [east, south], // bottom-right
-      [west, south], // bottom-left
-    ];
-
-    const refreshCanvasSource = (source: maplibregl.CanvasSource) => {
-      recordHeatmapDebug((state) => {
-        state.sourceRefreshes += 1;
-      });
-      source.play();
-      map.once("render", () => {
-        if (map.getSource(HEATMAP_SOURCE_ID) === source) {
-          source.pause();
-        }
-      });
-    };
-
-    const existingSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.CanvasSource | undefined;
-    if (existingSource) {
-      existingSource.setCoordinates(coordinates);
-      refreshCanvasSource(existingSource);
-    } else {
-      map.addSource(HEATMAP_SOURCE_ID, {
-        type: "canvas",
-        canvas,
-        animate: false,
-        coordinates,
-      });
-
-      // Add layer below the sensor circles
-      const beforeLayer = map.getLayer(LAYER_ID) ? LAYER_ID : undefined;
-      map.addLayer(
-        {
-          id: HEATMAP_LAYER_ID,
-          type: "raster",
-          source: HEATMAP_SOURCE_ID,
-          paint: {
-            "raster-opacity": 0.74,
-            "raster-fade-duration": 0,
-            "raster-resampling": "linear",
-          },
-        },
-        beforeLayer,
-      );
-      const canvasSource = map.getSource(HEATMAP_SOURCE_ID) as maplibregl.CanvasSource | undefined;
-      if (canvasSource) refreshCanvasSource(canvasSource);
-    }
-
+    const colorizeMs = paintInterpolationCanvas(interpolationResult, heatmapCanvas);
     recordHeatmapDebug((state) => {
+      state.sourceRefreshes += 1;
       state.lastColorizeMs = colorizeMs;
       state.lastMainThreadRenderMs = performance.now() - renderStartedAt;
     });
-  }, [interpolationResult, styleReloadTick, recordHeatmapDebug]);
+  }, [heatmapCanvas, interpolationResult, recordHeatmapDebug, showHeatmapLayer]);
 
-  // Toggle sensor circle visibility and heatmap-mode emphasis.
   useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    syncSensorLayerPaint(map);
-  }, [syncSensorLayerPaint, styleReloadTick]);
-
-  // Cleanup heatmap layer when switching back to markers mode
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    if (mapMode === "markers") {
-      if (map.getLayer(HEATMAP_LAYER_ID)) map.removeLayer(HEATMAP_LAYER_ID);
-      if (map.getSource(HEATMAP_SOURCE_ID)) {
-        map.removeSource(HEATMAP_SOURCE_ID);
-        recordHeatmapDebug((state) => {
-          state.sourceRemovals += 1;
-        });
-      }
-    }
-  }, [mapMode, recordHeatmapDebug]);
-
-  // Track the map viewport in heatmap+followView mode so interpolation bounds follow pan/zoom.
-  // Debounced so we don't recompute while the user is actively dragging.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || mapMode !== "heatmap" || !followView) return;
-
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const updateBounds = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        syncViewState(map);
-      }, RESIZE_RECOMPUTE_DEBOUNCE_MS);
-    };
-
-    // Seed once for the current view, then subscribe to future moves.
-    const seed = () => {
-      syncViewState(map);
-    };
-    if (map.isStyleLoaded()) seed();
-    else map.once("load", seed);
-
-    map.on("moveend", updateBounds);
-    map.on("zoomend", updateBounds);
+    if (!showHeatmapLayer) return;
     return () => {
-      map.off("moveend", updateBounds);
-      map.off("zoomend", updateBounds);
-      if (timer) clearTimeout(timer);
+      recordHeatmapDebug((state) => {
+        state.sourceRemovals += 1;
+      });
     };
-  }, [mapMode, followView, syncViewState]);
+  }, [recordHeatmapDebug, showHeatmapLayer]);
 
   const windowLabel = pm25WindowOptions.find((o) => o.value === pm25Window)?.label ?? "1hr";
   const sliceLabel = pm25Slice === "current" ? windowLabel : pm25Slice;
@@ -920,18 +609,17 @@ export default function MapPage() {
   }, []);
 
   const handleRecompute = useCallback(() => {
-    const map = mapRef.current;
-    if (map) {
-      syncViewState(map);
-    }
+    if (latestViewRef.current) applyViewState(latestViewRef.current);
     setRecomputeTick((tick) => tick + 1);
-  }, [syncViewState]);
+  }, [applyViewState]);
 
   const heatmapRuntimeLabel = interpolationMeta?.durationMs != null
     ? `${interpolationMeta.durationMs.toFixed(0)} ms`
     : isComputing
       ? "Running…"
       : null;
+
+  const sensorsDimmed = mapMode === "heatmap";
 
   return (
     <div className={styles.layout}>
@@ -1011,8 +699,7 @@ export default function MapPage() {
             onClick={async () => {
               const map = mapRef.current;
               if (!map) return;
-              const canvas = map.getCanvas();
-              await downloadCanvasPng(suggestFilename(`map-${pm25Window}`, "png"), canvas);
+              downloadBlob(suggestFilename(`map-${pm25Window}`, "png"), await captureMapImage(map));
             }}
           >
             PNG snapshot
@@ -1021,7 +708,39 @@ export default function MapPage() {
       </div>
 
       <div className={styles.mapWrap}>
-        <div ref={mapContainerCallback} className={styles.map} />
+        <div ref={containerRef} className={styles.map}>
+          <PaMap
+            ref={mapRef}
+            center={[-103.23, 44.08]}
+            zoom={4}
+            onMoveEnd={handleMoveEnd}
+            controls={<MapControls position="top-right" showZoom showCompass showLocate trackLocation />}
+          >
+            {showHeatmapLayer && interpolationResult && (
+              <MapCanvasLayer
+                canvas={heatmapCanvas}
+                coordinates={boundsToQuad(interpolationResult.bounds)}
+                revision={interpolationResult}
+                opacity={0.74}
+                layerOrder={HEATMAP_ORDER}
+              />
+            )}
+            {overlays.map((overlay) => (
+              <MapGeoJsonLayer key={overlay.id} data={overlay.data} color={overlay.color} layerOrder={OVERLAY_ORDER} />
+            ))}
+            <MapCircleLayer
+              data={geojson}
+              color={["get", "color"]}
+              radius={sensorsDimmed ? 3 : 6}
+              opacity={sensorsDimmed ? 0.35 : 0.85}
+              strokeColor="#ffffff"
+              strokeWidth={1.5}
+              visible={showSensorMarkers}
+              layerOrder={SENSOR_ORDER}
+              clickHtml={buildSensorPopupHtml}
+            />
+          </PaMap>
+        </div>
         {mapMode === "heatmap" && (
           <HeatmapLegend heatmapMethodLabel={heatmapMethodLabel} interpolationMeta={interpolationMeta} />
         )}

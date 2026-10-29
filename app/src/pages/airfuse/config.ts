@@ -7,11 +7,6 @@ export const AIRFUSE_SOURCE_REFERENCE = {
   example: "/Users/ahmadjalil/Downloads/airfuse-main/examples/typical/map.html",
 };
 
-export const STYLE_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
-export const STYLE_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-export const AIRFUSE_SOURCE_ID = "airfuse-surface";
-export const AIRFUSE_FILL_LAYER_ID = "airfuse-surface-fill";
-export const AIRFUSE_LINE_LAYER_ID = "airfuse-surface-line";
 
 export const AIRFUSE_LAYERS: Record<AirFuseLayerKey, AirFuseLayerConfig> = {
   "airfuse-pm25": {

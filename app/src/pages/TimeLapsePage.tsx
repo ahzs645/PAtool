@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import maplibregl from "maplibre-gl";
+import { MapCircleLayer, type LngLatPoint } from "@pgmaps/geo-toolkit/map";
+import { escapeHtml, PlaybackControls } from "@pgmaps/geo-toolkit/ui";
 
 import {
   COLORMAP_IDS,
@@ -14,15 +15,12 @@ import {
 } from "@patool/shared";
 
 import { Card, PageHeader, StatCard } from "../components";
+import { FitMapToPoints } from "../components/map/FitMapToPoints";
+import { PaMap } from "../components/map/PaMap";
+import { ToolkitScope } from "../components/map/ToolkitScope";
 import { getJson } from "../lib/api";
 import { useTheme } from "../hooks/useTheme";
-import { STYLE_DARK, STYLE_LIGHT } from "./map/config";
 import styles from "./MapPage.module.css";
-
-import "maplibre-gl/dist/maplibre-gl.css";
-
-const SOURCE = "network-frame";
-const LAYER = "network-frame-circles";
 
 function percentile(values: number[], p: number): number {
   if (!values.length) return 0;
@@ -31,11 +29,12 @@ function percentile(values: number[], p: number): number {
   return sorted[idx];
 }
 
+function siteHoverHtml(properties: Record<string, unknown>): string {
+  return `<strong>${escapeHtml(properties.label)}</strong><br/>${escapeHtml(properties.valueLabel)}`;
+}
+
 export default function TimeLapsePage() {
   const { theme } = useTheme();
-  const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const mapReadyRef = useRef(false);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [colormap, setColormap] = useState<ColormapId>("aqi");
@@ -79,114 +78,10 @@ export default function TimeLapsePage() {
     };
   }, [series, frame, colormap, range, scaleMax]);
 
-  const featureRef = useRef(featureCollection);
-  featureRef.current = featureCollection;
-
-  // Initialize the map once. The circle layer is installed on whichever style
-  // loads, and a tile-free inline style is swapped in when the remote basemap
-  // can't be reached (offline / locked-down networks) so the network frame
-  // still renders.
-  useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
-    const map = new maplibregl.Map({
-      container: containerRef.current,
-      style: theme === "dark" ? STYLE_DARK : STYLE_LIGHT,
-      center: [-122.78, 53.9],
-      zoom: 8,
-    });
-    map.addControl(new maplibregl.NavigationControl({}), "top-right");
-    mapRef.current = map;
-    let popupAttached = false;
-
-    const install = () => {
-      if (!map.isStyleLoaded()) return;
-      const existing = map.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined;
-      if (existing) existing.setData(featureRef.current as GeoJSON.FeatureCollection);
-      else map.addSource(SOURCE, { type: "geojson", data: featureRef.current as GeoJSON.FeatureCollection });
-      if (!map.getLayer(LAYER)) {
-        map.addLayer({
-          id: LAYER,
-          type: "circle",
-          source: SOURCE,
-          paint: {
-            "circle-radius": 8,
-            "circle-color": ["get", "color"],
-            "circle-stroke-width": 1,
-            "circle-stroke-color": theme === "dark" ? "#0b0b0b" : "#ffffff",
-            "circle-opacity": 0.9,
-          },
-        });
-      }
-      if (!popupAttached) {
-        const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
-        map.on("mouseenter", LAYER, (event) => {
-          const feature = event.features?.[0];
-          if (!feature) return;
-          map.getCanvas().style.cursor = "pointer";
-          const props = feature.properties as { label: string; valueLabel: string };
-          const [lng, lat] = (feature.geometry as GeoJSON.Point).coordinates;
-          popup.setLngLat([lng, lat]).setHTML(`<strong>${props.label}</strong><br/>${props.valueLabel}`).addTo(map);
-        });
-        map.on("mouseleave", LAYER, () => { map.getCanvas().style.cursor = ""; popup.remove(); });
-        popupAttached = true;
-      }
-      mapReadyRef.current = true;
-    };
-
-    map.on("styledata", install);
-
-    let fellBack = false;
-    const fallbackTimer = window.setTimeout(() => {
-      if (!map.isStyleLoaded() && !fellBack) {
-        fellBack = true;
-        map.setStyle({
-          version: 8,
-          sources: {},
-          layers: [{ id: "bg", type: "background", paint: { "background-color": theme === "dark" ? "#0b0b0b" : "#e6ebf2" } }],
-        } as maplibregl.StyleSpecification);
-      }
-    }, 3500);
-
-    return () => {
-      window.clearTimeout(fallbackTimer);
-      map.remove();
-      mapRef.current = null;
-      mapReadyRef.current = false;
-    };
-  }, [theme]);
-
-  // Fit bounds when the series is available and the style is ready.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !series || series.sites.length === 0) return;
-    const lngs = series.sites.map((s) => s.longitude).filter(Number.isFinite);
-    const lats = series.sites.map((s) => s.latitude).filter(Number.isFinite);
-    if (!lngs.length) return;
-    const bounds: [[number, number], [number, number]] = [
-      [Math.min(...lngs), Math.min(...lats)],
-      [Math.max(...lngs), Math.max(...lats)],
-    ];
-    const apply = () => map.fitBounds(bounds, { padding: 60, duration: 0 });
-    if (mapReadyRef.current) apply();
-    else map.once("styledata", apply);
-  }, [series]);
-
-  // Push the current frame's colored features to the map source.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReadyRef.current) return;
-    const source = map.getSource(SOURCE) as maplibregl.GeoJSONSource | undefined;
-    source?.setData(featureCollection as GeoJSON.FeatureCollection);
-  }, [featureCollection]);
-
-  // Playback timer.
-  useEffect(() => {
-    if (!playing || !series) return;
-    const id = window.setInterval(() => {
-      setFrame((prev) => (prev + 1) % series.timestamps.length);
-    }, 400);
-    return () => window.clearInterval(id);
-  }, [playing, series]);
+  const sites = useMemo<LngLatPoint[]>(
+    () => (series ? series.sites.map((site) => [site.longitude, site.latitude] as const) : []),
+    [series],
+  );
 
   const timestamps = series?.timestamps ?? [];
   const currentTimestamp = timestamps[frame] ?? "";
@@ -210,21 +105,19 @@ export default function TimeLapsePage() {
 
       <Card title="Time-lapse map">
         <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", alignItems: "center", marginBottom: "12px" }}>
-          <button type="button" onClick={() => setPlaying((p) => !p)} disabled={!series} aria-label={playing ? "Pause" : "Play"}>
-            {playing ? "⏸ Pause" : "▶ Play"}
-          </button>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", flex: "1 1 320px" }}>
-            <span style={{ whiteSpace: "nowrap" }}>{currentTimestamp.slice(0, 10)}</span>
-            <input
-              type="range"
-              min={0}
-              max={Math.max(0, timestamps.length - 1)}
-              value={frame}
-              onChange={(event) => { setPlaying(false); setFrame(Number(event.target.value)); }}
-              style={{ flex: 1 }}
-              aria-label="Timestep"
+          <ToolkitScope style={{ flex: "1 1 360px" }}>
+            <PlaybackControls
+              label="Timestep"
+              frame={frame}
+              frameCount={timestamps.length}
+              onFrameChange={setFrame}
+              playing={playing}
+              onPlayingChange={setPlaying}
+              intervalMs={400}
+              frameLabel={currentTimestamp.slice(0, 10)}
+              disabled={!series}
             />
-          </label>
+          </ToolkitScope>
           <label style={{ display: "flex", alignItems: "center", gap: "8px" }}>
             <span>Colormap</span>
             <select value={colormap} onChange={(event) => setColormap(event.target.value as ColormapId)}>
@@ -235,7 +128,20 @@ export default function TimeLapsePage() {
           </label>
         </div>
 
-        <div ref={containerRef} style={{ width: "100%", height: "520px", borderRadius: "8px", overflow: "hidden" }} />
+        <div style={{ width: "100%", height: "520px", borderRadius: "8px", overflow: "hidden" }}>
+          <PaMap center={[-122.78, 53.9]} zoom={8}>
+            <MapCircleLayer
+              data={featureCollection}
+              color={["get", "color"]}
+              radius={8}
+              opacity={0.9}
+              strokeWidth={1}
+              strokeColor={theme === "dark" ? "#0b0b0b" : "#ffffff"}
+              hoverHtml={siteHoverHtml}
+            />
+            <FitMapToPoints points={sites} padding={60} pad={0} maxZoom={14} />
+          </PaMap>
+        </div>
 
         <div style={{ display: "flex", flexWrap: "wrap", gap: "10px", marginTop: "12px" }} aria-label="Colormap legend">
           {legend.map((stop) => (

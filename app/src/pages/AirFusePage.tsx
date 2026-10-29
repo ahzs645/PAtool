@@ -1,36 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import type { EChartsCoreOption } from "echarts/core";
-import maplibregl from "maplibre-gl";
+import { featureCollectionBounds } from "@pgmaps/geo-toolkit/calculations";
+import { MapFillLayer, type MapRef } from "@pgmaps/geo-toolkit/map";
 
 import { Card, Loader, PageHeader, StatCard } from "../components";
 import { EChart } from "../components/EChart";
+import { PaMap } from "../components/map/PaMap";
 import { useChartTheme } from "../hooks/useChartTheme";
-import { useTheme } from "../hooks/useTheme";
 import { airFuseRawUrl, fetchAirFuseJson, fetchAirFuseText } from "./airfuse/api";
 import { dailyAvailability, maxDateFromIndex, monthAvailability, resolveArtifactPath } from "./airfuse/artifacts";
-import {
-  AIRFUSE_FILL_LAYER_ID,
-  AIRFUSE_LAYERS,
-  AIRFUSE_SOURCE_REFERENCE,
-  LAYER_OPTIONS,
-  STYLE_DARK,
-  STYLE_LIGHT,
-} from "./airfuse/config";
-import { escapeHtml, geoJsonBounds, geoJsonDescription, normalizeAirFuseGeoJson } from "./airfuse/geojson";
-import { syncAirFuseLayer } from "./airfuse/mapLayer";
+import { AIRFUSE_LAYERS, AIRFUSE_SOURCE_REFERENCE, LAYER_OPTIONS } from "./airfuse/config";
+import { escapeHtml, geoJsonDescription, normalizeAirFuseGeoJson } from "./airfuse/geojson";
 import { nowUtcInput, shiftUtcInput, timestampLabel } from "./airfuse/time";
 import type { ActiveArtifact, AirFuseIndex, AirFuseLayerKey, ValidationResult } from "./airfuse/types";
 import { calculateValidation, finiteNumber, parseCsv } from "./airfuse/validation";
 import styles from "./AirFusePage.module.css";
 
-import "maplibre-gl/dist/maplibre-gl.css";
-
 export default function AirFusePage() {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const mapRef = useRef<maplibregl.Map | null>(null);
-  const popupBoundRef = useRef(false);
-  const popupContextRef = useRef({ layerLabel: "AirFuse PM2.5", timestamp: timestampLabel(nowUtcInput()) });
+  const mapRef = useRef<MapRef | null>(null);
   const [selectedLayer, setSelectedLayer] = useState<AirFuseLayerKey>("airfuse-pm25");
   const [utcValue, setUtcValue] = useState(nowUtcInput);
   const [timeTouched, setTimeTouched] = useState(false);
@@ -40,8 +28,6 @@ export default function AirFusePage() {
   const [validationError, setValidationError] = useState<string | null>(null);
   const [artifactError, setArtifactError] = useState<string | null>(null);
   const [loadingArtifact, setLoadingArtifact] = useState(false);
-  const [styleReloadTick, setStyleReloadTick] = useState(0);
-  const { theme } = useTheme();
   const chartTheme = useChartTheme();
 
   const layer = AIRFUSE_LAYERS[selectedLayer];
@@ -73,13 +59,6 @@ export default function AirFusePage() {
     if (latest) setUtcValue(latest);
   }, [airFuseIndex, layer, timeTouched]);
 
-  useEffect(() => {
-    popupContextRef.current = {
-      layerLabel: layer.shortLabel,
-      timestamp: activeArtifact?.timestamp ?? timestampLabel(utcValue),
-    };
-  }, [activeArtifact?.timestamp, layer.shortLabel, utcValue]);
-
   const loadArtifact = useCallback(async () => {
     const geojsonPath = resolveArtifactPath(airFuseIndex, layer, utcValue, "geojson");
     if (!geojsonPath) return;
@@ -107,9 +86,10 @@ export default function AirFusePage() {
         description,
       });
 
-      const bounds = geoJsonBounds(normalized);
+      const bounds = featureCollectionBounds(normalized);
       if (bounds && mapRef.current) {
-        mapRef.current.fitBounds(bounds, { padding: 32, duration: 0, maxZoom: 5.5 });
+        const [west, south, east, north] = bounds;
+        mapRef.current.fitBounds([[west, south], [east, north]], { padding: 32, duration: 0, maxZoom: 5.5 });
       }
 
       if (csvPath && layer.observedColumn && layer.predictedColumn) {
@@ -135,73 +115,17 @@ export default function AirFusePage() {
     void loadArtifact();
   }, [loadArtifact]);
 
-  const bindPopup = useCallback((map: maplibregl.Map) => {
-    if (popupBoundRef.current) return;
-    popupBoundRef.current = true;
-
-    map.on("click", AIRFUSE_FILL_LAYER_ID, (event) => {
-      const feature = event.features?.[0];
-      if (!feature) return;
-      const properties = feature.properties as Record<string, unknown>;
-      const label = properties.displayName ?? properties.Name ?? "AirFuse surface";
-      const aqic = finiteNumber(String(properties.AQIC ?? ""));
-      const context = popupContextRef.current;
-      new maplibregl.Popup({ offset: 10 })
-        .setLngLat(event.lngLat)
-        .setHTML(
-          `<strong>${escapeHtml(label)}</strong><br/>`
-          + `${aqic == null ? "" : `AQI midpoint: ${escapeHtml(aqic.toFixed(1))}<br/>`}`
-          + `${escapeHtml(context.layerLabel)} / ${escapeHtml(context.timestamp)}`,
-        )
-        .addTo(map);
-    });
-
-    map.on("mouseenter", AIRFUSE_FILL_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "pointer";
-    });
-    map.on("mouseleave", AIRFUSE_FILL_LAYER_ID, () => {
-      map.getCanvas().style.cursor = "";
-    });
-  }, []);
-
-  useEffect(() => {
-    const node = containerRef.current;
-    if (!node || mapRef.current) return;
-
-    const map = new maplibregl.Map({
-      container: node,
-      style: theme === "dark" ? STYLE_DARK : STYLE_LIGHT,
-      center: [-97, 39],
-      zoom: 3.25,
-    });
-    mapRef.current = map;
-    map.addControl(new maplibregl.NavigationControl(), "top-right");
-    map.on("load", () => {
-      setStyleReloadTick((tick) => tick + 1);
-    });
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-      popupBoundRef.current = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-    map.once("styledata", () => {
-      setStyleReloadTick((tick) => tick + 1);
-    });
-    map.setStyle(theme === "dark" ? STYLE_DARK : STYLE_LIGHT, { diff: true });
-  }, [theme]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !activeGeoJson || !map.isStyleLoaded()) return;
-    syncAirFuseLayer(map, activeGeoJson);
-    bindPopup(map);
-  }, [activeGeoJson, bindPopup, styleReloadTick]);
+  const popupLayerLabel = layer.shortLabel;
+  const popupTimestamp = activeArtifact?.timestamp ?? timestampLabel(utcValue);
+  const surfacePopupHtml = useCallback((properties: Record<string, unknown>) => {
+    const label = properties.displayName ?? properties.Name ?? "AirFuse surface";
+    const aqic = finiteNumber(String(properties.AQIC ?? ""));
+    return (
+      `<strong>${escapeHtml(label)}</strong><br/>`
+      + `${aqic == null ? "" : `AQI midpoint: ${escapeHtml(aqic.toFixed(1))}<br/>`}`
+      + `${escapeHtml(popupLayerLabel)} / ${escapeHtml(popupTimestamp)}`
+    );
+  }, [popupLayerLabel, popupTimestamp]);
 
   const validationOption = useMemo<EChartsCoreOption | null>(() => {
     if (!validation) return null;
@@ -333,7 +257,21 @@ export default function AirFusePage() {
             <span className={styles.statusPill}>{loadingArtifact ? "Loading" : activeArtifact ? "Loaded" : "Waiting"}</span>
             <span className={styles.timestamp}>{activeArtifact?.timestamp ?? timestampLabel(utcValue)}</span>
           </div>
-          <div ref={containerRef} className={styles.map} />
+          <div className={styles.map}>
+            <PaMap ref={mapRef} center={[-97, 39]} zoom={3.25}>
+              {activeGeoJson && (
+                <MapFillLayer
+                  data={activeGeoJson}
+                  fillColor={["get", "fillColor"]}
+                  fillOpacity={0.58}
+                  lineColor={["get", "fillColor"]}
+                  lineOpacity={0.78}
+                  lineWidth={0.75}
+                  clickHtml={surfacePopupHtml}
+                />
+              )}
+            </PaMap>
+          </div>
           {artifactError && <div className={styles.mapError}>{artifactError}</div>}
         </section>
 

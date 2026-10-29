@@ -99,3 +99,9 @@
   margin-top: var(--spacing-2);
   flex-wrap: wrap;
 }
+
+.mapCanvas {
+  height: 420px;
+  border-radius: var(--border-radius-md);
+  overflow: hidden;
+}

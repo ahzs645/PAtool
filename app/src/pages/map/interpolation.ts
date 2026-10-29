@@ -1,5 +1,4 @@
 import { aqiToColor, pm25ToAqi, type InterpolationGrid, type InterpolationMethod, type InterpolationPoint } from "@patool/shared";
-import type maplibregl from "maplibre-gl";
 
 import type { InterpolationBounds } from "../../lib/interpolationProtocol";
 import {
@@ -54,16 +53,6 @@ function pointInBounds(point: InterpolationPoint, bounds: InterpolationBounds): 
     && point.y >= bounds.south
     && point.y <= bounds.north
   );
-}
-
-export function getMapBounds(map: maplibregl.Map): InterpolationBounds {
-  const bounds = map.getBounds();
-  return {
-    west: bounds.getWest(),
-    east: bounds.getEast(),
-    south: bounds.getSouth(),
-    north: bounds.getNorth(),
-  };
 }
 
 function constrainGridCells(

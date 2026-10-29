@@ -82,8 +82,8 @@ export function downloadJson(filename: string, payload: unknown): void {
 /**
  * Save a canvas snapshot as PNG. Useful for "screenshot" buttons on chart
  * pages — pass the canvas the chart library renders to (ECharts exposes
- * `getDataURL()` separately; this helper covers MapLibre's `getCanvas()`
- * and any plain HTML canvas).
+ * `getDataURL()` separately). For maps use `captureMapImage` from the
+ * toolkit with `downloadBlob`: a WebGL canvas read outside a render is blank.
  */
 export function downloadCanvasPng(filename: string, canvas: HTMLCanvasElement): Promise<void> {
   return new Promise((resolve, reject) => {
@@ -92,15 +92,20 @@ export function downloadCanvasPng(filename: string, canvas: HTMLCanvasElement): 
         reject(new Error("Canvas did not produce a PNG blob"));
         return;
       }
-      const url = URL.createObjectURL(blob);
-      try {
-        triggerDownload(url, filename);
-        resolve();
-      } finally {
-        URL.revokeObjectURL(url);
-      }
+      downloadBlob(filename, blob);
+      resolve();
     }, "image/png");
   });
+}
+
+/** Save an already-encoded file, such as a map snapshot from `captureMapImage`. */
+export function downloadBlob(filename: string, blob: Blob): void {
+  const url = URL.createObjectURL(blob);
+  try {
+    triggerDownload(url, filename);
+  } finally {
+    URL.revokeObjectURL(url);
+  }
 }
 
 export function downloadDataUrl(filename: string, dataUrl: string): void {

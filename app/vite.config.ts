@@ -9,6 +9,11 @@ export default defineConfig(({ command, mode }) => {
   return {
     base: command === "build" ? "./" : "/",
     plugins: [react()],
+    resolve: {
+      // The toolkit is a linked workspace; resolve its React and MapLibre
+      // imports to the app's single copies.
+      dedupe: ["react", "react-dom", "maplibre-gl"]
+    },
     server: {
       proxy: {
         "/api": {

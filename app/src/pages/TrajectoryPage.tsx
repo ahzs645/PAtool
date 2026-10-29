@@ -7,8 +7,11 @@ import {
   trajPlot,
 } from "@patool/shared";
 
-import { Card, DataTable, EChart, PageHeader, StatCard, type Column } from "../components";
+import { Card, DataTable, PageHeader, StatCard, type Column } from "../components";
 import styles from "./ToolsetPage.module.css";
+import { TrajectoryMap } from "./trajectory/TrajectoryMap";
+
+const CELL_DEG = 0.5;
 
 const SAMPLE_CSV = `receptor,date,hour_inc,lat,lon
 ABC,2024-06-01T00:00:00Z,0,47.6,-122.3
@@ -46,7 +49,7 @@ export default function TrajectoryPage() {
     trajectories.forEach((t, i) => { map[t.id] = 8 + i * 1.2; });
     return map;
   }, [trajectories]);
-  const levelCells = useMemo(() => trajLevel(trajectories, values, 0.5), [trajectories, values]);
+  const levelCells = useMemo(() => trajLevel(trajectories, values, CELL_DEG), [trajectories, values]);
 
   const cols: Column<typeof clusters.clusters[number]>[] = [
     { key: "id", header: "Cluster", render: (c) => c.label },
@@ -83,34 +86,13 @@ export default function TrajectoryPage() {
         <DataTable columns={cols} data={clusters.clusters} rowKey={(c) => String(c.id)} pageSize={6} />
       </Card>
 
-      <Card title="Trajectory paths (lon/lat scatter)">
-        <EChart
-          option={{
-            tooltip: {},
-            xAxis: { type: "value", name: "Longitude" },
-            yAxis: { type: "value", name: "Latitude" },
-            series: polylines.map((line) => ({
-              name: line.id,
-              type: "line",
-              showSymbol: false,
-              data: line.coords.map(([lat, lon]) => [lon, lat]),
-            })),
-          }}
-          height={360}
-        />
-      </Card>
-
-      <Card title="Trajectory level cells (CWT proxy)">
-        <EChart
-          option={{
-            tooltip: {},
-            xAxis: { type: "value", name: "Longitude" },
-            yAxis: { type: "value", name: "Latitude" },
-            visualMap: { min: 0, max: Math.max(0.001, ...levelCells.map((c) => c.meanValue)), calculable: true, orient: "horizontal", bottom: 0 },
-            series: [{ type: "scatter", symbolSize: 14, data: levelCells.map((c) => [c.lon, c.lat, c.meanValue]) }],
-          }}
-          height={320}
-        />
+      <Card title="Trajectory map">
+        <p className={styles.muted}>
+          Back trajectories coloured by cluster over the trajLevel grid (CWT proxy, {CELL_DEG}° cells); hover a path or cell for details.
+        </p>
+        <div style={{ height: 480, borderRadius: 8, overflow: "hidden" }}>
+          <TrajectoryMap polylines={polylines} clusters={clusters.clusters} cells={levelCells} cellDeg={CELL_DEG} />
+        </div>
       </Card>
     </div>
   );

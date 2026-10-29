@@ -1,13 +1,5 @@
 import type { InterpolationMethod } from "@patool/shared";
 
-export const STYLE_LIGHT = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
-export const STYLE_DARK = "https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json";
-
-export const LAYER_ID = "sensors-circles";
-export const SOURCE_ID = "sensors";
-export const HEATMAP_LAYER_ID = "heatmap-layer";
-export const HEATMAP_SOURCE_ID = "heatmap-source";
-export const OVERLAY_ID_PREFIX = "user-overlay-";
 export const OVERLAY_PALETTE = ["#2563eb", "#db2777", "#0d9488", "#ea580c", "#7c3aed"];
 export const MISSING_PM_COLOR = "#94a3b8";
 
